@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>VaultNote</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="stylesheet" href="./src/styles.css?v=22" />
+</head>
+<body>
+  <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
+  <div id="app-lock-overlay" class="lock-overlay hidden">
+    <div class="lock-card">
+      <h2>VaultNote 잠금</h2>
+      <p>잠금 비밀번호를 입력하세요.</p>
+      <form id="app-lock-form">
+        <input type="password" id="app-lock-input" placeholder="비밀번호" autocomplete="current-password" required />
+        <button type="submit" class="btn btn-primary btn-block">잠금 해제</button>
+      </form>
+      <div id="app-lock-error" class="error-msg hidden">비밀번호가 일치하지 않습니다.</div>
+      <div class="lock-footer">
+        <button type="button" id="btn-emergency-wipe-lock" class="btn-text-danger">
+          외부 PC 임시 데이터 초기화
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메인 앱 2단 구조: [좌측 메뉴 사이드바] + [우측 넓은 메인 영역 (목록 뷰 / 에디터 뷰 전환)] -->
+  <div id="app-shell" class="app-shell">
+    <!-- 좌측 사이드바 -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand-row">
+          <span class="brand-title">VaultNote</span>
+          <span id="sync-status-badge" class="sync-dot">저장됨</span>
+        </div>
+        <button id="btn-new-note" class="btn btn-primary btn-sm" title="새 노트 작성 (Alt+N)">＋ 새 노트</button>
+      </div>
+
+      <!-- 빠른 검색창 -->
+      <div class="sidebar-search">
+        <input type="text" id="inline-filter-input" placeholder="전체 검색 (Ctrl+K)..." />
+      </div>
+
+      <!-- 좌측 네비게이션 스크롤 영역 -->
+      <div class="sidebar-scroll">
+        <nav class="nav-group">
+          <button type="button" class="nav-item active" data-nav="all">
+            <span class="nav-label">전체 노트</span>
+            <span class="nav-count" id="count-all">0</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="favorites">
+            <span class="nav-label">중요 노트</span>
+            <span class="nav-count" id="count-fav">0</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="vault">
+            <span class="nav-label">보안 금고</span>
+            <span class="nav-meta" id="vault-lock-indicator">잠김</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="clipper">
+            <span class="nav-label">웹 클리퍼</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="graph">
+            <span class="nav-label">연결 그래프</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="trash">
+            <span class="nav-label">휴지통</span>
+            <span class="nav-count" id="count-trash">0</span>
+          </button>
+        </nav>
+
+        <!-- 폴더 분류 섹션 -->
+        <div class="sidebar-section">
+          <div class="section-header">
+            <span>폴더</span>
+            <button type="button" id="btn-add-folder" class="text-btn">＋ 폴더 추가</button>
+          </div>
+          <div id="folder-list" class="folder-list"></div>
+        </div>
+
+        <!-- 태그 섹션 -->
+        <div class="sidebar-section" id="sidebar-tags-section">
+          <div class="section-header">
+            <span>태그</span>
+          </div>
+          <div id="tag-list" class="tag-cloud"></div>
+        </div>
+
+        <!-- 빠른 문서 바로가기 (최근/현재 분류 노트) -->
+        <div class="sidebar-section">
+          <div class="section-header">
+            <span>빠른 노트 이동</span>
+          </div>
+          <div id="sidebar-quick-notes" class="note-items-container"></div>
+        </div>
+      </div>
+
+      <!-- 하단 설정 바 -->
+      <div class="sidebar-footer">
+        <button type="button" id="btn-cloud-sync-modal" class="footer-link">동기화</button>
+        <span class="sep">·</span>
+        <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
+        <span class="sep">·</span>
+        <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
+      </div>
+    </aside>
+
+    <!-- 우측 넓은 메인 영역 -->
+    <main id="main-workspace" class="main-workspace">
+      <!-- 상단 바 -->
+      <header class="workspace-topbar">
+        <div class="topbar-left">
+          <button type="button" id="btn-toggle-sidebar" class="icon-btn" title="사이드바 접기/펼치기 (Ctrl+\)">◧ 메뉴</button>
+          <button type="button" id="btn-nav-back" class="icon-btn" title="이전 페이지로 뒤로가기 (Alt+←)">←</button>
+          <button type="button" id="btn-nav-forward" class="icon-btn" title="다음 페이지로 앞으로가기 (Alt+→)">→</button>
+          <button type="button" id="btn-show-list-view" class="icon-btn" title="현재 분류의 노트 목록 보기">≡ 목록 보기</button>
+          <span class="meta-sep">/</span>
+          <span id="active-note-breadcrumb" class="breadcrumb">전체 노트</span>
+          <span id="save-indicator" class="save-indicator">저장됨</span>
+        </div>
+
+        <div class="topbar-right">
+          <div class="view-Segment">
+            <button type="button" class="seg-btn" data-viewmode="list">목록</button>
+            <button type="button" class="seg-btn active" data-viewmode="editor">글쓰기</button>
+            <button type="button" class="seg-btn" data-viewmode="split" title="두 노트 나란히 보기">분할</button>
+            <button type="button" class="seg-btn" data-viewmode="table" title="표 형태로 보기">표</button>
+            <button type="button" class="seg-btn" data-viewmode="kanban" title="상태별 보드">보드</button>
+          </div>
+          <button type="button" id="btn-toggle-width" class="icon-btn" title="에디터 본문 폭 넓게/기본 전환">↔ 폭</button>
+          <button type="button" id="btn-Quick-Scratchpad" class="icon-btn" title="빠른 메모 패드 (Alt+Q)">메모패드</button>
+          <button type="button" id="btn-theme-toggle" class="icon-btn" title="라이트/다크 테마 전환">테마</button>
+        </div>
+      </header>
+
+      <!-- 0. 노트 목록 리스트 화면 (좌측에서 전체노트 / 중요노트 / 폴더 / 태그 / 휴지통 클릭 시 표시) -->
+      <div id="workspace-list-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="list-view-header">
+            <div>
+              <h2 id="current-filter-title">전체 노트</h2>
+              <p id="current-filter-subtitle" class="text-muted">마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.</p>
+            </div>
+            <div class="list-view-controls">
+              <input type="text" id="list-view-search" placeholder="현재 목록 내 검색..." class="list-search-input" />
+              <select id="sort-select" class="select-sm" title="정렬 기준">
+                <option value="custom" selected>사용자 지정 순서 (드래그 이동)</option>
+                <option value="updated_desc">최근 수정순</option>
+                <option value="created_desc">최근 생성순</option>
+                <option value="title_asc">제목 가나다순</option>
+                <option value="fav_first">중요 표시 우선</option>
+              </select>
+              <button type="button" id="btn-new-note-in-list" class="btn btn-primary btn-sm">＋ 새 노트 작성</button>
+              <button type="button" id="btn-empty-trash" class="btn btn-danger btn-sm hidden">휴지통 비우기</button>
+            </div>
+          </div>
+
+          <!-- 빠른 URL 붙여넣기 & 자동 요약 바 -->
+          <div id="list-quick-url-bar" class="quick-url-bar">
+            <input
+              type="url"
+              id="list-quick-url-input"
+              placeholder="웹서핑 중 찾은 URL 주소를 여기에 붙여넣거나 목록에서 바로 Ctrl+V를 누르면 핵심 요약 노트로 정리됩니다..."
+              autocomplete="off"
+            />
+            <button type="button" id="btn-list-url-summarize" class="btn btn-secondary btn-sm">URL 요약 정리</button>
+          </div>
+
+          <!-- 실제 노트 목록 리스트 컨테이너 -->
+          <div id="note-items-container" class="main-note-list"></div>
+        </div>
+      </div>
+
+      <!-- 1. 메인 에디터 및 분할 화면 영역 -->
+      <div id="workspace-editor-area" class="workspace-editor-area">
+        <div id="primary-editor-pane" class="editor-pane">
+          <div id="editor-inner-wrap" class="editor-inner-wrap">
+            <!-- 암호화 노트 잠금 게이트 -->
+            <div id="note-encrypted-gate" class="encrypted-gate hidden">
+              <div class="encrypted-gate-box">
+                <h3>암호화된 노트</h3>
+                <p>열람하거나 수정하려면 마스터 비밀번호를 입력하세요.</p>
+                <div class="gate-form">
+                  <input type="password" id="note-decrypt-pass" placeholder="마스터 비밀번호" />
+                  <button type="button" id="btn-unlock-encrypted-note" class="btn btn-primary">열기</button>
+                </div>
+                <details class="cipher-details">
+                  <summary>저장된 AES-256-GCM 암호문 확인</summary>
+                  <pre id="note-cipher-preview" class="cipher-preview"></pre>
+                </details>
+              </div>
+            </div>
+
+            <!-- 노트가 선택되지 않았을 때 빈 상태 안내 -->
+            <div id="note-empty-state" class="encrypted-gate hidden">
+              <div class="encrypted-gate-box">
+                <h3>선택된 노트가 없습니다</h3>
+                <p class="text-muted mb-8">목록에서 노트를 선택하거나 새 노트를 작성하세요.</p>
+                <button type="button" id="btn-empty-create-note" class="btn btn-primary">＋ 새 노트 작성</button>
+              </div>
+            </div>
+
+            <!-- 실제 글 작성 영역 -->
+            <div id="note-editor-content" class="note-editor-content">
+              <div class="note-header-row">
+                <textarea id="note-title-input" class="note-title-input" rows="1" placeholder="제목을 입력하세요"></textarea>
+              </div>
+
+              <!-- 간결한 한 줄 메타데이터 & 도구 바 -->
+              <div class="note-meta-bar">
+                <select id="note-folder-select" class="meta-select" title="폴더 변경"></select>
+                <span class="meta-sep">·</span>
+                <select id="note-status-select" class="meta-select" title="진행 상태">
+                  <option value="todo">대기</option>
+                  <option value="in_progress">진행중</option>
+                  <option value="done">완료</option>
+                  <option value="archived">보관</option>
+                </select>
+                <span class="meta-sep">·</span>
+                <div id="note-tags-container" class="note-tags-container"></div>
+                <input type="text" id="note-tag-input" class="tag-inline-input" placeholder="+ 태그 추가 (Enter)" />
+
+                <div class="meta-actions-right">
+                  <button type="button" id="btn-summarize-note" class="meta-btn" title="이 노트 본문을 요약하여 상단에 핵심 요약 표시">요약정리</button>
+                  <button type="button" id="btn-open-note-graph" class="meta-btn" title="이 문서를 중심으로 연관된 문서 연결 그래프 보기">연결도</button>
+                  <button type="button" id="btn-toggle-fav" class="meta-btn" title="중요 표시">☆ 중요</button>
+                  <button type="button" id="btn-relock-note" class="meta-btn hidden" title="열려 있는 암호화 노트를 다시 화면에서 잠그기">다시 잠그기</button>
+                  <button type="button" id="btn-toggle-note-encrypt" class="meta-btn" title="이 노트 AES-256 암호화 잠금">암호화 잠금</button>
+                  <label class="meta-btn" title="이미지 삽입">
+                    이미지 첨부
+                    <input type="file" id="image-upload-input" accept="image/*" class="hidden" />
+                  </label>
+                  <button type="button" id="btn-export-md" class="meta-btn" title="마크다운(.md) 다운로드">내보내기</button>
+                  <button type="button" id="btn-restore-note" class="meta-btn hidden" title="휴지통에서 복원">복원</button>
+                  <button type="button" id="btn-delete-note" class="meta-btn text-danger" title="삭제">삭제</button>
+                </div>
+              </div>
+
+              <!-- 본문 블록 에디터 -->
+              <div id="blocks-container" class="blocks-container"></div>
+
+              <!-- 하단 여백 클릭 시 새 줄 자동 포커스 영역 -->
+              <div id="editor-bottom-pad" class="editor-bottom-pad" title="클릭하여 이어서 작성">
+                <span class="bottom-pad-hint">+ 여기를 클릭하거나 Enter를 눌러 계속 작성하세요 ('/' 입력 시 블록 메뉴)</span>
+              </div>
+
+              <!-- 연결된 노트 (양방향 링크 & 백링크) -->
+              <div id="backlinks-panel" class="backlinks-panel hidden">
+                <div class="backlinks-row">
+                  <span class="sub-label">참조 중인 노트:</span>
+                  <div id="outbound-links-list" class="linked-notes-list"></div>
+                </div>
+                <div class="backlinks-row mt-6">
+                  <span class="sub-label">이 노트를 언급한 노트 (백링크):</span>
+                  <div id="backlinks-list" class="linked-notes-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 보조 분할 화면 (듀얼 뷰) -->
+        <div id="secondary-split-pane" class="editor-pane secondary-pane hidden">
+          <div class="split-pane-header">
+            <select id="split-note-select" class="meta-select"></select>
+            <button type="button" id="btn-close-split" class="icon-btn" title="분할 화면 닫기">✕</button>
+          </div>
+          <div id="secondary-note-viewer" class="secondary-note-viewer"></div>
+        </div>
+      </div>
+
+      <!-- 2. 표 (Table DB) 뷰 -->
+      <div id="workspace-table-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="special-view-header">
+            <h3>표 뷰 (데이터베이스)</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="db-table">
+              <thead>
+                <tr>
+                  <th>제목</th>
+                  <th>폴더</th>
+                  <th>상태</th>
+                  <th>태그</th>
+                  <th>보안</th>
+                  <th>수정일</th>
+                </tr>
+              </thead>
+              <tbody id="db-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 보드 (Kanban) 뷰 -->
+      <div id="workspace-kanban-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="special-view-header">
+            <h3>상태별 보드</h3>
+          </div>
+          <div id="kanban-board" class="kanban-board"></div>
+        </div>
+      </div>
+
+      <!-- 4. 보안 금고 (Secure Vault) 뷰 -->
+      <div id="workspace-vault-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="vault-header-bar">
+            <div>
+              <h3>보안 금고 (AES-256-GCM)</h3>
+              <p class="text-muted">계정, 비밀번호, 계좌, 중요 메모를 일반 노트와 분리하여 암호화 보관합니다.</p>
+            </div>
+            <div class="vault-header-actions">
+              <button type="button" id="btn-add-vault-item" class="btn btn-primary btn-sm">＋ 항목 추가</button>
+              <button type="button" id="btn-lock-vault" class="btn btn-secondary btn-sm">금고 잠그기</button>
+            </div>
+          </div>
+
+          <div id="vault-locked-screen" class="vault-locked-screen">
+            <div class="lock-card">
+              <h3 id="vault-gate-title">보안 금고 비밀번호 입력</h3>
+              <p id="vault-gate-desc">암호화된 데이터를 열람하려면 금고 마스터 비밀번호를 입력하세요.<br/>(최초 사용 시 입력한 비밀번호가 마스터 비밀번호로 등록됩니다.)</p>
+              <form id="vault-unlock-form">
+                <input type="password" id="vault-master-input" placeholder="마스터 비밀번호" required />
+                <button type="submit" class="btn btn-primary btn-block">금고 열기</button>
+              </form>
+              <div id="vault-error-msg" class="error-msg hidden">비밀번호가 일치하지 않습니다.</div>
+            </div>
+          </div>
+
+          <div id="vault-unlocked-content" class="vault-unlocked-content hidden">
+            <div class="vault-category-filter">
+              <button type="button" class="vault-cat-btn active" data-vcat="all">전체</button>
+              <button type="button" class="vault-cat-btn" data-vcat="account">계정/비밀번호</button>
+              <button type="button" class="vault-cat-btn" data-vcat="finance">금융/계좌</button>
+              <button type="button" class="vault-cat-btn" data-vcat="apikey">API/키</button>
+              <button type="button" class="vault-cat-btn" data-vcat="doc">보안 메모</button>
+            </div>
+            <div id="vault-cards-grid" class="vault-cards-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 지식 연결 그래프 뷰 -->
+      <div id="workspace-graph-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="list-view-header" style="margin-bottom:14px;">
+            <div>
+              <h3 style="font-size:20px;margin-bottom:4px;">문서 연결 그래프</h3>
+              <p id="graph-view-subtitle" class="text-muted">선택한 기준 문서와 연관된([[링크]], 공통 #주제태그, 핵심어) 문서만 중심으로 보여줍니다. 노드를 클릭하면 해당 노트가 열립니다.</p>
+            </div>
+            <div class="list-view-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div class="view-Segment">
+                <button type="button" id="btn-graph-mode-local" class="seg-btn active">선택 문서 중심 (연관 문서만)</button>
+                <button type="button" id="btn-graph-mode-global" class="seg-btn">전체 문서 보기</button>
+              </div>
+              <select id="graph-center-note-select" class="select-sm" title="기준 문서 선택" style="max-width:240px;"></select>
+              <button type="button" id="btn-graph-open-center" class="btn btn-primary btn-sm">기준 문서 열기</button>
+            </div>
+          </div>
+          <div class="graph-canvas-wrap">
+            <canvas id="knowledge-graph-canvas" width="900" height="540"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. 웹 클리퍼 뷰 -->
+      <div id="workspace-clipper-view" class="special-view hidden">
+        <div class="special-view-inner">
+          <div class="special-view-header">
+            <h3>웹 클리퍼</h3>
+            <p class="text-muted">URL에서 본문을 추출하거나 복사한 웹 콘텐츠를 깔끔한 노트로 변환합니다.</p>
+          </div>
+
+          <div class="clipper-grid">
+            <div class="clipper-card">
+              <h4>1. URL로 본문 추출 및 핵심 요약</h4>
+              <div class="clipper-url-row">
+                <input type="url" id="clipper-url-input" placeholder="https://example.com/article" />
+                <button type="button" id="btn-fetch-url-clip" class="btn btn-primary">요약 및 가져오기</button>
+              </div>
+              <label class="checkbox-label mt-8" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:var(--text-secondary);">
+                <input type="checkbox" id="chk-clipper-summarize" checked style="width:auto;" />
+                <span>문서 상단에 핵심 요약(3~5줄) 및 자동 키워드 #태그 생성 포함</span>
+              </label>
+            </div>
+
+            <div class="clipper-card">
+              <h4>2. 웹 내용 복사하여 붙여넣기</h4>
+              <input type="text" id="clipper-custom-title" placeholder="노트 제목 (비워두면 첫 줄로 자동 지정)" class="mb-8" />
+              <input type="url" id="clipper-source-url" placeholder="출처 URL (선택)" class="mb-8" />
+              <div id="clipper-paste-zone" class="clipper-paste-zone" contenteditable="true" data-placeholder="웹페이지에서 복사(Ctrl+C)한 내용을 여기에 붙여넣으세요(Ctrl+V)..."></div>
+              <div class="clipper-actions">
+                <select id="clipper-target-folder" class="select-sm"></select>
+                <button type="button" id="btn-save-clip" class="btn btn-primary">노트로 변환 저장</button>
+              </div>
+            </div>
+
+            <div class="clipper-card">
+              <h4>3. 브라우저 북마클릿</h4>
+              <p class="text-muted">아래 버튼을 마우스로 끌어 브라우저 북마크바에 놓으세요. 웹서핑 중 클릭하면 현재 페이지가 클리핑됩니다.</p>
+              <div class="bookmarklet-box">
+                <a id="bookmarklet-link" class="bookmarklet-pill" href="#">VaultNote 클리핑</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 슬래시(/) 및 블록 관리 메뉴 -->
+  <div id="slash-menu" class="slash-menu hidden">
+    <div class="slash-menu-title">블록 전환</div>
+    <button type="button" class="slash-item" data-type="p"><strong>본문</strong> <span>일반 텍스트</span></button>
+    <button type="button" class="slash-item" data-type="h1"><strong>제목 1</strong> <span>대제목 (# )</span></button>
+    <button type="button" class="slash-item" data-type="h2"><strong>제목 2</strong> <span>중제목 (## )</span></button>
+    <button type="button" class="slash-item" data-type="h3"><strong>제목 3</strong> <span>소제목 (### )</span></button>
+    <button type="button" class="slash-item" data-type="todo"><strong>할 일 체크리스트</strong> <span>체크박스 ([] )</span></button>
+    <button type="button" class="slash-item" data-type="bullet"><strong>글머리 목록</strong> <span>목록 (- )</span></button>
+    <button type="button" class="slash-item" data-type="number"><strong>번호 목록</strong> <span>순서 있는 목록</span></button>
+    <button type="button" class="slash-item" data-type="toggle"><strong>토글 접기/펼치기</strong> <span>하위 내용 접기</span></button>
+    <button type="button" class="slash-item" data-type="callout"><strong>인용 / 강조 박스</strong> <span>콜아웃 (> )</span></button>
+    <button type="button" class="slash-item" data-type="table"><strong>표 (Table)</strong> <span>행/열 표</span></button>
+    <button type="button" class="slash-item" data-type="code"><strong>코드 블록</strong> <span>코드 스니펫</span></button>
+    <button type="button" class="slash-item" data-type="secret"><strong>가림(보안) 블록</strong> <span>마우스 오버 시 표시</span></button>
+    <button type="button" class="slash-item" data-type="divider"><strong>구분선</strong> <span>가로선 (---)</span></button>
+    <div class="slash-menu-title" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;">블록 작업</div>
+    <button type="button" class="slash-item" data-blockact="summarize"><strong>문서 상단 요약정리</strong> <span>본문 핵심 요약 생성</span></button>
+    <button type="button" class="slash-item" data-blockact="up"><strong>위로 이동</strong> <span>한 줄 위로</span></button>
+    <button type="button" class="slash-item" data-blockact="down"><strong>아래로 이동</strong> <span>한 줄 아래로</span></button>
+    <button type="button" class="slash-item text-danger" data-blockact="delete"><strong>블록 삭제</strong> <span>현재 줄 삭제</span></button>
+  </div>
+
+  <!-- 빠른 메모 패드 (Scratchpad) -->
+  <div id="scratchpad-drawer" class="scratchpad-drawer hidden">
+    <div class="scratchpad-header">
+      <span>빠른 메모 패드</span>
+      <div class="scratchpad-actions">
+        <button type="button" id="btn-promote-scratchpad" class="text-btn">노트로 변환</button>
+        <button type="button" id="btn-close-scratchpad" class="icon-btn">✕</button>
+      </div>
+    </div>
+    <textarea id="scratchpad-textarea" placeholder="간단한 메모를 빠르게 적어두세요. 자동 저장됩니다..."></textarea>
+  </div>
+
+  <!-- 통합 검색 모달 (Ctrl+K) -->
+  <div id="search-modal" class="modal-backdrop hidden">
+    <div class="modal-card search-modal-card">
+      <div class="search-input-wrap">
+        <input type="text" id="global-search-input" placeholder="노트 제목, 본문, #태그 검색..." autocomplete="off" />
+        <button type="button" id="btn-close-search" class="icon-btn">✕</button>
+      </div>
+      <div id="search-results-list" class="search-results-list"></div>
+    </div>
+  </div>
+
+  <!-- 클라우드 동기화 모달 -->
+  <div id="cloud-sync-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>원드라이브 / 구글 드라이브 동기화</h3>
+        <button type="button" id="btn-close-cloud-modal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="sync-box" style="background:var(--bg-sidebar);">
+          <h4>스마트폰 · PC 실시간 자동 동기화 (무설정)</h4>
+          <p class="text-muted">
+            스마트폰 웹브라우저에서 아래 주소로 접속(또는 홈 화면에 추가)하면, 별도의 파일 불러오기나 버튼 클릭 없이 <strong>내용이 바뀔 때마다 PC와 스마트폰 간에 실시간으로 자동 동기화</strong>됩니다.
+          </p>
+          <div id="mobile-lan-url-box" class="mt-6" style="font-weight:600;font-size:13.5px;color:var(--text-main);">
+            접속 주소 확인 중...
+          </div>
+        </div>
+
+        <div class="sync-box">
+          <h4>1. 내 PC 동기화 폴더 연결 (OneDrive / Google Drive)</h4>
+          <p class="text-muted">지정한 폴더에 암호화 볼트 파일(<code>vaultnote-sync.vnvault.json</code>)과 마크다운(<code>.md</code>) 본문이 자동 저장됩니다.</p>
+          <div class="sync-row">
+            <select id="detected-cloud-folders" class="flex-1">
+              <option value="">감지된 클라우드 폴더 선택...</option>
+            </select>
+            <button type="button" id="btn-pick-custom-folder" class="btn btn-secondary btn-sm">폴더 직접 선택</button>
+          </div>
+          <div class="sync-row mt-8">
+            <input type="text" id="custom-vault-dir-input" placeholder="동기화 폴더 경로 (예: C:\Users\User\OneDrive\VaultNote_Sync)" class="flex-1" />
+            <button type="button" id="btn-sync-pc-save" class="btn btn-primary btn-sm">즉시 저장</button>
+            <button type="button" id="btn-sync-pc-load" class="btn btn-secondary btn-sm">불러오기</button>
+          </div>
+          <label class="checkbox-label mt-8" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="chk-auto-pc-sync" checked style="width:auto;" />
+            <span>노트 수정 시 지정된 폴더에 자동 동기화</span>
+          </label>
+        </div>
+
+        <div class="sync-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h4 style="margin-bottom:0;">2. OneDrive / Google Drive 클라우드 자동 동기화 (웹앱 · 스마트폰 · 외부 PC)</h4>
+            <span id="onedrive-sync-status-badge" class="note-folder-badge" style="font-weight:600;">미연동</span>
+          </div>
+          <p class="text-muted mb-8">
+            토큰을 한 번 저장해 두면 깃허브 웹앱(PC/스마트폰)을 열 때마다 <strong>내 OneDrive에서 최신 노트를 자동으로 불러오고, 글을 수정할 때마다 내 OneDrive(<code>/VaultNote_Sync/vaultnote-sync.vnvault.json</code>)에 자동 저장</strong>됩니다.
+            <a href="https://developer.microsoft.com/en-us/graph/graph-explorer" target="_blank" rel="noopener noreferrer" style="color:var(--text-main);text-decoration:underline;margin-left:4px;">Microsoft OneDrive 토큰 확인(Graph Explorer) ↗</a>
+          </p>
+          <div class="cloud-api-tabs">
+            <div class="api-card">
+              <h5>OneDrive 자동 동기화 (주 저장소)</h5>
+              <input type="password" id="onedrive-token-input" placeholder="OneDrive Access Token 입력 (저장 시 자동 동기화)" class="mb-8" />
+              <div class="btn-group">
+                <button type="button" id="btn-onedrive-push" class="btn btn-primary btn-sm">자동 동기화 저장 & 즉시 업로드</button>
+                <button type="button" id="btn-onedrive-pull" class="btn btn-secondary btn-sm">즉시 불러오기</button>
+              </div>
+            </div>
+            <div class="api-card">
+              <h5>Google Drive 영구 자동 동기화 (PC 설치 불필요 · 만료 없음)</h5>
+              <p class="text-muted" style="font-size:11.5px;margin-bottom:6px;line-height:1.45;">
+                PC에 구글 드라이브 프로그램을 설치할 필요 없이, 내 구글 드라이브 전용 연결 주소(<code>https://script.google.com/.../exec</code>)를 한 번만 등록하면 PC와 스마트폰 모두 평생 만료 없이 자동 동기화됩니다.
+              </p>
+              <div class="btn-group mb-8">
+                <button type="button" id="btn-copy-gdrive-script" class="btn btn-secondary btn-sm">1. 구글 드라이브 자동화 코드 복사</button>
+                <a href="https://script.google.com/home/start" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;">2. Google Apps Script 열기 ↗</a>
+              </div>
+              <input type="text" id="gdrive-token-input" placeholder="3. 배포된 웹앱 URL (https://script.google.com/.../exec) 붙여넣기" class="mb-8" />
+              <div class="btn-group">
+                <button type="button" id="btn-gdrive-push" class="btn btn-primary btn-sm">자동 동기화 연결 & 즉시 업로드</button>
+                <button type="button" id="btn-gdrive-pull" class="btn btn-secondary btn-sm">즉시 불러오기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sync-box">
+          <h4>3. 데이터 파일 백업 / 복원</h4>
+          <div class="btn-group">
+            <button type="button" id="btn-export-vault-file" class="btn btn-secondary btn-sm">데이터 파일 내보내기 (.json)</button>
+            <label class="btn btn-secondary btn-sm">
+              파일 불러오기
+              <input type="file" id="import-vault-file-input" accept=".json,.vnvault" class="hidden" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 보안 설정 모달 -->
+  <div id="security-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>보안 및 잠금 설정</h3>
+        <button type="button" id="btn-close-security-modal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="sync-box">
+          <h4>1단계: 앱 진입 잠금</h4>
+          <div class="sync-row">
+            <input type="password" id="set-app-lock-pass" placeholder="앱 잠금 비밀번호" />
+            <button type="button" id="btn-save-app-lock" class="btn btn-primary btn-sm">설정</button>
+            <button type="button" id="btn-Remove-app-lock" class="btn btn-secondary btn-sm">해제</button>
+          </div>
+          <div class="sync-row mt-8">
+            <span class="text-muted" style="white-space:nowrap;">자동 잠금:</span>
+            <select id="auto-lock-minutes">
+              <option value="0">사용 안 함</option>
+              <option value="1">1분 후</option>
+              <option value="5" selected>5분 후</option>
+              <option value="15">15분 후</option>
+              <option value="30">30분 후</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="sync-box">
+          <h4>2단계: 보안 금고 마스터 비밀번호 (AES-256)</h4>
+          <div class="sync-row">
+            <input type="password" id="set-vault-master-pass" placeholder="새 마스터 비밀번호" />
+            <button type="button" id="btn-save-vault-master" class="btn btn-primary btn-sm">설정/변경</button>
+          </div>
+        </div>
+
+        <div class="sync-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h4 style="margin-bottom:0;">3단계: AI 요약 연동 설정 (Google Gemini)</h4>
+            <span id="gemini-key-status-badge" class="note-folder-badge" style="font-weight:600;">확인 중</span>
+          </div>
+          <p class="text-muted mb-8">
+            무료 Gemini API 키를 등록하면 웹 클리핑과 일반 노트를 고품질 AI로 요약합니다. (보안 폴더 및 암호화 노트는 AI 전송에서 항상 제외됩니다.)
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style="color:var(--text-main);text-decoration:underline;margin-left:4px;">Google AI Studio에서 키 확인/발급 ↗</a>
+          </p>
+          <div class="sync-row">
+            <input type="password" id="gemini-api-key-input" placeholder="Google Gemini API Key 입력" />
+            <button type="button" id="btn-toggle-gemini-key-vis" class="btn btn-secondary btn-sm">보기</button>
+            <button type="button" id="btn-save-gemini-key" class="btn btn-primary btn-sm">저장</button>
+          </div>
+        </div>
+
+        <div class="sync-box">
+          <h4>외부 PC 사용 흔적 삭제</h4>
+          <p class="text-muted mb-8">현재 브라우저에 저장된 모든 로컬 캐시를 초기화합니다.</p>
+          <button type="button" id="btn-wipe-local-device" class="btn btn-danger btn-sm">이 기기에서 로컬 데이터 삭제</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 보안 금고 항목 추가 모달 -->
+  <div id="vault-item-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>보안 금고 항목 추가</h3>
+        <button type="button" id="btn-close-vault-item-modal" class="icon-btn">✕</button>
+      </div>
+      <form id="vault-item-form" class="modal-body">
+        <select id="vi-category" class="mb-8" required>
+          <option value="account">계정 / 비밀번호</option>
+          <option value="finance">은행 / 계좌 / 금융</option>
+          <option value="apikey">API 키 / 시크릿</option>
+          <option value="doc">보안 문서 / 메모</option>
+        </select>
+        <input type="text" id="vi-title" placeholder="항목 이름" class="mb-8" required />
+        <input type="text" id="vi-username" placeholder="아이디 / 계좌번호" class="mb-8" />
+        <input type="password" id="vi-secret" placeholder="비밀번호 / 시크릿 값" class="mb-8" />
+        <input type="text" id="vi-url" placeholder="관련 URL (선택)" class="mb-8" />
+        <textarea id="vi-notes" rows="4" placeholder="상세 메모"></textarea>
+        <div class="modal-footer mt-12">
+          <button type="submit" class="btn btn-primary btn-block">암호화 저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 내가 작성한 노트 요약 시 보안 확인 및 방식 선택 모달 -->
+  <div id="summarize-confirm-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>노트 요약 방식 선택 (보안 확인)</h3>
+        <button type="button" id="btn-close-summarize-modal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13.5px;margin-bottom:10px;">
+          직접 작성하신 노트입니다. 외부 AI를 사용할지, 내 기기 안에서만 오프라인으로 요약할지 선택해 주세요.
+        </p>
+
+        <div class="sync-box" style="background:var(--bg-sidebar);">
+          <h4 style="margin-bottom:6px;">1. Google Gemini AI 고품질 요약</h4>
+          <p class="text-muted" style="line-height:1.55;">
+            • 문맥을 이해하여 <strong>한 줄 핵심 결론 + 주요 요점 + 실행 할 일</strong>을 새로 작성합니다.<br/>
+            • <strong>민감정보 자동 차단</strong>: 본문 내 전화번호, 이메일, 계좌·카드번호, 비밀번호, 가림 블록은 전송 전 <code>[비공개_정보]</code>로 치환되어 구글 서버로 전송되지 않습니다.
+          </p>
+          <div id="summarize-masked-info" class="text-muted mt-6" style="font-weight:600;color:var(--text-main);"></div>
+
+          <div id="modal-gemini-key-box" class="mt-8 hidden">
+            <div class="sync-row">
+              <input type="password" id="modal-gemini-key-input" placeholder="Gemini API 키 입력 (최초 1회 등록 시 자동 저장)" />
+            </div>
+            <div class="mt-6" style="font-size:11.5px;">
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style="color:var(--text-secondary);text-decoration:underline;">Google AI Studio에서 무료 API 키 발급받기 ↗</a>
+            </div>
+          </div>
+
+          <button type="button" id="btn-confirm-ai-summarize" class="btn btn-primary btn-block mt-12">
+            동의 및 AI 고품질 요약 실행 (민감정보 제외)
+          </button>
+        </div>
+
+        <div class="sync-box">
+          <h4 style="margin-bottom:6px;">2. 오프라인 자체 요약 (외부 전송 없음)</h4>
+          <p class="text-muted" style="line-height:1.55;">
+            • 외부 서버로 데이터를 전혀 보내지 않고, 내 기기 안에서만 서론·본론·결론의 핵심 문장과 할 일을 추출해 상단에 정리합니다.
+          </p>
+          <button type="button" id="btn-confirm-offline-summarize" class="btn btn-secondary btn-block mt-12">
+            오프라인 자체 요약 실행 (100% 기기 내부 처리)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="./src/app.js?v=22"></script>
+</body>
+</html>

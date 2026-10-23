@@ -1,0 +1,4780 @@
+import { VaultCrypto } from './crypto.js';
+import { VaultStorage } from './storage.js';
+
+// ============================================================================
+// Initial Default State
+// ============================================================================
+function createInitialState() {
+  const now = new Date().toISOString();
+  return {
+    version: 3,
+    folders: [
+      { id: 'f_work', name: '업무 · 프로젝트' },
+      { id: 'f_idea', name: '아이디어 · 기획' },
+      { id: 'f_clip', name: '웹 스크랩' },
+      { id: 'f_personal', name: '개인 노트' },
+      { id: 'f_security', name: '보안 폴더' }
+    ],
+    notes: [
+      {
+        id: 'n_welcome',
+        title: 'VaultNote 시작하기',
+        folderId: 'f_work',
+        docType: 'note',
+        status: 'in_progress',
+        priority: 'normal',
+        favorite: true,
+        trashed: false,
+        isEncrypted: false,
+        tags: ['가이드', '메모'],
+        createdAt: now,
+        updatedAt: now,
+        blocks: [
+          {
+            id: 'b1',
+            type: 'callout',
+            text: '글쓰기와 정리에만 집중할 수 있도록 구성된 워크스페이스입니다. 좌측 메뉴(전체 노트, 중요 노트, 폴더)를 누르면 노트 목록이 나타나고, 노트를 클릭하면 넓은 편집 화면이 열립니다.'
+          },
+          {
+            id: 'b2',
+            type: 'h2',
+            text: '핵심 작성 방법'
+          },
+          {
+            id: 'b3',
+            type: 'todo',
+            checked: true,
+            text: '빈 줄에서 / 를 입력하거나 줄 왼쪽의 + 버튼을 누르면 블록 전환 및 줄 이동/삭제 메뉴가 열립니다.'
+          },
+          {
+            id: 'b4',
+            type: 'todo',
+            checked: false,
+            text: '마크다운 자동 변환: # 제목1, ## 제목2, - 목록, [] 할일, > 인용박스, --- 구분선'
+          },
+          {
+            id: 'b5',
+            type: 'todo',
+            checked: false,
+            text: '대괄호 두 개로 다른 문서를 연결합니다: [[동기화 및 보안 안내]]'
+          },
+          {
+            id: 'b6',
+            type: 'toggle',
+            text: '화면 넓게 쓰기 및 분할 보기 안내',
+            details: '• 상단 [◧ 메뉴] 버튼(단축키 Ctrl+\\)으로 좌측 사이드바를 접을 수 있습니다.\n• 상단 [↔ 폭] 버튼으로 문서 폭을 넓게 전환할 수 있습니다.\n• 상단 [분할] 버튼을 누르면 오른쪽에 다른 노트를 나란히 띄워 비교하며 작성할 수 있습니다.',
+            open: true
+          }
+        ]
+      },
+      {
+        id: 'n_security_sync',
+        title: '동기화 및 보안 안내',
+        folderId: 'f_personal',
+        docType: 'note',
+        status: 'done',
+        priority: 'normal',
+        favorite: true,
+        trashed: false,
+        isEncrypted: false,
+        tags: ['보안', '동기화'],
+        createdAt: now,
+        updatedAt: now,
+        blocks: [
+          {
+            id: 'bs1',
+            type: 'h2',
+            text: '원드라이브 · 구글 드라이브 동기화'
+          },
+          {
+            id: 'bs2',
+            type: 'bullet',
+            text: '좌측 하단 [동기화] 메뉴에서 내 PC의 OneDrive 또는 Google Drive 폴더를 지정하면 수정 시마다 자동 저장됩니다.'
+          },
+          {
+            id: 'bs3',
+            type: 'bullet',
+            text: '외부 PC나 모바일(갤럭시 Z폴드 7)에서는 클라우드 API 또는 데이터 파일(.json) 불러오기로 동일하게 이어서 작업할 수 있습니다.'
+          },
+          {
+            id: 'bs4',
+            type: 'h2',
+            text: '2중 보안 및 암호화'
+          },
+          {
+            id: 'bs5',
+            type: 'bullet',
+            text: '노트 상단 메타바의 [암호화] 버튼을 누르거나 좌측 [보안 금고]에 저장한 내용은 AES-256-GCM으로 암호화됩니다.'
+          },
+          {
+            id: 'bs6',
+            type: 'p',
+            text: '기본 사용법은 [[VaultNote 시작하기]] 문서를 참고하세요.'
+          }
+        ]
+      },
+      {
+        id: 'n_idea_sample',
+        title: '프로젝트 아이디어 메모',
+        folderId: 'f_idea',
+        docType: 'idea',
+        status: 'todo',
+        priority: 'normal',
+        favorite: false,
+        trashed: false,
+        isEncrypted: false,
+        tags: ['아이디어'],
+        createdAt: now,
+        updatedAt: now,
+        blocks: [
+          {
+            id: 'bi1',
+            type: 'p',
+            text: '떠오르는 아이디어나 웹 스크랩 내용을 자유롭게 정리해보세요.'
+          }
+        ]
+      }
+    ],
+    vaultItems: [],
+    scratchpad: '',
+    settings: {
+      theme: 'light',
+      fullWidth: false,
+      sidebarCollapsed: false,
+      appLockVerifier: null,
+      vaultMasterVerifier: null,
+      autoLockMinutes: 5,
+      pcVaultDir: '',
+      autoPcSync: true,
+      onedriveToken: '',
+      gdriveToken: '',
+      geminiApiKey: ''
+    }
+  };
+}
+
+// ============================================================================
+// Runtime State
+// ============================================================================
+let state = createInitialState();
+let activeNav = 'all'; // 'all', 'favorites', 'vault', 'clipper', 'graph', 'trash', 'folder:<id>', 'tag:<tag>'
+let activeViewMode = 'editor'; // 'list', 'editor', 'split', 'table', 'kanban'
+let activeNoteId = null;
+let secondaryNoteId = null;
+let slashTargetBlockId = null;
+
+let unlockedVaultPassword = null;
+let decryptedVaultItemsCache = [];
+let decryptedNotesSessionMap = new Map();
+let activeVaultCategory = 'all';
+let idleTimer = null;
+let draggedNoteId = null;
+let draggedBlockId = null;
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+function uid(prefix = 'id') {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function showToast(msg, duration = 2200) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function extractWikiLinks(text = '') {
+  const matches = [];
+  const regex = /\[\[([^\[\]]+)\]\]/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    if (m[1].trim()) matches.push(m[1].trim());
+  }
+  return matches;
+}
+
+function extractWebUrls(text = '') {
+  const urls = [];
+  const seen = new Set();
+  const regex = /https?:\/\/[^\s<>"')\]}]+/gi;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const cleanUrl = m[0].replace(/[.,;:!?]+$/, '');
+    if (cleanUrl && !seen.has(cleanUrl)) {
+      seen.add(cleanUrl);
+      urls.push(cleanUrl);
+    }
+  }
+  return urls;
+}
+
+async function detectClipboardSourceUrl(clipboardData) {
+  const html = clipboardData?.getData?.('text/html') || '';
+  const plain = clipboardData?.getData?.('text/plain') || '';
+
+  // 1. Check if HTML or plain text already has an explicit SourceURL header or '출처:' line
+  const directMatch =
+    html.match(/SourceURL:(\S+)/i) ||
+    html.match(/<base[^>]+href=["'](https?:\/\/[^"']+)["']/i) ||
+    plain.match(/(?:출처|원문)\s*[:：]\s*(https?:\/\/\S+)/i);
+  if (directMatch && directMatch[1]) {
+    return directMatch[1].trim();
+  }
+
+  // 2. If rich HTML was copied from a browser, ask local server for Windows CF_HTML SourceURL
+  if (html && html.length > 10) {
+    try {
+      const res = await fetch('/api/clipboard-source').catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.sourceUrl) {
+          return data.sourceUrl.trim();
+        }
+      }
+    } catch {}
+  }
+
+  return '';
+}
+
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function stripLeadingEmojis(str = '') {
+  return String(str).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\s]+/gu, '').trim() || str;
+}
+
+function getNotePlainSnippet(note) {
+  if (!note) return '';
+  if (note.isEncrypted) return 'AES-256 암호화로 잠긴 노트입니다.';
+  const blocks = note.blocks || [];
+  for (const b of blocks) {
+    const txt = (b.text || '').trim();
+    if (!txt) continue;
+    if (b.type === 'callout' && txt.startsWith('출처:')) continue;
+    if ((b.type === 'h1' || b.type === 'h2' || b.type === 'h3') && (txt === '핵심 요약' || txt === '본문 내용')) continue;
+    return txt.slice(0, 130);
+  }
+  for (const b of blocks) {
+    if (b.text && b.text.trim()) return b.text.trim().slice(0, 120);
+  }
+  return '본문 내용 없음';
+}
+
+function getCurrentNavTitle() {
+  if (activeNav === 'all') return '전체 노트';
+  if (activeNav === 'favorites') return '중요 노트';
+  if (activeNav === 'trash') return '휴지통';
+  if (activeNav === 'vault') return '보안 금고';
+  if (activeNav === 'clipper') return '웹 클리퍼';
+  if (activeNav === 'graph') return '연결 그래프';
+  if (activeNav.startsWith('folder:')) {
+    const f = state.folders.find((fl) => fl.id === activeNav.slice(7));
+    return f ? f.name : '폴더';
+  }
+  if (activeNav.startsWith('tag:')) {
+    return `#${activeNav.slice(4)}`;
+  }
+  return '전체 노트';
+}
+
+// ============================================================================
+// Persistence & Auto Cloud Sync
+// ============================================================================
+let saveDebounceTimer = null;
+let lastSyncedMtimeMs = 0;
+let isSyncingLive = false;
+
+async function pushLiveSyncState() {
+  if (isSyncingLive) return;
+  isSyncingLive = true;
+  try {
+    const res = await fetch('/api/live-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vaultDir: state.settings.pcVaultDir || '',
+        data: state
+      })
+    }).catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json();
+      if (json && json.mtimeMs) {
+        lastSyncedMtimeMs = json.mtimeMs;
+      }
+    }
+  } catch {} finally {
+    isSyncingLive = false;
+  }
+}
+
+async function applyRemoteSyncedState(remoteState, label = '실시간 동기화됨') {
+  if (!remoteState || !Array.isArray(remoteState.notes)) return false;
+  const prevActiveId = activeNoteId;
+  // Preserve local tokens/keys if remote doesn't have them yet
+  const mergedSettings = {
+    ...createInitialState().settings,
+    ...(state.settings || {}),
+    ...(remoteState.settings || {}),
+    onedriveToken: remoteState.settings?.onedriveToken || state.settings?.onedriveToken || '',
+    gdriveToken: remoteState.settings?.gdriveToken || state.settings?.gdriveToken || '',
+    geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
+  };
+  state = {
+    ...createInitialState(),
+    ...remoteState,
+    settings: mergedSettings
+  };
+  if (prevActiveId && state.notes.some((n) => n.id === prevActiveId && !n.trashed)) {
+    activeNoteId = prevActiveId;
+  } else {
+    activeNoteId = state.notes.find((n) => !n.trashed)?.id || null;
+  }
+  await VaultStorage.saveState(state);
+  renderAll(true);
+  const indicator = document.getElementById('save-indicator');
+  if (indicator) indicator.textContent = label;
+  return true;
+}
+
+async function pullLiveSyncStateIfNewer(isInitial = false) {
+  if (isSyncingLive) return false;
+  isSyncingLive = true;
+  try {
+    // 1. OneDrive or Google Drive Cloud API Auto-Pull (works on GitHub Pages, Smartphone Web App, and External PCs without any PC software installed)
+    const gdToken = (state.settings.gdriveToken || '').trim();
+    if (gdToken) {
+      try {
+        const remoteGD = await VaultStorage.syncGoogleDriveAPI(gdToken, state, 'load');
+        if (remoteGD === null && isInitial) {
+          await VaultStorage.syncGoogleDriveAPI(gdToken, state, 'save');
+        } else if (remoteGD && Array.isArray(remoteGD.notes)) {
+          const remoteTime = new Date(remoteGD.lastSavedAt || 0).getTime();
+          const localTime = new Date(state.lastSavedAt || 0).getTime();
+          if (isInitial || remoteTime > localTime + 500) {
+            await applyRemoteSyncedState(remoteGD, 'Google Drive 자동 동기화됨');
+            return true;
+          }
+        }
+      } catch {}
+    }
+
+    const odToken = (state.settings.onedriveToken || '').trim();
+    if (odToken) {
+      try {
+        const remoteOD = await VaultStorage.syncOneDriveAPI(odToken, state, 'load');
+        if (remoteOD === null && isInitial) {
+          await VaultStorage.syncOneDriveAPI(odToken, state, 'save');
+        } else if (remoteOD && Array.isArray(remoteOD.notes)) {
+          const remoteTime = new Date(remoteOD.lastSavedAt || 0).getTime();
+          const localTime = new Date(state.lastSavedAt || 0).getTime();
+          if (isInitial || remoteTime > localTime + 500) {
+            await applyRemoteSyncedState(remoteOD, 'OneDrive 자동 동기화됨');
+            return true;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Browser Direct OneDrive Folder Handle Auto-Pull (works on Chrome/Edge PC even on GitHub Pages)
+    try {
+      const folderState = await VaultStorage.loadFromBrowserDirectory();
+      if (folderState && Array.isArray(folderState.notes)) {
+        const remoteTime = new Date(folderState.lastSavedAt || 0).getTime();
+        const localTime = new Date(state.lastSavedAt || 0).getTime();
+        if (remoteTime > localTime + 500) {
+          await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
+          return true;
+        }
+      }
+    } catch {}
+
+    // 3. Local PC Bridge Auto-Pull (when running via local server.js)
+    const dirParam = encodeURIComponent(state.settings.pcVaultDir || '');
+    const metaRes = await fetch(`/api/live-sync?meta=1&dir=${dirParam}`).catch(() => null);
+    if (!metaRes || !metaRes.ok) return false;
+    const meta = await metaRes.json();
+    if (!meta || !meta.ok) return false;
+
+    if (meta.empty) {
+      if (isInitial) {
+        isSyncingLive = false;
+        await pushLiveSyncState();
+      }
+      return false;
+    }
+
+    if (meta.mtimeMs && meta.mtimeMs > lastSyncedMtimeMs + 100) {
+      const fullRes = await fetch(`/api/live-sync?dir=${dirParam}`).catch(() => null);
+      if (!fullRes || !fullRes.ok) return false;
+      const fullData = await fullRes.json();
+      if (fullData && fullData.ok && fullData.data && Array.isArray(fullData.data.notes)) {
+        lastSyncedMtimeMs = fullData.mtimeMs || meta.mtimeMs;
+        await applyRemoteSyncedState(fullData.data, '실시간 동기화됨');
+        return true;
+      }
+    }
+  } catch {} finally {
+    isSyncingLive = false;
+  }
+  return false;
+}
+
+function scheduleSave(triggerCloud = true) {
+  const indicator = document.getElementById('save-indicator');
+  if (indicator) indicator.textContent = '저장 중...';
+
+  clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(async () => {
+    const savedPayload = await VaultStorage.saveState(state);
+    state.lastSavedAt = savedPayload.lastSavedAt;
+    if (indicator) indicator.textContent = '저장됨';
+
+    if (triggerCloud) {
+      await pushLiveSyncState();
+
+      // Save to Browser-linked OneDrive folder if granted
+      VaultStorage.saveToBrowserDirectory(state).catch(() => {});
+
+      if (state.settings.autoPcSync && state.settings.pcVaultDir) {
+        try {
+          const res = await VaultStorage.syncWithPCFolder(state.settings.pcVaultDir, state, 'save');
+          if (res && res.ok) {
+            if (indicator) indicator.textContent = 'OneDrive 동기화됨';
+            const badge = document.getElementById('sync-status-badge');
+            if (badge) badge.textContent = 'OneDrive 연동중';
+          }
+        } catch {}
+      }
+
+      // If OneDrive or Google Drive API Token is saved, automatically upload on every edit
+      if ((state.settings.onedriveToken || '').trim()) {
+        VaultStorage.syncOneDriveAPI(state.settings.onedriveToken, state, 'save')
+          .then(() => {
+            if (indicator) indicator.textContent = 'OneDrive 자동 저장됨';
+            const badge = document.getElementById('sync-status-badge');
+            if (badge) badge.textContent = 'OneDrive 연동중';
+          })
+          .catch(() => {});
+      }
+      if ((state.settings.gdriveToken || '').trim()) {
+        VaultStorage.syncGoogleDriveAPI(state.settings.gdriveToken, state, 'save')
+          .then(() => {
+            if (indicator) indicator.textContent = 'Google Drive 자동 저장됨';
+            const badge = document.getElementById('sync-status-badge');
+            if (badge) badge.textContent = 'Google Drive 연동중';
+          })
+          .catch(() => {});
+      }
+    }
+  }, 300);
+}
+
+// ============================================================================
+// Security & Idle Auto-Lock
+// ============================================================================
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  const mins = Number(state.settings.autoLockMinutes || 0);
+  if (mins > 0 && (state.settings.appLockVerifier || unlockedVaultPassword)) {
+    idleTimer = setTimeout(() => {
+      lockEverything('자리 비움 자동 잠금이 실행되었습니다.');
+    }, mins * 60 * 1000);
+  }
+}
+
+async function lockEverything(reasonMsg = '화면이 잠금 상태로 전환되었습니다.', allowPromptSetup = false) {
+  unlockedVaultPassword = null;
+  decryptedVaultItemsCache = [];
+  decryptedNotesSessionMap.clear();
+
+  const vaultIndicator = document.getElementById('vault-lock-indicator');
+  if (vaultIndicator) vaultIndicator.textContent = '잠김';
+
+  let hasVerifier = Boolean(state.settings.appLockVerifier || state.settings.vaultMasterVerifier);
+  if (!hasVerifier && allowPromptSetup) {
+    const newPass = prompt('화면을 잠글 비밀번호를 설정해주세요 (이후 [잠금] 버튼을 누르면 즉시 화면 전체가 가려집니다):');
+    if (newPass && newPass.trim()) {
+      state.settings.appLockVerifier = await VaultCrypto.createVerifier(newPass.trim());
+      scheduleSave();
+      hasVerifier = true;
+    } else {
+      renderAll();
+      showToast('잠금 비밀번호 설정이 취소되었습니다.');
+      return;
+    }
+  }
+
+  if (hasVerifier) {
+    document.getElementById('app-lock-overlay').classList.remove('hidden');
+    document.getElementById('app-lock-input').value = '';
+    setTimeout(() => document.getElementById('app-lock-input')?.focus(), 20);
+  }
+
+  renderAll();
+  showToast(reasonMsg);
+}
+
+// ============================================================================
+// Filtering, Sorting & Drag-Reordering Notes
+// ============================================================================
+function getFilteredNotes() {
+  const sidebarQuery = (document.getElementById('inline-filter-input')?.value || '').trim().toLowerCase();
+  const listViewQuery = (document.getElementById('list-view-search')?.value || '').trim().toLowerCase();
+  const query = listViewQuery || sidebarQuery;
+  const sortMode = document.getElementById('sort-select')?.value || 'custom';
+
+  let list = state.notes.filter((n) => {
+    if (activeNav === 'trash') return Boolean(n.trashed);
+    if (n.trashed) return false;
+    if (activeNav === 'favorites') return Boolean(n.favorite);
+    if (activeNav.startsWith('folder:')) return n.folderId === activeNav.slice(7);
+    if (activeNav.startsWith('tag:')) return (n.tags || []).includes(activeNav.slice(4));
+    return true;
+  });
+
+  if (query) {
+    list = list.filter((n) => {
+      const inTitle = (n.title || '').toLowerCase().includes(query);
+      const inTags = (n.tags || []).some((t) => (`#${t}`).toLowerCase().includes(query) || t.toLowerCase().includes(query));
+      const inBlocks = !n.isEncrypted && (n.blocks || []).some((b) => (b.text || '').toLowerCase().includes(query));
+      return inTitle || inTags || inBlocks;
+    });
+  }
+
+  if (sortMode !== 'custom') {
+    list.sort((a, b) => {
+      if (sortMode === 'title_asc') {
+        return (a.title || '제목 없음').localeCompare(b.title || '제목 없음', 'ko');
+      }
+      if (sortMode === 'created_desc') {
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      }
+      if (sortMode === 'fav_first') {
+        if (Boolean(b.favorite) !== Boolean(a.favorite)) return b.favorite ? 1 : -1;
+        return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+      }
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+  }
+
+  return list;
+}
+
+function reorderNoteInState(sourceId, targetId, placeAfter = false) {
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  const fromIdx = state.notes.findIndex((n) => n.id === sourceId);
+  if (fromIdx === -1) return;
+  const [movedNote] = state.notes.splice(fromIdx, 1);
+
+  const toIdx = state.notes.findIndex((n) => n.id === targetId);
+  if (toIdx === -1) {
+    state.notes.unshift(movedNote);
+  } else {
+    state.notes.splice(placeAfter ? toIdx + 1 : toIdx, 0, movedNote);
+  }
+
+  const sortSelect = document.getElementById('sort-select');
+  if (sortSelect && sortSelect.value !== 'custom') {
+    sortSelect.value = 'custom';
+  }
+  scheduleSave();
+  renderAll();
+}
+
+function attachNoteRowDragEvents(el, noteId) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    draggedNoteId = noteId;
+    el.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', noteId);
+    }
+  });
+  el.addEventListener('dragend', () => {
+    draggedNoteId = null;
+    el.classList.remove('dragging');
+    document.querySelectorAll('.drop-target-top, .drop-target-bottom, .folder-drop-hover').forEach((node) => {
+      node.classList.remove('drop-target-top', 'drop-target-bottom', 'folder-drop-hover');
+    });
+  });
+  el.addEventListener('dragover', (e) => {
+    if (!draggedNoteId || draggedNoteId === noteId) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const isAfter = e.clientY > rect.top + rect.height / 2;
+    el.classList.toggle('drop-target-top', !isAfter);
+    el.classList.toggle('drop-target-bottom', isAfter);
+  });
+  el.addEventListener('dragleave', () => {
+    el.classList.remove('drop-target-top', 'drop-target-bottom');
+  });
+  el.addEventListener('drop', (e) => {
+    if (!draggedNoteId || draggedNoteId === noteId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = el.getBoundingClientRect();
+    const isAfter = e.clientY > rect.top + rect.height / 2;
+    el.classList.remove('drop-target-top', 'drop-target-bottom');
+    const srcId = draggedNoteId;
+    draggedNoteId = null;
+    reorderNoteInState(srcId, noteId, isAfter);
+  });
+}
+
+// ============================================================================
+// Rendering Sidebar & Quick Notes
+// ============================================================================
+function renderSidebar() {
+  const activeNotes = state.notes.filter((n) => !n.trashed);
+  document.getElementById('count-all').textContent = activeNotes.length;
+  document.getElementById('count-fav').textContent = activeNotes.filter((n) => n.favorite).length;
+  document.getElementById('count-trash').textContent = state.notes.filter((n) => n.trashed).length;
+
+  // Folders
+  const folderListEl = document.getElementById('folder-list');
+  folderListEl.innerHTML = '';
+  for (const f of state.folders) {
+    const count = activeNotes.filter((n) => n.folderId === f.id).length;
+    const row = document.createElement('div');
+    row.className = 'folder-item-row';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `nav-item ${activeNav === `folder:${f.id}` ? 'active' : ''}`;
+    btn.innerHTML = `
+      <span class="nav-label">${escapeHtml(f.name)}</span>
+      <span class="nav-count">${count}</span>
+    `;
+    btn.addEventListener('click', () => {
+      selectCategoryNav(`folder:${f.id}`);
+    });
+    // Allow dropping a dragged note onto a folder to move it
+    btn.addEventListener('dragover', (e) => {
+      if (!draggedNoteId) return;
+      e.preventDefault();
+      btn.classList.add('folder-drop-hover');
+    });
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('folder-drop-hover');
+    });
+    btn.addEventListener('drop', (e) => {
+      if (!draggedNoteId) return;
+      e.preventDefault();
+      btn.classList.remove('folder-drop-hover');
+      const note = state.notes.find((n) => n.id === draggedNoteId);
+      draggedNoteId = null;
+      if (note && note.folderId !== f.id) {
+        note.folderId = f.id;
+        touchNote(note);
+        renderAll();
+        showToast(`'${f.name}' 폴더로 이동되었습니다.`);
+      }
+    });
+    row.appendChild(btn);
+
+    if (state.folders.length > 1) {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'folder-del-btn';
+      delBtn.textContent = '×';
+      delBtn.title = '폴더 삭제';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!confirm(`'${f.name}' 폴더를 삭제하시겠습니까? (안의 노트는 삭제되지 않고 기본 폴더로 이동됩니다.)`)) return;
+        const fallbackFolder = state.folders.find((fl) => fl.id !== f.id);
+        state.notes.forEach((n) => {
+          if (n.folderId === f.id && fallbackFolder) n.folderId = fallbackFolder.id;
+        });
+        state.folders = state.folders.filter((fl) => fl.id !== f.id);
+        if (activeNav === `folder:${f.id}`) activeNav = 'all';
+        scheduleSave();
+        renderAll();
+      });
+      row.appendChild(delBtn);
+    }
+
+    folderListEl.appendChild(row);
+  }
+
+  // Folder selects in editor & clipper
+  const folderSelects = [
+    document.getElementById('note-folder-select'),
+    document.getElementById('clipper-target-folder')
+  ];
+  for (const sel of folderSelects) {
+    if (!sel) continue;
+    const prev = sel.value;
+    sel.innerHTML = state.folders.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    if (prev && state.folders.some((f) => f.id === prev)) sel.value = prev;
+  }
+
+  // Tags
+  const tagCounts = new Map();
+  for (const n of activeNotes) {
+    for (const t of n.tags || []) {
+      tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+    }
+  }
+  const tagsSection = document.getElementById('sidebar-tags-section');
+  const tagListEl = document.getElementById('tag-list');
+  tagListEl.innerHTML = '';
+  if (tagCounts.size === 0) {
+    tagsSection.classList.add('hidden');
+  } else {
+    tagsSection.classList.remove('hidden');
+    for (const [tag, cnt] of tagCounts.entries()) {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = `tag-pill ${activeNav === `tag:${tag}` ? 'active' : ''}`;
+      pill.textContent = `#${tag} (${cnt})`;
+      pill.addEventListener('click', () => {
+        selectCategoryNav(`tag:${tag}`);
+      });
+      tagListEl.appendChild(pill);
+    }
+  }
+
+  // Highlight active nav item
+  document.querySelectorAll('.nav-group .nav-item[data-nav]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.nav === activeNav);
+  });
+
+  // Render Quick Notes in Sidebar
+  const quickContainer = document.getElementById('sidebar-quick-notes');
+  if (quickContainer) {
+    quickContainer.innerHTML = '';
+    const notes = getFilteredNotes();
+    if (notes.length === 0) {
+      quickContainer.innerHTML = `<div class="text-muted" style="padding:6px 10px;font-size:12px;">노트 없음</div>`;
+    } else {
+      for (const note of notes.slice(0, 25)) {
+        const row = document.createElement('div');
+        row.className = `note-list-row ${note.id === activeNoteId && activeViewMode === 'editor' ? 'active' : ''}`;
+        row.dataset.quickNoteId = note.id;
+        const prefix = note.isEncrypted ? '[잠금] ' : note.favorite ? '★ ' : '';
+        row.innerHTML = `
+          <span class="drag-handle" title="마우스로 잡아 순서 이동">⋮⋮</span>
+          <span class="note-list-row-title">${escapeHtml(prefix + (note.title || '제목 없음'))}</span>
+        `;
+        if (!note.trashed) {
+          attachNoteRowDragEvents(row, note.id);
+        }
+        row.addEventListener('click', () => {
+          openNoteInEditor(note.id);
+        });
+        quickContainer.appendChild(row);
+      }
+    }
+  }
+}
+
+/**
+ * When clicking a category in the left sidebar (전체 노트, 중요 노트, 폴더, 태그, 휴지통),
+ * switch to the Note List View so the user immediately sees the full list of notes!
+ */
+function selectCategoryNav(navKey) {
+  activeNav = navKey;
+  if (navKey === 'graph' && activeNoteId) {
+    graphCenterNoteId = activeNoteId;
+  }
+  if (navKey === 'vault' || navKey === 'graph' || navKey === 'clipper') {
+    renderAll();
+  } else {
+    activeViewMode = 'list';
+    renderAll();
+  }
+  if (window.innerWidth <= 820) {
+    document.getElementById('sidebar').classList.add('collapsed');
+  }
+}
+
+function openNoteInEditor(noteId) {
+  activeNoteId = noteId;
+  if (['vault', 'graph', 'clipper'].includes(activeNav)) {
+    activeNav = 'all';
+  }
+  activeViewMode = 'editor';
+  renderAll();
+  if (window.innerWidth <= 820) {
+    document.getElementById('sidebar').classList.add('collapsed');
+  }
+}
+
+// ============================================================================
+// Rendering Main Note List View (#workspace-list-view)
+// ============================================================================
+function renderMainNoteListView() {
+  const titleEl = document.getElementById('current-filter-title');
+  const subtitleEl = document.getElementById('current-filter-subtitle');
+  const emptyTrashBtn = document.getElementById('btn-empty-trash');
+  const newNoteBtn = document.getElementById('btn-new-note-in-list');
+  const quickUrlBar = document.getElementById('list-quick-url-bar');
+  const container = document.getElementById('note-items-container');
+
+  const navTitle = getCurrentNavTitle();
+  const notes = getFilteredNotes();
+
+  titleEl.textContent = `${navTitle} (${notes.length})`;
+  document.getElementById('active-note-breadcrumb').textContent = `${navTitle} 목록`;
+
+  const isTrash = activeNav === 'trash';
+  emptyTrashBtn.classList.toggle('hidden', !isTrash || notes.length === 0);
+  newNoteBtn.classList.toggle('hidden', isTrash);
+  if (quickUrlBar) quickUrlBar.classList.toggle('hidden', isTrash);
+  subtitleEl.textContent = isTrash
+    ? '휴지통의 노트를 복원하거나 영구 삭제할 수 있습니다.'
+    : '마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.';
+
+  container.innerHTML = '';
+
+  if (notes.length === 0) {
+    container.innerHTML = `
+      <div style="padding:40px 20px;text-align:center;">
+        <p class="text-muted mb-8">${isTrash ? '휴지통이 비어 있습니다.' : '이 분류에 해당하는 노트가 없습니다.'}</p>
+        ${!isTrash ? `<button type="button" id="btn-list-empty-new" class="btn btn-primary btn-sm">＋ 새 노트 작성</button>` : ''}
+      </div>
+    `;
+    document.getElementById('btn-list-empty-new')?.addEventListener('click', () => createNewNote());
+    return;
+  }
+
+  const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
+
+  for (const note of notes) {
+    const item = document.createElement('div');
+    item.className = `main-note-item ${note.id === activeNoteId ? 'active' : ''}`;
+    item.dataset.noteId = note.id;
+    const folderName = folderMap.get(note.folderId) || '기본';
+    const tagsText = (note.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ');
+    const prefix = note.isEncrypted ? '[암호화] ' : note.favorite ? '★ ' : '';
+
+    item.innerHTML = `
+      ${!isTrash ? `<span class="drag-handle" title="마우스로 잡고 위아래로 끌어 순서 변경 (또는 좌측 폴더로 이동)">⋮⋮</span>` : ''}
+      <div class="main-note-left">
+        <div class="main-note-title">${escapeHtml(prefix + (note.title || '제목 없음'))}</div>
+        <div class="main-note-snippet">${escapeHtml(getNotePlainSnippet(note))}</div>
+      </div>
+      <div class="main-note-right">
+        ${tagsText ? `<span>${tagsText}</span>` : ''}
+        <span class="note-folder-badge">${escapeHtml(folderName)}</span>
+        <span>${formatDate(note.updatedAt)}</span>
+        ${
+          isTrash
+            ? `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
+               <button type="button" class="btn btn-danger btn-sm btn-row-del">영구 삭제</button>`
+            : `<button type="button" class="text-btn text-danger btn-row-trash" title="휴지통으로 이동">삭제</button>`
+        }
+      </div>
+    `;
+
+    if (!isTrash) {
+      attachNoteRowDragEvents(item, note.id);
+    }
+
+    item.querySelector('.btn-row-restore')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      note.trashed = false;
+      scheduleSave();
+      renderAll();
+      showToast('노트가 복원되었습니다.');
+    });
+
+    item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.notes = state.notes.filter((n) => n.id !== note.id);
+      if (activeNoteId === note.id) activeNoteId = null;
+      scheduleSave();
+      renderAll();
+      showToast('영구 삭제되었습니다.');
+    });
+
+    item.querySelector('.btn-row-trash')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      note.trashed = true;
+      scheduleSave();
+      renderAll();
+      showToast('휴지통으로 이동되었습니다.');
+    });
+
+    item.addEventListener('click', () => {
+      openNoteInEditor(note.id);
+    });
+
+    container.appendChild(item);
+  }
+}
+
+// ============================================================================
+// Rendering Active Note & Minimalist Block Editor
+// ============================================================================
+function getActiveNote() {
+  return state.notes.find((n) => n.id === activeNoteId) || null;
+}
+
+function getEditableBlocksForNote(note) {
+  if (!note) return [];
+  if (!note.isEncrypted) return note.blocks || [];
+  return decryptedNotesSessionMap.get(note.id) || null;
+}
+
+function renderActiveNoteEditor() {
+  const note = getActiveNote();
+  const encryptedGate = document.getElementById('note-encrypted-gate');
+  const emptyState = document.getElementById('note-empty-state');
+  const editorContent = document.getElementById('note-editor-content');
+
+  if (!note) {
+    encryptedGate.classList.add('hidden');
+    editorContent.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    document.getElementById('active-note-breadcrumb').textContent = getCurrentNavTitle();
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+
+  const folder = state.folders.find((f) => f.id === note.folderId);
+  document.getElementById('active-note-breadcrumb').textContent =
+    `${folder ? folder.name : '노트'} / ${note.title || '제목 없음'}`;
+
+  const blocks = getEditableBlocksForNote(note);
+  if (note.isEncrypted && !blocks) {
+    encryptedGate.classList.remove('hidden');
+    editorContent.classList.add('hidden');
+    document.getElementById('note-cipher-preview').textContent =
+      JSON.stringify(note.encryptedPayload, null, 2);
+    return;
+  }
+
+  encryptedGate.classList.add('hidden');
+  editorContent.classList.remove('hidden');
+
+  const titleInput = document.getElementById('note-title-input');
+  if (document.activeElement !== titleInput) {
+    titleInput.value = note.title || '';
+  }
+  setTimeout(() => autoResizeTextarea(titleInput), 0);
+
+  const favBtn = document.getElementById('btn-toggle-fav');
+  favBtn.textContent = note.favorite ? '★ 중요' : '☆ 중요';
+  favBtn.classList.toggle('active', Boolean(note.favorite));
+
+  const encBtn = document.getElementById('btn-toggle-note-encrypt');
+  encBtn.textContent = note.isEncrypted ? '암호화 해제' : '암호화 잠금';
+  encBtn.classList.toggle('active', Boolean(note.isEncrypted));
+
+  const relockBtn = document.getElementById('btn-relock-note');
+  if (relockBtn) {
+    relockBtn.classList.toggle('hidden', !note.isEncrypted);
+  }
+
+  const restoreBtn = document.getElementById('btn-restore-note');
+  const delBtn = document.getElementById('btn-delete-note');
+  restoreBtn.classList.toggle('hidden', !note.trashed);
+  delBtn.textContent = note.trashed ? '영구 삭제' : '삭제';
+
+  document.getElementById('note-folder-select').value = note.folderId || (state.folders[0]?.id || '');
+  document.getElementById('note-status-select').value = note.status || 'todo';
+
+  // Tags
+  const tagsWrap = document.getElementById('note-tags-container');
+  tagsWrap.innerHTML = '';
+  for (const tag of note.tags || []) {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.innerHTML = `#${escapeHtml(tag)} <button type="button" title="태그 삭제">×</button>`;
+    chip.querySelector('button').addEventListener('click', () => {
+      note.tags = (note.tags || []).filter((t) => t !== tag);
+      touchNote(note);
+      renderAll();
+    });
+    tagsWrap.appendChild(chip);
+  }
+
+  renderBlocksList(note, blocks);
+  renderBacklinksPanel(note, blocks);
+}
+
+function renderBlocksList(note, blocks) {
+  const container = document.getElementById('blocks-container');
+  container.innerHTML = '';
+
+  if (!blocks || blocks.length === 0) {
+    blocks = [{ id: uid('b'), type: 'p', text: '' }];
+    if (!note.isEncrypted) note.blocks = blocks;
+  }
+
+  blocks.forEach((block, idx) => {
+    const row = document.createElement('div');
+    row.className = `block-row block-${block.type || 'p'}`;
+    row.dataset.blockId = block.id;
+
+    const gutter = document.createElement('div');
+    gutter.className = 'block-gutter';
+
+    const dragBtn = document.createElement('button');
+    dragBtn.type = 'button';
+    dragBtn.className = 'block-drag-btn';
+    dragBtn.textContent = '⋮⋮';
+    dragBtn.title = '마우스로 잡고 위아래로 끌어 줄 순서 이동';
+    dragBtn.addEventListener('mousedown', () => {
+      row.draggable = true;
+    });
+    dragBtn.addEventListener('mouseup', () => {
+      row.draggable = false;
+    });
+
+    const plusBtn = document.createElement('button');
+    plusBtn.type = 'button';
+    plusBtn.className = 'block-plus-btn';
+    plusBtn.textContent = '+';
+    plusBtn.title = '블록 전환 / 이동 / 삭제 (/)';
+    plusBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSlashMenu(block.id, e.currentTarget.getBoundingClientRect());
+    });
+    gutter.appendChild(dragBtn);
+    gutter.appendChild(plusBtn);
+
+    row.addEventListener('dragstart', (e) => {
+      draggedBlockId = block.id;
+      row.classList.add('dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', block.id);
+      }
+    });
+    row.addEventListener('dragend', () => {
+      draggedBlockId = null;
+      row.draggable = false;
+      row.classList.remove('dragging');
+      container.querySelectorAll('.drop-target-top, .drop-target-bottom').forEach((n) => {
+        n.classList.remove('drop-target-top', 'drop-target-bottom');
+      });
+    });
+    row.addEventListener('dragover', (e) => {
+      if (!draggedBlockId || draggedBlockId === block.id) return;
+      e.preventDefault();
+      const rect = row.getBoundingClientRect();
+      const isAfter = e.clientY > rect.top + rect.height / 2;
+      row.classList.toggle('drop-target-top', !isAfter);
+      row.classList.toggle('drop-target-bottom', isAfter);
+    });
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drop-target-top', 'drop-target-bottom');
+    });
+    row.addEventListener('drop', (e) => {
+      if (!draggedBlockId || draggedBlockId === block.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = row.getBoundingClientRect();
+      const isAfter = e.clientY > rect.top + rect.height / 2;
+      row.classList.remove('drop-target-top', 'drop-target-bottom');
+      const fromIndex = blocks.findIndex((b) => b.id === draggedBlockId);
+      draggedBlockId = null;
+      if (fromIndex === -1) return;
+      const [movedBlock] = blocks.splice(fromIndex, 1);
+      const toIndex = blocks.findIndex((b) => b.id === block.id);
+      if (toIndex === -1) {
+        blocks.push(movedBlock);
+      } else {
+        blocks.splice(isAfter ? toIndex + 1 : toIndex, 0, movedBlock);
+      }
+      touchNote(note, blocks);
+      renderActiveNoteEditor();
+    });
+
+    const body = document.createElement('div');
+    body.className = 'block-body';
+
+    if (block.type === 'divider') {
+      const hrWrap = document.createElement('div');
+      hrWrap.style.padding = '10px 0';
+      hrWrap.style.cursor = 'pointer';
+      hrWrap.title = '클릭하여 구분선 삭제';
+      hrWrap.innerHTML = `<hr style="border:none;border-top:1px solid var(--border-strong);" />`;
+      hrWrap.addEventListener('click', () => {
+        if (blocks.length > 1) {
+          blocks.splice(idx, 1);
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        }
+      });
+      body.appendChild(hrWrap);
+    } else if (block.type === 'image') {
+      body.className += ' block-image';
+      const initialWidthStyle = block.width ? `width:${block.width};` : '';
+      body.innerHTML = `
+        <div class="image-resizer-box" style="${initialWidthStyle}">
+          <div class="img-quick-toolbar">
+            <span class="img-size-badge">${escapeHtml(block.width || '자동')}</span>
+            <button type="button" data-imgw="25%" title="폭 25%">25%</button>
+            <button type="button" data-imgw="50%" title="폭 50%">50%</button>
+            <button type="button" data-imgw="75%" title="폭 75%">75%</button>
+            <button type="button" data-imgw="100%" title="폭 100%">100%</button>
+            <button type="button" data-imgdel="1" style="color:#ff8a80;" title="이미지 삭제">삭제</button>
+          </div>
+          <img src="${block.dataUrl || ''}" alt="이미지" draggable="false" />
+          <div class="img-resize-handle-right" title="마우스로 좌우로 끌어 크기 조절"></div>
+          <div class="img-resize-handle-corner" title="마우스로 대각선으로 끌어 크기 조절"></div>
+        </div>
+        <input type="text" class="block-editable" style="font-size:13px;color:var(--text-muted);margin-top:4px;" placeholder="이미지 설명 입력 (비워두고 Backspace로 삭제)..." value="${escapeHtml(block.text || '')}" />
+      `;
+
+      const resizerBox = body.querySelector('.image-resizer-box');
+      const sizeBadge = body.querySelector('.img-size-badge');
+
+      // Quick percentage preset buttons
+      body.querySelectorAll('[data-imgw]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const w = btn.dataset.imgw;
+          block.width = w;
+          resizerBox.style.width = w;
+          if (sizeBadge) sizeBadge.textContent = w;
+          touchNote(note, blocks);
+        });
+      });
+
+      // Delete image button
+      body.querySelector('[data-imgdel]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        blocks.splice(idx, 1);
+        if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+
+      // Mouse & Touch Drag-to-Resize
+      const startImageResize = (startEvent) => {
+        startEvent.preventDefault();
+        startEvent.stopPropagation();
+        const startX = startEvent.touches ? startEvent.touches[0].clientX : startEvent.clientX;
+        const startWidth = resizerBox.getBoundingClientRect().width;
+        const maxContainerWidth = body.getBoundingClientRect().width || 800;
+        resizerBox.classList.add('resizing');
+
+        const onMove = (moveEvent) => {
+          const clientX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
+          const deltaX = clientX - startX;
+          const nextPx = Math.round(Math.min(maxContainerWidth, Math.max(100, startWidth + deltaX)));
+          const widthStr = `${nextPx}px`;
+          resizerBox.style.width = widthStr;
+          block.width = widthStr;
+          if (sizeBadge) sizeBadge.textContent = widthStr;
+        };
+
+        const onUp = () => {
+          resizerBox.classList.remove('resizing');
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          window.removeEventListener('touchmove', onMove);
+          window.removeEventListener('touchend', onUp);
+          touchNote(note, blocks);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+      };
+
+      body.querySelector('.img-resize-handle-right')?.addEventListener('mousedown', startImageResize);
+      body.querySelector('.img-resize-handle-corner')?.addEventListener('mousedown', startImageResize);
+      body.querySelector('.img-resize-handle-right')?.addEventListener('touchstart', startImageResize, { passive: false });
+      body.querySelector('.img-resize-handle-corner')?.addEventListener('touchstart', startImageResize, { passive: false });
+
+      const capInput = body.querySelector('input');
+      capInput.addEventListener('input', (e) => {
+        block.text = e.target.value;
+        touchNote(note, blocks);
+      });
+      capInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !capInput.value) {
+          blocks.splice(idx, 1);
+          if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        }
+      });
+    } else if (block.type === 'table') {
+      if (!Array.isArray(block.rows) || block.rows.length === 0) {
+        block.rows = [
+          ['항목', '내용', '비고'],
+          ['', '', '']
+        ];
+      }
+      const tbl = document.createElement('table');
+      tbl.className = 'block-table';
+      block.rows.forEach((r, rIdx) => {
+        const tr = document.createElement('tr');
+        r.forEach((cellVal, cIdx) => {
+          const td = document.createElement('td');
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = cellVal;
+          if (rIdx === 0) inp.style.fontWeight = '600';
+          inp.addEventListener('input', () => {
+            block.rows[rIdx][cIdx] = inp.value;
+            touchNote(note, blocks);
+          });
+          td.appendChild(inp);
+          tr.appendChild(td);
+        });
+        tbl.appendChild(tr);
+      });
+      const tblActions = document.createElement('div');
+      tblActions.style.marginTop = '4px';
+      tblActions.style.display = 'flex';
+      tblActions.style.gap = '8px';
+      tblActions.innerHTML = `
+        <button type="button" class="text-btn">+ 행 추가</button>
+        <button type="button" class="text-btn">+ 열 추가</button>
+        <button type="button" class="text-btn text-danger">표 삭제</button>
+      `;
+      tblActions.children[0].addEventListener('click', () => {
+        const cols = block.rows[0]?.length || 3;
+        block.rows.push(new Array(cols).fill(''));
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+      tblActions.children[1].addEventListener('click', () => {
+        block.rows.forEach((r) => r.push(''));
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+      tblActions.children[2].addEventListener('click', () => {
+        blocks.splice(idx, 1);
+        if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+      body.appendChild(tbl);
+      body.appendChild(tblActions);
+    } else if (block.type === 'toggle') {
+      const wrap = document.createElement('div');
+      wrap.className = 'block-toggle';
+      wrap.innerHTML = `
+        <div class="toggle-header">
+          <span class="toggle-arrow">${block.open ? '▼' : '▶'}</span>
+          <input type="text" class="block-editable" style="font-weight:600;" placeholder="토글 제목..." value="${escapeHtml(block.text || '')}" />
+        </div>
+        <div class="toggle-details ${block.open ? '' : 'hidden'}">
+          <textarea class="block-editable" rows="2" placeholder="상세 내용 입력...">${escapeHtml(block.details || '')}</textarea>
+        </div>
+      `;
+      wrap.querySelector('.toggle-arrow').addEventListener('click', () => {
+        block.open = !block.open;
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+      const headerInput = wrap.querySelector('input');
+      headerInput.addEventListener('input', (e) => {
+        block.text = e.target.value;
+        touchNote(note, blocks);
+      });
+      headerInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !headerInput.value && !block.details) {
+          blocks.splice(idx, 1);
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        }
+      });
+      const dtArea = wrap.querySelector('textarea');
+      dtArea.addEventListener('input', (e) => {
+        block.details = e.target.value;
+        autoResizeTextarea(dtArea);
+        touchNote(note, blocks);
+      });
+      setTimeout(() => autoResizeTextarea(dtArea), 0);
+      body.appendChild(wrap);
+    } else {
+      const innerWrap = document.createElement('div');
+      if (block.type === 'todo') {
+        innerWrap.className = `block-todo-wrap ${block.checked ? 'block-todo-done' : ''}`;
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.checked = Boolean(block.checked);
+        chk.addEventListener('change', () => {
+          block.checked = chk.checked;
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        });
+        innerWrap.appendChild(chk);
+      } else if (block.type === 'bullet') {
+        innerWrap.className = 'block-todo-wrap';
+        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);">•</span>`;
+      } else if (block.type === 'number') {
+        innerWrap.className = 'block-todo-wrap';
+        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;">${idx + 1}.</span>`;
+      } else if (block.type === 'callout') {
+        innerWrap.className = 'block-callout';
+      } else if (block.type === 'secret') {
+        innerWrap.className = 'block-secret';
+      }
+
+      const ta = document.createElement('textarea');
+      ta.className = `block-editable ${block.type === 'secret' ? 'secret-masked' : ''}`;
+      ta.rows = 1;
+      ta.placeholder = getPlaceholderForType(block.type);
+      ta.value = block.text || '';
+
+      ta.addEventListener('input', () => {
+        const val = ta.value;
+        if (block.type === 'p') {
+          if (val.startsWith('# ')) {
+            block.type = 'h1';
+            block.text = val.slice(2);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('## ')) {
+            block.type = 'h2';
+            block.text = val.slice(3);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('### ')) {
+            block.type = 'h3';
+            block.text = val.slice(4);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('- ') || val.startsWith('* ')) {
+            block.type = 'bullet';
+            block.text = val.slice(2);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('[] ') || val.startsWith('[ ] ')) {
+            block.type = 'todo';
+            block.text = val.replace(/^\[\s?\]\s/, '');
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('> ')) {
+            block.type = 'callout';
+            block.text = val.slice(2);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val === '---') {
+            block.type = 'divider';
+            block.text = '';
+            const nextBlock = { id: uid('b'), type: 'p', text: '' };
+            blocks.splice(idx + 1, 0, nextBlock);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(nextBlock.id);
+            return;
+          }
+        }
+
+        if (val === '/') {
+          openSlashMenu(block.id, ta.getBoundingClientRect());
+        } else {
+          closeSlashMenu();
+        }
+
+        block.text = val;
+        autoResizeTextarea(ta);
+        touchNote(note, blocks);
+        renderWikiLinkChipsForBlock(body, block.text);
+        renderBacklinksPanel(note, blocks);
+      });
+
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && block.type !== 'code') {
+          e.preventDefault();
+          closeSlashMenu();
+          if (['todo', 'bullet', 'number'].includes(block.type) && !block.text.trim()) {
+            block.type = 'p';
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          }
+          const nextType = ['todo', 'bullet', 'number'].includes(block.type) ? block.type : 'p';
+          const newBlock = { id: uid('b'), type: nextType, text: '', checked: false };
+          blocks.splice(idx + 1, 0, newBlock);
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+          focusBlock(newBlock.id);
+        } else if (e.key === 'Backspace' && ta.value === '') {
+          e.preventDefault();
+          closeSlashMenu();
+          if (block.type !== 'p') {
+            block.type = 'p';
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          }
+          if (blocks.length > 1) {
+            const prevBlock = blocks[idx - 1] || blocks[idx + 1];
+            blocks.splice(idx, 1);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            if (prevBlock) focusBlock(prevBlock.id);
+          }
+        } else if (e.key === 'ArrowUp' && ta.selectionStart === 0 && idx > 0) {
+          e.preventDefault();
+          focusBlock(blocks[idx - 1].id);
+        } else if (e.key === 'ArrowDown' && ta.selectionEnd === ta.value.length && idx < blocks.length - 1) {
+          e.preventDefault();
+          focusBlock(blocks[idx + 1].id);
+        }
+      });
+
+      // Ctrl+Click (or Cmd+Click) directly on a URL inside textarea opens it
+      ta.addEventListener('click', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          const urls = extractWebUrls(ta.value);
+          if (urls.length > 0) {
+            window.open(urls[0], '_blank', 'noopener,noreferrer');
+          }
+        }
+      });
+
+      innerWrap.appendChild(ta);
+      body.appendChild(innerWrap);
+      renderWikiLinkChipsForBlock(body, block.text);
+      setTimeout(() => autoResizeTextarea(ta), 0);
+    }
+
+    row.appendChild(gutter);
+    row.appendChild(body);
+    container.appendChild(row);
+  });
+}
+
+function renderWikiLinkChipsForBlock(bodyEl, text = '') {
+  const existing = bodyEl.querySelector('.wikilink-chips');
+  if (existing) existing.remove();
+  const wikiLinks = extractWikiLinks(text);
+  const webUrls = extractWebUrls(text);
+  if (wikiLinks.length === 0 && webUrls.length === 0) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'wikilink-chips';
+
+  // 1. Render clickable Web URL pills (opens original webpage in new tab)
+  const isSourceBlock = /^\s*(출처|원문)\s*[:：]/.test(text);
+  for (const url of webUrls) {
+    const a = document.createElement('a');
+    a.className = 'url-link-pill';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = `클릭하여 웹페이지 열기: ${url}`;
+    let displayUrl = url;
+    try {
+      const u = new URL(url);
+      const shortPath = u.pathname && u.pathname !== '/' ? u.pathname.slice(0, 28) : '';
+      displayUrl = `${u.hostname}${shortPath}${u.pathname.length > 28 ? '...' : ''}`;
+    } catch {}
+    a.textContent = isSourceBlock
+      ? `↗ 원문 문서로 이동 (${displayUrl})`
+      : `↗ 웹 링크 열기: ${displayUrl}`;
+    a.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    wrap.appendChild(a);
+  }
+
+  // 2. Render internal [[WikiLink]] pills
+  for (const title of wikiLinks) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wikilink-pill';
+    const target = state.notes.find((n) => !n.trashed && (n.title || '').trim().toLowerCase() === title.toLowerCase());
+    btn.textContent = target ? `↗ ${title}` : `+ 새 노트 생성: ${title}`;
+    btn.addEventListener('click', () => openOrCreateWikiLink(title));
+    wrap.appendChild(btn);
+  }
+  bodyEl.appendChild(wrap);
+}
+
+function openOrCreateWikiLink(title) {
+  let target = state.notes.find((n) => !n.trashed && (n.title || '').trim().toLowerCase() === title.toLowerCase());
+  if (!target) {
+    const now = new Date().toISOString();
+    target = {
+      id: uid('note'),
+      title,
+      folderId: getActiveNote()?.folderId || state.folders[0]?.id || 'f_work',
+      docType: 'note',
+      status: 'todo',
+      priority: 'normal',
+      favorite: false,
+      trashed: false,
+      isEncrypted: false,
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+      blocks: [
+        { id: uid('b'), type: 'p', text: `[[${getActiveNote()?.title || '이전 노트'}]] 문서에서 연결됨` }
+      ]
+    };
+    state.notes.unshift(target);
+    scheduleSave();
+  }
+  openNoteInEditor(target.id);
+}
+
+function renderBacklinksPanel(note, blocks) {
+  const panel = document.getElementById('backlinks-panel');
+  const outboundEl = document.getElementById('outbound-links-list');
+  const backlinksEl = document.getElementById('backlinks-list');
+  if (!panel || !outboundEl || !backlinksEl) return;
+
+  const outTitles = new Set();
+  for (const b of blocks || []) {
+    for (const t of extractWikiLinks(b.text)) outTitles.add(t);
+  }
+
+  const currentTitle = (note.title || '').trim().toLowerCase();
+  const inboundNotes = currentTitle
+    ? state.notes.filter((other) => {
+        if (other.id === note.id || other.trashed || other.isEncrypted) return false;
+        return (other.blocks || []).some((b) =>
+          extractWikiLinks(b.text).some((linkTitle) => linkTitle.toLowerCase() === currentTitle)
+        );
+      })
+    : [];
+
+  if (outTitles.size === 0 && inboundNotes.length === 0) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+
+  outboundEl.innerHTML = '';
+  for (const t of outTitles) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wikilink-pill';
+    btn.textContent = t;
+    btn.addEventListener('click', () => openOrCreateWikiLink(t));
+    outboundEl.appendChild(btn);
+  }
+
+  backlinksEl.innerHTML = '';
+  for (const inNote of inboundNotes) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wikilink-pill';
+    btn.textContent = inNote.title;
+    btn.addEventListener('click', () => openNoteInEditor(inNote.id));
+    backlinksEl.appendChild(btn);
+  }
+}
+
+function autoResizeTextarea(ta) {
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = `${Math.max(26, ta.scrollHeight)}px`;
+}
+
+function getPlaceholderForType(type) {
+  const map = {
+    p: "내용을 입력하세요 ('/'로 블록 메뉴, '[[제목]]'으로 문서 연결)",
+    h1: '제목 1',
+    h2: '제목 2',
+    h3: '제목 3',
+    todo: '할 일',
+    bullet: '목록',
+    number: '번호 목록',
+    callout: '강조할 내용 입력...',
+    code: '코드 입력...',
+    secret: '마우스를 올릴 때만 보이는 보안 텍스트...'
+  };
+  return map[type] || '';
+}
+
+function focusBlock(blockId) {
+  setTimeout(() => {
+    const row = document.querySelector(`.block-row[data-block-id="${blockId}"]`);
+    const input = row?.querySelector('.block-editable');
+    if (input) {
+      input.focus();
+      if (input.setSelectionRange) {
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      }
+    }
+  }, 10);
+}
+
+/**
+ * Light-weight touchNote that does NOT rebuild the editor DOM during typing
+ */
+function touchNote(note, updatedBlocks = null) {
+  if (!note) return;
+  note.updatedAt = new Date().toISOString();
+  if (note.isEncrypted && updatedBlocks && unlockedVaultPassword) {
+    VaultCrypto.encryptData(updatedBlocks, unlockedVaultPassword).then((enc) => {
+      note.encryptedPayload = enc;
+      scheduleSave();
+    });
+  } else {
+    scheduleSave();
+  }
+  // Update sidebar quick note title in place without full re-render
+  const quickRow = document.querySelector(`[data-quick-note-id="${note.id}"] .note-list-row-title`);
+  if (quickRow) {
+    const prefix = note.isEncrypted ? '[잠금] ' : note.favorite ? '★ ' : '';
+    quickRow.textContent = prefix + (note.title || '제목 없음');
+  }
+  const folder = state.folders.find((f) => f.id === note.folderId);
+  document.getElementById('active-note-breadcrumb').textContent =
+    `${folder ? folder.name : '노트'} / ${note.title || '제목 없음'}`;
+}
+
+// ============================================================================
+// Slash Menu (/) & Block Actions
+// ============================================================================
+function openSlashMenu(blockId, rect) {
+  slashTargetBlockId = blockId;
+  const menu = document.getElementById('slash-menu');
+  menu.classList.remove('hidden');
+  const top = Math.min(window.innerHeight - 350, Math.max(16, rect.bottom + 4));
+  const left = Math.min(window.innerWidth - 260, Math.max(16, rect.left));
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+}
+
+function closeSlashMenu() {
+  slashTargetBlockId = null;
+  document.getElementById('slash-menu')?.classList.add('hidden');
+}
+
+function applyBlockType(blockId, newType) {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const target = blocks.find((b) => b.id === blockId);
+  if (target) {
+    target.type = newType;
+    if (target.text === '/') target.text = '';
+    if (newType === 'table') {
+      target.rows = [
+        ['항목', '내용', '비고'],
+        ['', '', '']
+      ];
+    }
+    touchNote(note, blocks);
+    renderActiveNoteEditor();
+    focusBlock(target.id);
+  }
+  closeSlashMenu();
+}
+
+function executeBlockAction(blockId, action) {
+  if (action === 'summarize') {
+    closeSlashMenu();
+    summarizeCurrentActiveNote();
+    return;
+  }
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const idx = blocks.findIndex((b) => b.id === blockId);
+  if (idx === -1) return;
+
+  if (action === 'up' && idx > 0) {
+    const tmp = blocks[idx - 1];
+    blocks[idx - 1] = blocks[idx];
+    blocks[idx] = tmp;
+  } else if (action === 'down' && idx < blocks.length - 1) {
+    const tmp = blocks[idx + 1];
+    blocks[idx + 1] = blocks[idx];
+    blocks[idx] = tmp;
+  } else if (action === 'delete') {
+    blocks.splice(idx, 1);
+    if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+  }
+
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  closeSlashMenu();
+}
+
+// ============================================================================
+// Split View
+// ============================================================================
+function renderSecondarySplitPane() {
+  const pane = document.getElementById('secondary-split-pane');
+  const isSplit = activeViewMode === 'split';
+  pane.classList.toggle('hidden', !isSplit);
+  if (!isSplit) return;
+
+  const activeNotes = state.notes.filter((n) => !n.trashed);
+  if (!secondaryNoteId || !activeNotes.some((n) => n.id === secondaryNoteId)) {
+    const other = activeNotes.find((n) => n.id !== activeNoteId) || activeNotes[0];
+    secondaryNoteId = other?.id || null;
+  }
+
+  const sel = document.getElementById('split-note-select');
+  sel.innerHTML = activeNotes
+    .map((n) => `<option value="${n.id}" ${n.id === secondaryNoteId ? 'selected' : ''}>${escapeHtml(n.title || '제목 없음')}</option>`)
+    .join('');
+
+  const viewer = document.getElementById('secondary-note-viewer');
+  const secNote = activeNotes.find((n) => n.id === secondaryNoteId);
+  if (!secNote) {
+    viewer.innerHTML = `<p class="text-muted">표시할 노트가 없습니다.</p>`;
+    return;
+  }
+
+  if (secNote.isEncrypted && !decryptedNotesSessionMap.has(secNote.id)) {
+    viewer.innerHTML = `<p class="text-muted">암호화된 노트입니다.</p>`;
+    return;
+  }
+
+  const secBlocks = getEditableBlocksForNote(secNote) || [];
+  viewer.innerHTML = `
+    <h2 style="font-size:22px;margin-bottom:14px;">${escapeHtml(secNote.title || '제목 없음')}</h2>
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:15px;">
+      ${secBlocks
+        .map((b) => {
+          if (b.type === 'h1') return `<h3 style="margin-top:10px;">${escapeHtml(b.text)}</h3>`;
+          if (b.type === 'h2') return `<h4 style="margin-top:8px;">${escapeHtml(b.text)}</h4>`;
+          if (b.type === 'callout') return `<div class="block-callout">${escapeHtml(b.text)}</div>`;
+          if (b.type === 'todo') return `<div>${b.checked ? '[x]' : '[ ]'} ${escapeHtml(b.text)}</div>`;
+          if (b.type === 'bullet') return `<div>• ${escapeHtml(b.text)}</div>`;
+          if (b.type === 'code') return `<pre class="block-code">${escapeHtml(b.text)}</pre>`;
+          return `<p>${escapeHtml(b.text || '')}</p>`;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+// ============================================================================
+// Table DB View & Kanban Board View
+// ============================================================================
+function renderTableView() {
+  const tbody = document.getElementById('db-table-body');
+  tbody.innerHTML = '';
+  const notes = getFilteredNotes();
+  const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
+  const statusLabels = { todo: '대기', in_progress: '진행중', done: '완료', archived: '보관' };
+
+  for (const n of notes) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(n.title || '제목 없음')}</strong></td>
+      <td>${escapeHtml(folderMap.get(n.folderId) || '-')}</td>
+      <td>${statusLabels[n.status] || '대기'}</td>
+      <td>${(n.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ')}</td>
+      <td>${n.isEncrypted ? '암호화됨' : '-'}</td>
+      <td>${formatDate(n.updatedAt)}</td>
+    `;
+    tr.addEventListener('click', () => openNoteInEditor(n.id));
+    tbody.appendChild(tr);
+  }
+}
+
+function renderKanbanView() {
+  const board = document.getElementById('kanban-board');
+  board.innerHTML = '';
+  const columns = [
+    { key: 'todo', title: '대기' },
+    { key: 'in_progress', title: '진행중' },
+    { key: 'done', title: '완료' },
+    { key: 'archived', title: '보관' }
+  ];
+  const notes = getFilteredNotes();
+
+  for (const col of columns) {
+    const colNotes = notes.filter((n) => (n.status || 'todo') === col.key);
+    const colEl = document.createElement('div');
+    colEl.className = 'kanban-col';
+    colEl.innerHTML = `
+      <div class="kanban-col-header">
+        <span>${col.title}</span>
+        <span>${colNotes.length}</span>
+      </div>
+    `;
+
+    colEl.addEventListener('dragover', (e) => {
+      if (!draggedNoteId) return;
+      e.preventDefault();
+      colEl.classList.add('folder-drop-hover');
+    });
+    colEl.addEventListener('dragleave', () => {
+      colEl.classList.remove('folder-drop-hover');
+    });
+    colEl.addEventListener('drop', (e) => {
+      if (!draggedNoteId) return;
+      e.preventDefault();
+      colEl.classList.remove('folder-drop-hover');
+      const targetNote = state.notes.find((nt) => nt.id === draggedNoteId);
+      draggedNoteId = null;
+      if (targetNote) {
+        targetNote.status = col.key;
+        touchNote(targetNote);
+        renderKanbanView();
+      }
+    });
+
+    for (const n of colNotes) {
+      const card = document.createElement('div');
+      card.className = 'kanban-card';
+      card.innerHTML = `
+        <div style="font-weight:600;margin-bottom:4px;">${escapeHtml(n.title || '제목 없음')}</div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:8px;">${escapeHtml(getNotePlainSnippet(n))}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="text-muted" style="font-size:11px;">${formatDate(n.updatedAt)}</span>
+          <select class="meta-select kanban-status-Quick">
+            ${columns.map((c) => `<option value="${c.key}" ${c.key === col.key ? 'selected' : ''}>${c.title}</option>`).join('')}
+          </select>
+        </div>
+      `;
+      attachNoteRowDragEvents(card, n.id);
+      card.querySelector('.kanban-status-Quick').addEventListener('click', (e) => e.stopPropagation());
+      card.querySelector('.kanban-status-Quick').addEventListener('change', (e) => {
+        n.status = e.target.value;
+        touchNote(n);
+        renderKanbanView();
+      });
+      card.addEventListener('click', () => openNoteInEditor(n.id));
+      colEl.appendChild(card);
+    }
+    board.appendChild(colEl);
+  }
+}
+
+// ============================================================================
+// Secure Vault View
+// ============================================================================
+async function renderSecureVaultView() {
+  const lockedScreen = document.getElementById('vault-locked-screen');
+  const unlockedContent = document.getElementById('vault-unlocked-content');
+  const indicator = document.getElementById('vault-lock-indicator');
+
+  if (!unlockedVaultPassword) {
+    lockedScreen.classList.remove('hidden');
+    unlockedContent.classList.add('hidden');
+    if (indicator) indicator.textContent = '잠김';
+    document.getElementById('vault-gate-title').textContent = state.settings.vaultMasterVerifier
+      ? '보안 금고 비밀번호 입력'
+      : '보안 금고 초기 비밀번호 설정';
+    return;
+  }
+
+  lockedScreen.classList.add('hidden');
+  unlockedContent.classList.remove('hidden');
+  if (indicator) indicator.textContent = '열림';
+
+  decryptedVaultItemsCache = [];
+  for (const item of state.vaultItems) {
+    try {
+      const dec = await VaultCrypto.decryptData(item.encryptedPayload, unlockedVaultPassword);
+      decryptedVaultItemsCache.push({ id: item.id, createdAt: item.createdAt, ...dec });
+    } catch {}
+  }
+
+  const grid = document.getElementById('vault-cards-grid');
+  grid.innerHTML = '';
+
+  const filtered = decryptedVaultItemsCache.filter(
+    (it) => activeVaultCategory === 'all' || it.category === activeVaultCategory
+  );
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="text-muted" style="padding:16px 0;">등록된 보안 항목이 없습니다. 우측 상단 [＋ 항목 추가]로 추가하세요.</div>`;
+    return;
+  }
+
+  const catLabels = {
+    account: '계정/비밀번호',
+    finance: '금융/계좌',
+    apikey: 'API/시크릿',
+    doc: '보안 메모'
+  };
+
+  for (const item of filtered) {
+    const card = document.createElement('div');
+    card.className = 'vault-card';
+    card.innerHTML = `
+      <div class="vault-card-header">
+        <span>${catLabels[item.category] || '보안'}</span>
+        <button type="button" class="text-btn text-danger" data-del="${item.id}">삭제</button>
+      </div>
+      <h4 style="font-size:15px;">${escapeHtml(item.title)}</h4>
+      ${item.username ? `<div class="text-muted">ID/계좌: <strong>${escapeHtml(item.username)}</strong></div>` : ''}
+      ${
+        item.secret
+          ? `<div class="vault-secret-row">
+               <span class="secret-val" data-masked="1">••••••••••••</span>
+               <div style="display:flex;gap:6px;">
+                 <button type="button" class="text-btn btn-toggle-vis">보기</button>
+                 <button type="button" class="text-btn btn-copy-sec">복사</button>
+               </div>
+             </div>`
+          : ''
+      }
+      ${item.url ? `<div class="text-muted" style="font-size:12px;">${escapeHtml(item.url)}</div>` : ''}
+      ${item.notes ? `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);background:var(--bg-sidebar);padding:8px;border-radius:4px;">${escapeHtml(item.notes)}</pre>` : ''}
+    `;
+
+    const toggleBtn = card.querySelector('.btn-toggle-vis');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const span = card.querySelector('.secret-val');
+        const isMasked = span.dataset.masked === '1';
+        span.textContent = isMasked ? item.secret : '••••••••••••';
+        span.dataset.masked = isMasked ? '0' : '1';
+        toggleBtn.textContent = isMasked ? '숨김' : '보기';
+      });
+    }
+
+    const copyBtn = card.querySelector('.btn-copy-sec');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(item.secret);
+        showToast('복사되었습니다.');
+      });
+    }
+
+    card.querySelector('[data-del]').addEventListener('click', () => {
+      state.vaultItems = state.vaultItems.filter((v) => v.id !== item.id);
+      scheduleSave();
+      renderSecureVaultView();
+    });
+
+    grid.appendChild(card);
+  }
+}
+
+// ============================================================================
+// Knowledge Graph Canvas View
+// ============================================================================
+let graphNodePositions = [];
+let graphViewMode = 'local'; // 'local' (선택 문서 중심) | 'global' (전체 문서 보기)
+let graphCenterNoteId = null;
+
+const GENERIC_GRAPH_TAGS = new Set([
+  '클리핑',
+  '요약',
+  '웹스크랩',
+  '스크랩',
+  '메모',
+  '노트',
+  '가이드',
+  '일반',
+  '기타',
+  '뉴스',
+  '기사'
+]);
+
+function extractSignificantTitleKeywords(title = '') {
+  return (String(title || '').match(/[가-힣]{2,}|[A-Za-z0-9]{2,}/g) || [])
+    .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지)$/, ''))
+    .filter((w) => w.length >= 2 && !GENERIC_GRAPH_TAGS.has(w) && !KOREAN_STOPWORDS.has(w.toLowerCase()));
+}
+
+function getGraphEdgeInfo(noteA, noteB) {
+  if (!noteA || !noteB || noteA.id === noteB.id) return { connected: false };
+
+  const aTitle = (noteA.title || '').trim().toLowerCase();
+  const bTitle = (noteB.title || '').trim().toLowerCase();
+  const aLinks = new Set((noteA.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
+  const bLinks = new Set((noteB.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
+
+  if ((bTitle && aLinks.has(bTitle)) || (aTitle && bLinks.has(aTitle))) {
+    return { connected: true, type: 'wiki', label: '[[링크]]' };
+  }
+
+  const sharedTopicTags = (noteA.tags || []).filter(
+    (t) => !GENERIC_GRAPH_TAGS.has(t.trim()) && (noteB.tags || []).includes(t)
+  );
+  if (sharedTopicTags.length > 0) {
+    return { connected: true, type: 'tag', label: `#${sharedTopicTags[0]}` };
+  }
+
+  // Also check if two notes share a distinctive title keyword (e.g., two articles about the same person/topic)
+  const aKw = extractSignificantTitleKeywords(noteA.title);
+  const bKwSet = new Set(extractSignificantTitleKeywords(noteB.title));
+  const sharedTitleKw = aKw.filter((w) => bKwSet.has(w));
+  if (sharedTitleKw.length > 0) {
+    return { connected: true, type: 'keyword', label: `연관어: ${sharedTitleKw[0]}` };
+  }
+
+  return { connected: false };
+}
+
+function renderKnowledgeGraph() {
+  const canvas = document.getElementById('knowledge-graph-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const notes = state.notes.filter((n) => !n.trashed);
+  if (notes.length === 0) return;
+
+  // Ensure graphCenterNoteId points to a valid note (prefer activeNoteId)
+  if (!graphCenterNoteId || !notes.some((n) => n.id === graphCenterNoteId)) {
+    graphCenterNoteId = activeNoteId && notes.some((n) => n.id === activeNoteId) ? activeNoteId : notes[0].id;
+  }
+
+  // Update controls bar in #workspace-graph-view
+  const localBtn = document.getElementById('btn-graph-mode-local');
+  const globalBtn = document.getElementById('btn-graph-mode-global');
+  const centerSelect = document.getElementById('graph-center-note-select');
+  const subtitleEl = document.getElementById('graph-view-subtitle');
+
+  if (localBtn && globalBtn) {
+    localBtn.classList.toggle('active', graphViewMode === 'local');
+    globalBtn.classList.toggle('active', graphViewMode === 'global');
+  }
+  if (centerSelect) {
+    centerSelect.innerHTML = notes
+      .map(
+        (n) =>
+          `<option value="${n.id}" ${n.id === graphCenterNoteId ? 'selected' : ''}>기준 문서: ${escapeHtml((n.title || '제목 없음').slice(0, 32))}</option>`
+      )
+      .join('');
+  }
+
+  const isDark = state.settings.theme === 'dark';
+  const cx = w / 2;
+  const cy = h / 2;
+
+  if (graphViewMode === 'local') {
+    const centerNote = notes.find((n) => n.id === graphCenterNoteId) || notes[0];
+    const relatedEntries = [];
+    for (const other of notes) {
+      if (other.id === centerNote.id) continue;
+      const edge = getGraphEdgeInfo(centerNote, other);
+      if (edge.connected) {
+        relatedEntries.push({ note: other, edge });
+      }
+    }
+
+    if (subtitleEl) {
+      subtitleEl.textContent =
+        relatedEntries.length > 0
+          ? `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 직접 연관된 문서 ${relatedEntries.length}개만 표시 중입니다. (노드를 클릭하면 해당 문서가 바로 열립니다.)`
+          : `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 연관된 다른 문서가 없습니다.`;
+    }
+
+    const radius = Math.min(w, h) * 0.33;
+    graphNodePositions = [
+      {
+        note: centerNote,
+        x: cx,
+        y: cy,
+        r: 21,
+        isCenter: true
+      }
+    ];
+
+    relatedEntries.forEach((entry, i) => {
+      const angle = (2 * Math.PI * i) / relatedEntries.length - Math.PI / 2;
+      const nx = cx + radius * Math.cos(angle);
+      const ny = cy + radius * Math.sin(angle);
+      graphNodePositions.push({
+        note: entry.note,
+        x: nx,
+        y: ny,
+        r: 14,
+        isCenter: false,
+        edge: entry.edge
+      });
+    });
+
+    // Draw edges from centerNote to related notes ( plus any secondary edges between related notes )
+    for (let i = 1; i < graphNodePositions.length; i++) {
+      const relNode = graphNodePositions[i];
+      const edge = relNode.edge;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(relNode.x, relNode.y);
+      ctx.strokeStyle =
+        edge.type === 'wiki'
+          ? isDark ? 'rgba(255,255,255,0.75)' : 'rgba(20,20,20,0.7)'
+          : isDark ? 'rgba(210,210,210,0.45)' : 'rgba(70,70,70,0.4)';
+      ctx.lineWidth = edge.type === 'wiki' ? 2.4 : 1.5;
+      ctx.stroke();
+
+      const mx = (cx + relNode.x) / 2;
+      const my = (cy + relNode.y) / 2;
+      ctx.fillStyle = isDark ? 'rgba(225,225,225,0.85)' : 'rgba(70,70,70,0.88)';
+      ctx.font = '500 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(edge.label, mx, my - 6);
+    }
+
+    // Draw nodes
+    for (const node of graphNodePositions) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+      ctx.fillStyle = node.isCenter
+        ? isDark ? '#ffffff' : '#1f1f1f'
+        : isDark ? '#666666' : '#888888';
+      ctx.fill();
+
+      ctx.fillStyle = isDark ? '#f0f0f0' : '#1f1f1f';
+      ctx.font = node.isCenter ? '700 13.5px sans-serif' : '500 12px sans-serif';
+      ctx.textAlign = 'center';
+      const label = (node.note.title || '제목 없음').slice(0, 22);
+      ctx.fillText(node.isCenter ? `[기준] ${label}` : label, node.x, node.y + node.r + 18);
+    }
+
+    if (relatedEntries.length === 0) {
+      ctx.fillStyle = isDark ? 'rgba(180,180,180,0.8)' : 'rgba(110,110,110,0.85)';
+      ctx.font = '400 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        '이 문서와 연결된 연관 문서가 아직 없습니다. (본문에 [[문서 제목]]을 쓰거나 공통 #태그를 추가하면 연결됩니다)',
+        cx,
+        cy + 75
+      );
+    }
+    return;
+  }
+
+  // Global Mode ('global'): Show all documents
+  if (subtitleEl) {
+    subtitleEl.textContent =
+      '전체 문서의 연결 관계를 한눈에 보여줍니다. 특정 문서와 연관된 문서만 집중해서 보려면 우측 상단 [선택 문서 중심]을 누르세요.';
+  }
+
+  const radius = Math.min(w, h) * 0.34;
+  graphNodePositions = notes.map((n, i) => {
+    const angle = (2 * Math.PI * i) / notes.length - Math.PI / 2;
+    return {
+      note: n,
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+      r: n.id === graphCenterNoteId ? 18 : 13,
+      isCenter: n.id === graphCenterNoteId
+    };
+  });
+
+  for (let i = 0; i < graphNodePositions.length; i++) {
+    for (let j = i + 1; j < graphNodePositions.length; j++) {
+      const a = graphNodePositions[i];
+      const b = graphNodePositions[j];
+      const edge = getGraphEdgeInfo(a.note, b.note);
+
+      if (edge.connected) {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle =
+          edge.type === 'wiki'
+            ? isDark ? 'rgba(255,255,255,0.65)' : 'rgba(20,20,20,0.6)'
+            : isDark ? 'rgba(200,200,200,0.32)' : 'rgba(80,80,80,0.28)';
+        ctx.lineWidth = edge.type === 'wiki' ? 2.2 : 1.2;
+        ctx.stroke();
+
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        ctx.fillStyle = isDark ? 'rgba(210,210,210,0.75)' : 'rgba(90,90,90,0.8)';
+        ctx.font = '400 10.5px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(edge.label, mx, my - 4);
+      }
+    }
+  }
+
+  for (const node of graphNodePositions) {
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#1f1f1f') : (isDark ? '#555555' : '#999999');
+    ctx.fill();
+
+    ctx.fillStyle = isDark ? '#ebebeb' : '#1f1f1f';
+    ctx.font = '500 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText((node.note.title || '제목 없음').slice(0, 20), node.x, node.y + node.r + 16);
+  }
+}
+
+// ============================================================================
+// Smart Readability Web Clipper Engine
+// ============================================================================
+const ARTICLE_BODY_SELECTORS = [
+  '#dic_area',                   // 네이버 뉴스
+  '#newsct_article',             // 네이버 뉴스 (모바일/신형)
+  '#articeBody',                 // 네이버 연예/스포츠
+  '.newsct_body',
+  '.se-main-container',          // 네이버 블로그 SmartEditor ONE
+  '#postViewArea',               // 네이버 블로그 구형
+  '.se_component_wrap',
+  '.article_view',               // 다음(Daum) 뉴스 / 브런치
+  '.news_view',
+  '.wrap_body',                  // 브런치(Brunch)
+  '.tt_article_useless_p_margin',// 티스토리(Tistory)
+  '.contents_style',             // 티스토리 신형
+  '.area_view',
+  '.entry-content',              // 워드프레스 / 일반 블로그
+  '.post-content',
+  '.article-body',
+  '.article_body',
+  '.markdown-body',              // GitHub / 기술 문서
+  '#mw-content-text .mw-parser-output', // 위키백과
+  '[itemprop="articleBody"]',
+  'article',
+  'main',
+  '[role="main"]'
+];
+
+const NOISE_SELECTORS = [
+  'script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'form', 'button',
+  'nav', 'footer', 'header', 'aside',
+  '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]', '[role="complementary"]',
+  '.gnb', '.lnb', '.snb', '.sidebar', '.widget', '.breadcrumb',
+  '.comment', '.comments', '#comments', '.reply', '.replies',
+  '.ad', '.ads', '.advertisement', '.banner', '.sponsor',
+  '.share', '.social', '.sns', '.related', '.recommend', '.popular',
+  '.copyright', '.byline', '.reporter_area', '.journalistcard', '.media_end_linked'
+].join(', ');
+
+function findBestArticleContainer(doc) {
+  // 1. Try known high-precision article body selectors first
+  for (const sel of ARTICLE_BODY_SELECTORS) {
+    const el = doc.querySelector(sel);
+    if (el) {
+      const textLen = (el.textContent || '').replace(/\s+/g, ' ').trim().length;
+      if (textLen >= 80) return el;
+    }
+  }
+
+  // 2. Fallback: Readability Content-Density Scoring across candidate containers
+  const candidates = doc.querySelectorAll('article, main, section, div, td');
+  let bestNode = doc.body;
+  let bestScore = -1;
+
+  candidates.forEach((node) => {
+    const clsAndId = `${node.className || ''} ${node.id || ''}`.toLowerCase();
+    if (/(nav|menu|footer|header|sidebar|comment|reply|widget|banner|popup|modal|login|gnb|lnb)/.test(clsAndId)) {
+      return;
+    }
+
+    const totalText = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (totalText.length < 100) return;
+
+    // Calculate link density to reject menus / article lists
+    let linkTextLen = 0;
+    node.querySelectorAll('a').forEach((a) => {
+      linkTextLen += (a.textContent || '').trim().length;
+    });
+    const linkDensity = linkTextLen / Math.max(1, totalText.length);
+    if (linkDensity > 0.5) return;
+
+    // Count sentences (Korean '다.', '요.' and general periods/commas)
+    const sentenceMatches = totalText.match(/(다\.|요\.|죠\.|\.\s|,)/g);
+    const sentenceCount = sentenceMatches ? sentenceMatches.length : 0;
+
+    // Direct text / paragraph children bonus
+    const directParaCount = node.querySelectorAll(':scope > p, :scope > div, :scope > br').length;
+
+    const score =
+      (totalText.length * (1 - linkDensity)) +
+      (sentenceCount * 35) +
+      (directParaCount * 20);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestNode = node;
+    }
+  });
+
+  return bestNode || doc.body;
+}
+
+function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
+  const blocks = [];
+  if (sourceUrl) {
+    blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}` });
+  }
+  let extractedTitle = '';
+  const lines = mdText.split(/\r?\n/);
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('Title: ')) {
+      extractedTitle = line.slice(7).trim();
+      continue;
+    }
+    if (line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
+
+    if (line.startsWith('# ')) {
+      const t = line.slice(2).trim();
+      if (!extractedTitle) extractedTitle = t;
+      blocks.push({ id: uid('b'), type: 'h1', text: t });
+    } else if (line.startsWith('## ')) {
+      blocks.push({ id: uid('b'), type: 'h2', text: line.slice(3).trim() });
+    } else if (line.startsWith('### ') || line.startsWith('#### ')) {
+      blocks.push({ id: uid('b'), type: 'h3', text: line.replace(/^#+\s*/, '').trim() });
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      blocks.push({ id: uid('b'), type: 'bullet', text: line.slice(2).trim() });
+    } else if (line.startsWith('> ')) {
+      blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim() });
+    } else {
+      const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
+      if (imgMatch) {
+        blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
+      } else {
+        blocks.push({ id: uid('b'), type: 'p', text: line });
+      }
+    }
+  }
+  return { title: extractedTitle, blocks: blocks.slice(0, 200) };
+}
+
+function extractBestArticleTitle(doc) {
+  // 1. OpenGraph / Twitter meta title is the most reliable article headline on news & blogs
+  const ogTitle = (
+    doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+    doc.querySelector('meta[name="twitter:title"]')?.getAttribute('content') ||
+    ''
+  ).replace(/\s+/g, ' ').trim();
+
+  // 2. Specific article headline selectors evaluated in strict priority order (never matching header logos)
+  const headlineSelectors = [
+    '#title_area',
+    '.media_end_head_headline',
+    '.se-title-text',
+    '.tit_view',
+    '.article_headline',
+    '.news_title',
+    'article h1',
+    'main h1'
+  ];
+  let domHeadline = '';
+  for (const sel of headlineSelectors) {
+    const el = doc.querySelector(sel);
+    const txt = (el?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (txt.length >= 6) {
+      domHeadline = txt;
+      break;
+    }
+  }
+
+  // 3. Document <title> (cleaned of trailing " : 네이버 뉴스", " - TV조선" etc. if ogTitle is absent)
+  const docTitle = (doc.title || '').replace(/\s+/g, ' ').trim();
+
+  if (domHeadline && domHeadline.length >= ogTitle.length) return domHeadline;
+  if (ogTitle && ogTitle.length >= 4) return ogTitle;
+  if (domHeadline) return domHeadline;
+  if (docTitle) return docTitle;
+
+  // 4. Last resort: h1 outside header/nav
+  for (const h1 of doc.querySelectorAll('h1')) {
+    if (h1.closest('header, nav, .header, .gnb, .logo')) continue;
+    const txt = (h1.textContent || '').replace(/\s+/g, ' ').trim();
+    if (txt.length >= 6) return txt;
+  }
+  return '';
+}
+
+function parseHtmlToBlocks(htmlString, sourceUrl = '', readerMarkdown = '') {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlString, 'text/html');
+
+  const extractedTitle = extractBestArticleTitle(doc);
+
+  // Locate best article body container BEFORE stripping everything
+  const root = findBestArticleContainer(doc);
+
+  // Remove noise inside the chosen container
+  root.querySelectorAll(NOISE_SELECTORS).forEach((el) => el.remove());
+
+  // Convert <br> tags into newline markers so <div>문단1<br><br>문단2</div> splits cleanly
+  root.querySelectorAll('br').forEach((br) => {
+    br.replaceWith('\n');
+  });
+
+  const blocks = [];
+  if (sourceUrl) {
+    blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}` });
+  }
+
+  const seenTexts = new Set();
+  const pushCleanParagraphs = (rawText, type = 'p') => {
+    const parts = String(rawText || '')
+      .split(/\n+/)
+      .map((s) => s.replace(/[ \t]+/g, ' ').trim())
+      .filter((s) => s.length >= 2);
+
+    for (const part of parts) {
+      if (seenTexts.has(part)) continue;
+      seenTexts.add(part);
+      blocks.push({ id: uid('b'), type, text: part });
+    }
+  };
+
+  function walkNode(node) {
+    if (!node) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const txt = node.nodeValue.replace(/[ \t]+/g, ' ').trim();
+      if (txt.length >= 20) pushCleanParagraphs(txt, 'p');
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName.toLowerCase();
+
+    // Images
+    if (tag === 'img') {
+      const rawSrc =
+        node.getAttribute('data-src') ||
+        node.getAttribute('data-lazy-src') ||
+        node.getAttribute('data-original') ||
+        node.getAttribute('src') || '';
+      if (rawSrc && !rawSrc.startsWith('data:image/gif') && !rawSrc.includes('1x1')) {
+        try {
+          const absUrl = sourceUrl ? new URL(rawSrc, sourceUrl).toString() : rawSrc;
+          if (!seenTexts.has(absUrl)) {
+            seenTexts.add(absUrl);
+            blocks.push({
+              id: uid('b'),
+              type: 'image',
+              dataUrl: absUrl,
+              text: (node.getAttribute('alt') || '').trim()
+            });
+          }
+        } catch {}
+      }
+      return;
+    }
+
+    // Headings
+    if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4') {
+      const txt = (node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (txt.length >= 2) {
+        pushCleanParagraphs(txt, tag === 'h1' ? 'h1' : tag === 'h2' ? 'h2' : 'h3');
+      }
+      return;
+    }
+
+    // Code block
+    if (tag === 'pre') {
+      const txt = (node.textContent || '').trim();
+      if (txt) blocks.push({ id: uid('b'), type: 'code', text: txt });
+      return;
+    }
+
+    // Blockquote
+    if (tag === 'blockquote') {
+      const txt = (node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (txt) pushCleanParagraphs(txt, 'callout');
+      return;
+    }
+
+    // Table
+    if (tag === 'table') {
+      const rows = [];
+      node.querySelectorAll('tr').forEach((tr) => {
+        const rowCells = [];
+        tr.querySelectorAll('th, td').forEach((cell) => {
+          rowCells.push((cell.textContent || '').replace(/\s+/g, ' ').trim());
+        });
+        if (rowCells.some(Boolean)) rows.push(rowCells);
+      });
+      if (rows.length > 0) {
+        blocks.push({ id: uid('b'), type: 'table', rows: rows.slice(0, 30) });
+      }
+      return;
+    }
+
+    // List item
+    if (tag === 'li') {
+      const txt = (node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (txt.length >= 2) pushCleanParagraphs(txt, 'bullet');
+      return;
+    }
+
+    // Leaf-like Paragraph or Div/Section without nested block containers
+    const hasChildBlockElements = node.querySelector('p, div, section, article, ul, ol, table, pre, blockquote, h1, h2, h3, h4, img');
+    if (tag === 'p' || !hasChildBlockElements) {
+      // Check if it contains images first
+      node.querySelectorAll('img').forEach((img) => walkNode(img));
+      const txt = (node.textContent || '').trim();
+      if (txt.length >= 2) {
+        pushCleanParagraphs(txt, 'p');
+      }
+      return;
+    }
+
+    // Otherwise recurse into child nodes in exact DOM order
+    node.childNodes.forEach((child) => walkNode(child));
+  }
+
+  walkNode(root);
+
+  // If extracted blocks are too sparse and readerMarkdown fallback is available, use readerMarkdown
+  const bodyBlocksCount = blocks.filter((b) => b.type !== 'callout').length;
+  if (bodyBlocksCount < 2 && readerMarkdown && readerMarkdown.length > 100) {
+    return parseMarkdownToBlocks(readerMarkdown, sourceUrl);
+  }
+
+  // Final fallback: split root textContent by lines
+  if (bodyBlocksCount === 0) {
+    pushCleanParagraphs(root.textContent || doc.body?.textContent || '', 'p');
+  }
+
+  return { title: extractedTitle, blocks: blocks.slice(0, 200) };
+}
+
+/**
+ * Smart Extractive Summarizer & Keyword Organizer
+ * Extracts 3~5 key summary sentences and top keyword tags from parsed article blocks,
+ * and constructs a structured Notion-style summary + full content note.
+ */
+const KOREAN_STOPWORDS = new Set([
+  '있는', '있다', '있는지', '없는', '없다', '하는', '한다', '했다', '하고', '하여', '해서', '된다', '됐다',
+  '대한', '통해', '위해', '따른', '따라', '관련', '이번', '지난', '최근', '현재', '오늘', '내일', '올해',
+  '경우', '대해', '에서', '으로', '에게', '부터', '까지', '보다', '처럼', '만큼', '및', '등', '것', '수',
+  '그', '이', '저', '우리', '기자', '뉴스', '사진', '제공', '무단', '배포', '금지', '시간', '오전', '오후'
+]);
+
+function stripExistingSummaryBlocks(rawBlocks = []) {
+  const cleaned = [];
+  let skippingSummary = false;
+
+  for (let i = 0; i < rawBlocks.length; i++) {
+    const b = rawBlocks[i];
+    const txt = (b.text || '').trim();
+
+    if (!skippingSummary && (b.type === 'h1' || b.type === 'h2' || b.type === 'h3') && (txt === '핵심 요약' || txt === 'AI 핵심 요약')) {
+      skippingSummary = true;
+      continue;
+    }
+
+    if (skippingSummary) {
+      if (b.type === 'bullet' || (b.type === 'callout' && txt.startsWith('핵심 요지:'))) continue;
+      if (b.type === 'divider') {
+        const nextB = rawBlocks[i + 1];
+        if (nextB && (nextB.type === 'h2' || nextB.type === 'h3') && (nextB.text || '').trim() === '본문 내용') {
+          i += 1;
+        }
+        skippingSummary = false;
+        continue;
+      }
+      if ((b.type === 'h2' || b.type === 'h3') && txt === '본문 내용') {
+        skippingSummary = false;
+        continue;
+      }
+      skippingSummary = false;
+    }
+
+    cleaned.push(b);
+  }
+  return cleaned;
+}
+
+/**
+ * Checks if a note belongs to a Security Folder or is Encrypted.
+ * Security-folder notes and encrypted notes NEVER allow public AI summarization.
+ */
+function isNoteRestrictedFromPublicAI(note) {
+  if (!note) return true;
+  if (note.isEncrypted) return true;
+  if (activeNav === 'vault') return true;
+  const folder = state.folders.find((f) => f.id === note.folderId);
+  const folderName = (folder?.name || '').trim();
+  if (note.folderId === 'f_security' || /보안|금고|비밀|기밀|secret|private|vault/i.test(folderName)) {
+    return true;
+  }
+  if ((note.tags || []).some((t) => /보안|금고|비밀|기밀/i.test(t))) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Masks sensitive personal/credential information into [비공개_정보] ON-DEVICE
+ * before any text leaves the device for AI summarization.
+ */
+function maskSensitiveTextForAI(rawText = '') {
+  let maskCount = 0;
+  const countReplace = (str, regex, replacement = '[비공개_정보]') =>
+    str.replace(regex, () => {
+      maskCount += 1;
+      return replacement;
+    });
+
+  let text = String(rawText || '');
+  // 1. Resident Registration Number (주민등록번호)
+  text = countReplace(text, /\b\d{6}\s*[-~]\s*[1-4]\d{6}\b/g);
+  // 2. Credit Card / Long Account Numbers (카드번호 / 계좌번호 패턴)
+  text = countReplace(text, /\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b/g);
+  text = countReplace(text, /\b\d{3,6}-\d{2,6}-\d{4,7}\b/g);
+  // 3. Phone Numbers (휴대폰 및 일반 전화번호)
+  text = countReplace(text, /\b01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}\b/g);
+  text = countReplace(text, /\b0\d{1,2}[-\s.]\d{3,4}[-\s.]\d{4}\b/g);
+  // 4. Email Addresses (이메일 주소)
+  text = countReplace(text, /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g);
+  // 5. Explicit Passwords / API Keys / Pins (비밀번호, 패스워드, 시크릿 키, 계좌, 카드 등 키워드 뒤의 값)
+  text = countReplace(
+    text,
+    /((?:비밀번호|패스워드|암호|핀번호|계좌번호|카드번호|시크릿|토큰|password|passwd|pwd|secret|api[_\s-]?key|token)\s*[:=：]\s*)([^\s,\n]+)/gi,
+    '$1[비공개_정보]'
+  );
+
+  return { maskedText: text, maskCount };
+}
+
+function prepareSafeNotePayloadForAI(title = '', blocks = []) {
+  let totalMasked = 0;
+  const titleRes = maskSensitiveTextForAI(title);
+  totalMasked += titleRes.maskCount;
+
+  const lines = [];
+  for (const b of blocks) {
+    // Completely exclude 'secret' blocks from external transmission
+    if (b.type === 'secret') {
+      totalMasked += 1;
+      continue;
+    }
+    if (b.type === 'image' || b.type === 'divider') continue;
+    if (b.type === 'callout' && (b.text || '').startsWith('출처:')) continue;
+
+    const raw = b.type === 'toggle' ? `${b.text || ''}\n${b.details || ''}` : (b.text || '');
+    if (!raw.trim()) continue;
+    const res = maskSensitiveTextForAI(raw);
+    totalMasked += res.maskCount;
+    const prefix = b.type === 'h1' || b.type === 'h2' || b.type === 'h3' ? '[소제목] ' : b.type === 'todo' ? '[할일] ' : '';
+    lines.push(`${prefix}${res.maskedText.trim()}`);
+  }
+
+  return {
+    safeTitle: titleRes.maskedText,
+    safeBody: lines.join('\n'),
+    totalMasked
+  };
+}
+
+/**
+ * Upgraded 4-Rule Offline Extractive Summarizer (100% On-Device, Zero External Transmission)
+ * 1) Filters out short/incomplete fragment lines and boilerplate
+ * 2) Divides document into 3 zones (Intro / Body / Conclusion) to prevent top-only clustering
+ * 3) Boosts sentences with Korean discourse/conclusion markers ("따라서", "핵심은", "결론적으로", etc.)
+ * 4) Aggregates subheadings (h1/h2/h3) and action items (todo) into a structured summary
+ */
+function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
+  const strippedBlocks = stripExistingSummaryBlocks(rawBlocks);
+  const bodyBlocks = strippedBlocks.filter(
+    (b) => !(b.type === 'callout' && (b.text || '').startsWith('출처:'))
+  );
+
+  // Extract subheadings & todo action items for structural summary (Rule 4)
+  const subheadings = [];
+  const actionTodos = [];
+  bodyBlocks.forEach((b) => {
+    const txt = (b.text || '').replace(/\s+/g, ' ').trim();
+    if (!txt) return;
+    if ((b.type === 'h1' || b.type === 'h2' || b.type === 'h3') && txt.length >= 2 && txt.length <= 50) {
+      if (!subheadings.includes(txt)) subheadings.push(txt);
+    } else if (b.type === 'todo' && !b.checked && txt.length >= 2) {
+      if (actionTodos.length < 2) actionTodos.push(txt);
+    }
+  });
+
+  // Collect candidate sentences in original article/note order (Rule 1)
+  const collectCandidates = (minLen) => {
+    const list = [];
+    const seen = new Set();
+    bodyBlocks.forEach((b) => {
+      if (b.type === 'image' || b.type === 'divider' || b.type === 'code' || b.type === 'table') return;
+      const combinedText = b.type === 'toggle'
+        ? `${b.text || ''}\n${b.details || ''}`
+        : (b.text || '');
+      const lines = combinedText.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+      for (const line of lines) {
+        if ((b.type === 'h1' || b.type === 'h2' || b.type === 'h3') && line.length < 28 && minLen >= 10) continue;
+        const parts = line
+          .split(/(?<=[다요죠음함됨임]\.)\s*|(?<=[.!?])\s+/)
+          .map((s) => s.replace(/^[•\-*]\s*/, '').trim())
+          .filter(Boolean);
+
+        for (let s of parts) {
+          if (s.length < minLen) continue;
+          if (s.length > 240) s = `${s.slice(0, 220).trim()}...`;
+          if (/(무단\s*전재|재배포|금지|기자\s*=|특파원|copyright|ⓒ|제보|구독|좋아요|클릭|사진\s*=|출처\s*:)/i.test(s)) continue;
+          if (seen.has(s)) continue;
+          seen.add(s);
+          list.push(s);
+        }
+      }
+    });
+    return list;
+  };
+
+  // Rule 1: Require complete sentences (>= 22 chars) first, fallback if note is short
+  let candidateSentences = collectCandidates(22);
+  if (candidateSentences.length < 3) {
+    candidateSentences = collectCandidates(10);
+  }
+  if (candidateSentences.length === 0) {
+    candidateSentences = collectCandidates(2);
+  }
+
+  // Tokenize words for frequency & keyword extraction
+  const tokenize = (str) =>
+    (String(str || '').match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
+      .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
+      .filter((w) => w.length >= 2 && !KOREAN_STOPWORDS.has(w.toLowerCase()));
+
+  const wordFreq = new Map();
+  const titleWords = new Set(tokenize(title));
+  const headingWords = new Set(subheadings.flatMap((h) => tokenize(h)));
+
+  for (const tw of titleWords) {
+    wordFreq.set(tw, (wordFreq.get(tw) || 0) + 4);
+  }
+  for (const hw of headingWords) {
+    wordFreq.set(hw, (wordFreq.get(hw) || 0) + 2.5);
+  }
+  for (const s of candidateSentences) {
+    for (const w of tokenize(s)) {
+      wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
+    }
+  }
+
+  // Top 3 automatic keyword tags
+  const autoTags = [...wordFreq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([w]) => w)
+    .filter((w) => w.length >= 2 && w.length <= 12)
+    .slice(0, 3);
+
+  // Rule 3: Korean Discourse & Conclusion Marker Bonus
+  const CONCLUSION_MARKER_REGEX = /(핵심은|중요한\s*것은|중요한\s*점은|결론적으로|따라서|요약하면|정리하면|결국|즉\s|,?\s*특히|무엇보다|주목할|밝혔다|발표했다|나타났다|확인됐다|결정했다|전망이다|예정이다|계획이다|필요하다|해야\s*한다)/;
+  const COMPLETE_ENDING_REGEX = /(다\.|요\.|음\.|함\.|됨\.|임\.|니다\.)$/;
+
+  const totalSentCount = candidateSentences.length;
+
+  const scored = candidateSentences.map((sent, idx) => {
+    const words = tokenize(sent);
+    const uniqueWords = new Set(words);
+    let kwScore = 0;
+    let titleOverlap = 0;
+    for (const w of uniqueWords) {
+      kwScore += wordFreq.get(w) || 0;
+      if (titleWords.has(w)) titleOverlap += 1;
+    }
+    const normKwScore = kwScore / Math.max(3.5, Math.sqrt(uniqueWords.size) * 2.2);
+    const discourseBonus = CONCLUSION_MARKER_REGEX.test(sent) ? 1.42 : 1.0;
+    const endingBonus = COMPLETE_ENDING_REGEX.test(sent) ? 1.18 : 0.92;
+    const lengthSweetSpot = sent.length >= 30 && sent.length <= 145 ? 1.15 : 1.0;
+    const numericBonus = /\d+(%|명|원|억|만|조|년|월|일|배|건|개|시간|분)/.test(sent) ? 1.15 : 1.0;
+
+    // Determine Zone: 0 = Intro (first 25%), 1 = Body (middle 50%), 2 = Conclusion (last 25%)
+    const ratio = totalSentCount <= 1 ? 0 : idx / (totalSentCount - 1);
+    const zone = ratio < 0.28 ? 0 : ratio > 0.72 ? 2 : 1;
+
+    return {
+      sent,
+      idx,
+      zone,
+      words: uniqueWords,
+      score: (normKwScore + titleOverlap * 3.2) * discourseBonus * endingBonus * lengthSweetSpot * numericBonus
+    };
+  });
+
+  // Rule 2: Zone-Balanced Selection (Intro + Body + Conclusion) with Redundancy Filtering
+  const selectedItems = [];
+  const isTooSimilar = (cand) => {
+    for (const picked of selectedItems) {
+      let overlap = 0;
+      for (const w of cand.words) {
+        if (picked.words.has(w)) overlap += 1;
+      }
+      const sim = overlap / Math.max(1, Math.min(cand.words.size, picked.words.size));
+      if (sim >= 0.65) return true;
+    }
+    return false;
+  };
+
+  if (totalSentCount >= 5) {
+    // Pick top 1 from Intro (zone 0), top 1~2 from Body (zone 1), top 1 from Conclusion (zone 2)
+    for (const targetZone of [0, 1, 2]) {
+      const zoneBest = scored
+        .filter((it) => it.zone === targetZone)
+        .sort((a, b) => b.score - a.score);
+      for (const cand of zoneBest) {
+        if (!isTooSimilar(cand)) {
+          selectedItems.push(cand);
+          break;
+        }
+      }
+    }
+  }
+
+  // Fill remaining slots up to 4 sentences from highest overall score without redundancy
+  const targetSummaryCount = Math.min(4, Math.max(1, totalSentCount));
+  for (const cand of [...scored].sort((a, b) => b.score - a.score)) {
+    if (selectedItems.length >= targetSummaryCount) break;
+    if (!selectedItems.some((p) => p.idx === cand.idx) && !isTooSimilar(cand)) {
+      selectedItems.push(cand);
+    }
+  }
+
+  // Sort chosen sentences back into natural reading order
+  selectedItems.sort((a, b) => a.idx - b.idx);
+
+  // Pick single highest-scoring sentence as 1-line Core Conclusion
+  const topOneLine = [...selectedItems].sort((a, b) => b.score - a.score)[0]?.sent || '';
+
+  const summaryBullets = [];
+  if (subheadings.length >= 2) {
+    summaryBullets.push(`주요 구성: ${subheadings.slice(0, 5).join(' · ')}`);
+  }
+  for (const item of selectedItems) {
+    summaryBullets.push(item.sent);
+  }
+  for (const todoTxt of actionTodos) {
+    summaryBullets.push(`주요 할 일: ${todoTxt}`);
+  }
+
+  const structuredBlocks = [];
+  if (sourceUrl) {
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'callout',
+      text: `출처: ${sourceUrl}`
+    });
+  }
+
+  if (summaryBullets.length > 0) {
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'h2',
+      text: '핵심 요약'
+    });
+    if (topOneLine && summaryBullets.length >= 2) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'callout',
+        text: `핵심 요지: ${topOneLine}`
+      });
+    }
+    for (const sumLine of summaryBullets) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'bullet',
+        text: sumLine
+      });
+    }
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'divider',
+      text: ''
+    });
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'h2',
+      text: '본문 내용'
+    });
+  }
+
+  structuredBlocks.push(...bodyBlocks);
+
+  return {
+    blocks: structuredBlocks.slice(0, 220),
+    summaryCount: summaryBullets.length,
+    autoTags
+  };
+}
+
+/**
+ * High-Quality Abstractive Summarizer using Google Gemini API (with Automatic Sensitive-Data Masking)
+ */
+async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '', isUserNote = false) {
+  const apiKey = (state.settings.geminiApiKey || '').trim();
+  if (!apiKey) {
+    throw new Error('NO_API_KEY');
+  }
+
+  const strippedBlocks = stripExistingSummaryBlocks(rawBlocks);
+  const bodyBlocks = strippedBlocks.filter(
+    (b) => !(b.type === 'callout' && (b.text || '').startsWith('출처:'))
+  );
+
+  // Always mask sensitive info on-device before building prompt
+  const { safeTitle, safeBody, totalMasked } = prepareSafeNotePayloadForAI(title, bodyBlocks);
+  if (safeBody.length < 10) {
+    throw new Error('TOO_SHORT');
+  }
+
+  const promptText = [
+    '당신은 전문 문서 요약 정리 도우미입니다. 아래 문서의 전체 맥락(서론·본론·결론)을 파악하여 한국어로 명확하게 핵심만 요약해주세요.',
+    '반드시 아래 JSON 형식으로만 응답하세요:',
+    '{"oneLine":"문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)","bullets":["핵심 요점 1 (완결된 문장)","핵심 요점 2 (완결된 문장)","핵심 요점 3 (완결된 문장)","핵심 요점 4 (필요시)"],"tags":["키워드1","키워드2","키워드3"]}',
+    '',
+    `문서 제목: ${safeTitle || '제목 없음'}`,
+    '문서 본문:',
+    safeBody.slice(0, 12000)
+  ].join('\n');
+
+  // Use fast low-latency Gemini Flash-Lite models (~1.0s response time) with a strict 6-second timeout per model
+  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+  let parsedJson = null;
+  let lastErr = null;
+
+  for (const model of models) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6500);
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: 'application/json'
+          }
+        })
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        lastErr = new Error(`HTTP_${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const rawReply = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsedJson = JSON.parse(jsonMatch[0]);
+        break;
+      }
+    } catch (err) {
+      clearTimeout(timer);
+      lastErr = err;
+    }
+  }
+
+  if (!parsedJson || (!parsedJson.oneLine && !Array.isArray(parsedJson.bullets))) {
+    throw lastErr || new Error('AI_PARSE_FAILED');
+  }
+
+  const oneLine = String(parsedJson.oneLine || '').trim();
+  const bullets = Array.isArray(parsedJson.bullets)
+    ? parsedJson.bullets.map((s) => String(s || '').trim()).filter(Boolean).slice(0, 5)
+    : [];
+  const autoTags = Array.isArray(parsedJson.tags)
+    ? parsedJson.tags.map((t) => String(t || '').replace(/^#/, '').trim()).filter(Boolean).slice(0, 3)
+    : [];
+
+  const structuredBlocks = [];
+  if (sourceUrl) {
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'callout',
+      text: `출처: ${sourceUrl}`
+    });
+  }
+
+  structuredBlocks.push({
+    id: uid('b'),
+    type: 'h2',
+    text: '핵심 요약'
+  });
+
+  if (oneLine) {
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'callout',
+      text: `핵심 요지: ${oneLine}`
+    });
+  }
+
+  for (const line of bullets) {
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'bullet',
+      text: line
+    });
+  }
+
+  structuredBlocks.push({
+    id: uid('b'),
+    type: 'divider',
+    text: ''
+  });
+  structuredBlocks.push({
+    id: uid('b'),
+    type: 'h2',
+    text: '본문 내용'
+  });
+  structuredBlocks.push(...bodyBlocks);
+
+  return {
+    blocks: structuredBlocks.slice(0, 220),
+    summaryCount: bullets.length + (oneLine ? 1 : 0),
+    autoTags,
+    totalMasked,
+    usedAI: true
+  };
+}
+
+async function clipAndSummarizeUrl(rawUrl, options = {}) {
+  const { summarize = true, openEditor = false, targetFolderId = null } = options;
+  const url = String(rawUrl || '').trim();
+  if (!/^https?:\/\/\S+/i.test(url)) {
+    showToast('유효한 웹 주소(http:// 또는 https://)를 입력해주세요.');
+    return null;
+  }
+
+  showToast(summarize ? '웹페이지 핵심 내용을 요약 정리 중...' : '웹페이지 본문 추출 중...');
+
+  try {
+    let html = '';
+    let readerMarkdown = '';
+    let finalUrl = url;
+
+    const localRes = await fetch(`/api/clip?url=${encodeURIComponent(url)}`).catch(() => null);
+    if (localRes && localRes.ok) {
+      const data = await localRes.json();
+      if (data.ok) {
+        html = data.html || '';
+        readerMarkdown = data.readerMarkdown || '';
+        finalUrl = data.finalUrl || url;
+      }
+    }
+    if (!html && !readerMarkdown) {
+      const jinaRes = await fetch(`https://r.jina.ai/${url}`).catch(() => null);
+      if (jinaRes && jinaRes.ok) {
+        readerMarkdown = await jinaRes.text();
+      } else {
+        const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+        html = await proxyRes.text();
+      }
+    }
+
+    const parsed = html
+      ? parseHtmlToBlocks(html, finalUrl, readerMarkdown)
+      : parseMarkdownToBlocks(readerMarkdown, finalUrl);
+
+    const noteTitle = parsed.title || new URL(finalUrl).hostname;
+    let finalBlocks = parsed.blocks;
+    let tags = ['클리핑'];
+
+    // Step 1: Immediately generate fast local summary so the note is created & displayed right away (< 1s)
+    if (summarize) {
+      const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
+      finalBlocks = localSum.blocks;
+      tags = ['요약', '클리핑', ...localSum.autoTags.filter((t) => t !== '요약' && t !== '클리핑')];
+    }
+
+    const folderId =
+      targetFolderId ||
+      (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
+
+    const now = new Date().toISOString();
+    const newNote = {
+      id: uid('note'),
+      title: noteTitle,
+      folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
+      docType: 'clip',
+      status: 'todo',
+      priority: 'normal',
+      favorite: activeNav === 'favorites',
+      trashed: false,
+      isEncrypted: false,
+      tags,
+      createdAt: now,
+      updatedAt: now,
+      blocks: finalBlocks
+    };
+
+    state.notes.unshift(newNote);
+    activeNoteId = newNote.id;
+    scheduleSave();
+
+    if (openEditor) {
+      openNoteInEditor(newNote.id);
+    } else {
+      renderAll();
+    }
+
+    showToast(
+      summarize
+        ? `핵심 요약 노트가 생성되었습니다: ${noteTitle.slice(0, 28)}`
+        : `본문 클리핑 완료: ${noteTitle.slice(0, 28)}`
+    );
+
+    // Step 2: If Gemini API Key is configured, upgrade the summary in place with AI (~1s) without blocking note creation
+    if (summarize && (state.settings.geminiApiKey || '').trim()) {
+      summarizeWithGeminiAI(noteTitle, parsed.blocks, finalUrl, false)
+        .then((aiSum) => {
+          if (aiSum && aiSum.blocks && !newNote.trashed && !newNote.isEncrypted) {
+            newNote.blocks = aiSum.blocks;
+            for (const kw of aiSum.autoTags || []) {
+              if (!newNote.tags.includes(kw)) newNote.tags.push(kw);
+            }
+            newNote.updatedAt = new Date().toISOString();
+            scheduleSave();
+            renderAll();
+            showToast(`AI 고품질 핵심 요약이 반영되었습니다: ${noteTitle.slice(0, 24)}`);
+          }
+        })
+        .catch(() => {});
+    }
+
+    return newNote;
+  } catch {
+    showToast('URL 추출 실패: 웹 클리퍼의 복사 붙여넣기 영역을 이용해주세요.');
+    return null;
+  }
+}
+
+function setupBookmarklet() {
+  const link = document.getElementById('bookmarklet-link');
+  if (!link) return;
+  const origin = window.location.origin + window.location.pathname;
+  link.href = `javascript:(function(){var s=encodeURIComponent((window.getSelection&&window.getSelection().toString())||'');var u=encodeURIComponent(location.href);window.open('${origin}?clip_url='+u+'&clip_sel='+s,'_blank');})();`;
+
+  // Prevent clicking the bookmarklet inside VaultNote itself from clipping VaultNote's own UI
+  link.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const urlInput = document.getElementById('clipper-url-input');
+    if (urlInput && /^https?:\/\/\S+/i.test(urlInput.value.trim())) {
+      const targetUrl = urlInput.value.trim();
+      urlInput.value = '';
+      await clipAndSummarizeUrl(targetUrl, { summarize: true, openEditor: true });
+      return;
+    }
+    try {
+      const clipText = (await navigator.clipboard.readText())?.trim() || '';
+      if (/^https?:\/\/\S+$/i.test(clipText) && !clipText.startsWith(window.location.origin)) {
+        await clipAndSummarizeUrl(clipText, { summarize: true, openEditor: true });
+        return;
+      }
+    } catch {}
+    showToast('이 버튼은 마우스로 끌어서 브라우저 상단 북마크바(즐겨찾기 모음)에 등록해 두고, 외부 웹페이지를 볼 때 누르는 버튼입니다.', 3800);
+  });
+}
+
+async function checkIncomingWebClipParams() {
+  const params = new URLSearchParams(window.location.search);
+  const clipUrl = (params.get('clip_url') || '').trim();
+  const clipSel = (params.get('clip_sel') || params.get('clip_text') || '').trim();
+  const clipTitle = (params.get('clip_title') || '').trim();
+
+  if (!clipUrl && !clipSel && !clipTitle) return;
+  window.history.replaceState({}, document.title, window.location.pathname);
+
+  // Never clip VaultNote's own URL
+  if (clipUrl && clipUrl.startsWith(window.location.origin)) {
+    return;
+  }
+
+  // If a valid external URL was sent by the bookmarklet, use our full Readability + Summarizer engine
+  if (clipUrl && /^https?:\/\/\S+/i.test(clipUrl)) {
+    const createdNote = await clipAndSummarizeUrl(clipUrl, { summarize: true, openEditor: true });
+    if (createdNote && clipSel) {
+      createdNote.blocks.splice(1, 0, {
+        id: uid('b'),
+        type: 'callout',
+        text: `선택한 문구: ${clipSel}`
+      });
+      scheduleSave();
+      renderAll(true);
+    }
+    return;
+  }
+
+  if (clipTitle || clipSel) {
+    const now = new Date().toISOString();
+    const lines = clipSel.split('\n').map((l) => l.trim()).filter(Boolean);
+    const blocks = lines.map((line) => ({ id: uid('b'), type: 'p', text: line }));
+    if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+
+    const newNote = {
+      id: uid('note'),
+      title: clipTitle || '웹 클리핑',
+      folderId: 'f_clip',
+      docType: 'clip',
+      status: 'todo',
+      priority: 'normal',
+      favorite: false,
+      trashed: false,
+      isEncrypted: false,
+      tags: ['클리핑'],
+      createdAt: now,
+      updatedAt: now,
+      blocks
+    };
+    state.notes.unshift(newNote);
+    activeNoteId = newNote.id;
+    activeViewMode = 'editor';
+    scheduleSave();
+    renderAll(true);
+    showToast('웹페이지가 클리핑되었습니다.');
+  }
+}
+
+// ============================================================================
+// Workspace View Router
+// ============================================================================
+function renderWorkspaceView() {
+  const listView = document.getElementById('workspace-list-view');
+  const editorArea = document.getElementById('workspace-editor-area');
+  const tableView = document.getElementById('workspace-table-view');
+  const kanbanView = document.getElementById('workspace-kanban-view');
+  const vaultView = document.getElementById('workspace-vault-view');
+  const graphView = document.getElementById('workspace-graph-view');
+  const clipperView = document.getElementById('workspace-clipper-view');
+
+  [listView, editorArea, tableView, kanbanView, vaultView, graphView, clipperView].forEach((el) =>
+    el?.classList.add('hidden')
+  );
+
+  document.querySelectorAll('.view-Segment .seg-btn').forEach((btn) => {
+    const isSpecialNav = ['vault', 'graph', 'clipper'].includes(activeNav);
+    btn.classList.toggle('active', !isSpecialNav && btn.dataset.viewmode === activeViewMode);
+  });
+
+  if (activeNav === 'vault') {
+    document.getElementById('active-note-breadcrumb').textContent = '보안 금고';
+    vaultView.classList.remove('hidden');
+    renderSecureVaultView();
+    return;
+  }
+  if (activeNav === 'graph') {
+    document.getElementById('active-note-breadcrumb').textContent = '연결 그래프';
+    graphView.classList.remove('hidden');
+    renderKnowledgeGraph();
+    return;
+  }
+  if (activeNav === 'clipper') {
+    document.getElementById('active-note-breadcrumb').textContent = '웹 클리퍼';
+    clipperView.classList.remove('hidden');
+    return;
+  }
+
+  if (activeViewMode === 'list') {
+    listView.classList.remove('hidden');
+    renderMainNoteListView();
+  } else if (activeViewMode === 'table') {
+    tableView.classList.remove('hidden');
+    renderTableView();
+  } else if (activeViewMode === 'kanban') {
+    kanbanView.classList.remove('hidden');
+    renderKanbanView();
+  } else {
+    editorArea.classList.remove('hidden');
+    renderActiveNoteEditor();
+    renderSecondarySplitPane();
+  }
+}
+
+let lastHistoryKey = '';
+let isHistoryInitialized = false;
+
+function getNavStateSnapshot() {
+  return {
+    vn: true,
+    activeNav,
+    activeViewMode,
+    activeNoteId,
+    secondaryNoteId
+  };
+}
+
+function getNavStateKey(snap) {
+  return `${snap.activeNav}|${snap.activeViewMode}|${snap.activeNoteId || ''}|${snap.secondaryNoteId || ''}`;
+}
+
+function initNavigationHistory() {
+  if (isHistoryInitialized) return;
+  isHistoryInitialized = true;
+  // Base guard state (Note List View) so pressing Back from the initial note goes to the list instead of leaving the app
+  const baseState = {
+    vn: true,
+    vnRootGuard: true,
+    activeNav: 'all',
+    activeViewMode: 'list',
+    activeNoteId,
+    secondaryNoteId
+  };
+  window.history.replaceState(baseState, '');
+  const currentSnap = getNavStateSnapshot();
+  lastHistoryKey = getNavStateKey(currentSnap);
+  window.history.pushState(currentSnap, '');
+}
+
+function syncNavigationHistory(fromPopState = false) {
+  if (!isHistoryInitialized) return;
+  const snap = getNavStateSnapshot();
+  const key = getNavStateKey(snap);
+  if (fromPopState) {
+    lastHistoryKey = key;
+    return;
+  }
+  if (key !== lastHistoryKey) {
+    lastHistoryKey = key;
+    window.history.pushState(snap, '');
+  }
+}
+
+function renderAll(fromPopState = false) {
+  document.documentElement.setAttribute('data-theme', state.settings.theme || 'light');
+  document.getElementById('editor-inner-wrap')?.classList.toggle('full-width', Boolean(state.settings.fullWidth));
+  document.getElementById('sidebar')?.classList.toggle('collapsed', Boolean(state.settings.sidebarCollapsed));
+  syncNavigationHistory(fromPopState);
+  renderSidebar();
+  renderWorkspaceView();
+}
+
+// ============================================================================
+// Initialization & Event Binding
+// ============================================================================
+async function initApp() {
+  const saved = await VaultStorage.loadState();
+  if (saved && Array.isArray(saved.notes)) {
+    state = {
+      ...createInitialState(),
+      ...saved,
+      settings: { ...createInitialState().settings, ...(saved.settings || {}) }
+    };
+    state.folders.forEach((f) => {
+      delete f.icon;
+      f.name = stripLeadingEmojis(f.name);
+    });
+    if (!state.folders.some((f) => f.id === 'f_security' || /보안/.test(f.name))) {
+      state.folders.push({ id: 'f_security', name: '보안 폴더' });
+    }
+    state.notes.forEach((n) => {
+      n.title = stripLeadingEmojis(n.title);
+    });
+  } else {
+    await VaultStorage.saveState(state);
+  }
+
+  activeNoteId = state.notes.find((n) => !n.trashed)?.id || null;
+  document.getElementById('scratchpad-textarea').value = state.scratchpad || '';
+  const geminiKeyEl = document.getElementById('gemini-api-key-input');
+  if (geminiKeyEl) geminiKeyEl.value = state.settings.geminiApiKey || '';
+  const onedriveTokenEl = document.getElementById('onedrive-token-input');
+  if (onedriveTokenEl) onedriveTokenEl.value = state.settings.onedriveToken || '';
+  const gdriveTokenEl = document.getElementById('gdrive-token-input');
+  if (gdriveTokenEl) gdriveTokenEl.value = state.settings.gdriveToken || '';
+
+  if (state.settings.appLockVerifier) {
+    document.getElementById('app-lock-overlay').classList.remove('hidden');
+  }
+
+  checkIncomingWebClipParams();
+  setupBookmarklet();
+  initNavigationHistory();
+  bindEvents();
+  renderAll(true);
+  resetIdleTimer();
+
+  const folders = await VaultStorage.detectPCCloudFolders();
+  const sel = document.getElementById('detected-cloud-folders');
+  if (sel && folders.length > 0) {
+    sel.innerHTML =
+      `<option value="">감지된 PC 클라우드 폴더 선택...</option>` +
+      folders.map((f) => `<option value="${escapeHtml(f.vaultDir)}">${escapeHtml(f.name)} (${escapeHtml(f.vaultDir)})</option>`).join('');
+    if (!state.settings.pcVaultDir && folders[0]) {
+      state.settings.pcVaultDir = folders[0].vaultDir;
+    }
+  }
+  document.getElementById('custom-vault-dir-input').value = state.settings.pcVaultDir || '';
+  document.getElementById('chk-auto-pc-sync').checked = Boolean(state.settings.autoPcSync);
+
+  // Display LAN URL for Smartphone Web App access & initialize Zero-Click Live Sync
+  fetch('/api/cloud-folders')
+    .then((r) => r.json())
+    .then((d) => {
+      const box = document.getElementById('mobile-lan-url-box');
+      if (box && d && Array.isArray(d.lanUrls) && d.lanUrls.length > 0) {
+        box.innerHTML = `내 스마트폰 접속 주소 (동일 공유기/와이파이): <span style="user-select:all;text-decoration:underline;">${escapeHtml(d.lanUrls[0])}</span>`;
+      } else if (box) {
+        box.textContent = `접속 주소: ${window.location.origin}`;
+      }
+    })
+    .catch(() => {});
+
+  await pullLiveSyncStateIfNewer(true);
+
+  window.addEventListener('focus', () => {
+    pullLiveSyncStateIfNewer(false);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      pullLiveSyncStateIfNewer(false);
+    }
+  });
+  setInterval(() => {
+    const activeEl = document.activeElement;
+    const isTyping =
+      activeEl &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+    if (!isTyping && document.visibilityState === 'visible') {
+      pullLiveSyncStateIfNewer(false);
+    }
+  }, 4000);
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+function bindEvents() {
+  ['mousemove', 'keydown', 'click', 'touchstart'].forEach((ev) => {
+    window.addEventListener(ev, resetIdleTimer, { passive: true });
+  });
+
+  // Global Shortcuts
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openSearchModal();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+      e.preventDefault();
+      toggleSidebar();
+    } else if (e.altKey && e.key.toLowerCase() === 'n') {
+      e.preventDefault();
+      createNewNote();
+    } else if (e.altKey && e.key.toLowerCase() === 'q') {
+      e.preventDefault();
+      document.getElementById('scratchpad-drawer').classList.toggle('hidden');
+    } else if (e.altKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      lockEverything('화면이 잠금 상태로 전환되었습니다.', true);
+    } else if (e.key === 'Escape') {
+      closeSlashMenu();
+      document.getElementById('search-modal').classList.add('hidden');
+    }
+  });
+
+  window.addEventListener('click', (e) => {
+    if (!e.target.closest('#slash-menu') && !e.target.closest('.block-plus-btn')) {
+      closeSlashMenu();
+    }
+  });
+
+  // Browser Back / Forward Navigation (popstate) — stay inside VaultNote and return to previous view/note
+  window.addEventListener('popstate', (e) => {
+    // Close any open modal or slash menu first
+    closeSlashMenu();
+    const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
+    if (openModals.length > 0) {
+      openModals.forEach((m) => m.classList.add('hidden'));
+    }
+
+    const st = e.state;
+    if (st && st.vn) {
+      activeNav = st.activeNav || 'all';
+      activeViewMode = st.activeViewMode || 'list';
+      if (st.activeNoteId && state.notes.some((n) => n.id === st.activeNoteId)) {
+        activeNoteId = st.activeNoteId;
+      }
+      secondaryNoteId = st.secondaryNoteId || null;
+
+      // If the user backed all the way to the root guard entry, re-push a guard so another Back press won't exit the app
+      if (st.vnRootGuard) {
+        const snap = getNavStateSnapshot();
+        lastHistoryKey = getNavStateKey(snap);
+        window.history.pushState(snap, '');
+      }
+      renderAll(true);
+    } else {
+      // Fallback: go to list view instead of leaving the app
+      activeNav = 'all';
+      activeViewMode = 'list';
+      const snap = getNavStateSnapshot();
+      lastHistoryKey = getNavStateKey(snap);
+      window.history.pushState(snap, '');
+      renderAll(true);
+    }
+  });
+
+  // Topbar Back / Forward Buttons
+  document.getElementById('btn-nav-back')?.addEventListener('click', () => {
+    window.history.back();
+  });
+  document.getElementById('btn-nav-forward')?.addEventListener('click', () => {
+    window.history.forward();
+  });
+
+  // Toggle Sidebar, List View, Editor Width
+  document.getElementById('btn-toggle-sidebar').addEventListener('click', toggleSidebar);
+  document.getElementById('btn-show-list-view').addEventListener('click', () => {
+    if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
+    activeViewMode = 'list';
+    renderAll();
+  });
+  document.getElementById('btn-toggle-width').addEventListener('click', () => {
+    state.settings.fullWidth = !state.settings.fullWidth;
+    scheduleSave(false);
+    renderAll();
+  });
+
+  // Clicking empty bottom pad focuses or adds last line
+  document.getElementById('editor-bottom-pad').addEventListener('click', () => {
+    const note = getActiveNote();
+    const blocks = getEditableBlocksForNote(note);
+    if (!note || !blocks) return;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'p' && !last.text) {
+      focusBlock(last.id);
+    } else {
+      const nb = { id: uid('b'), type: 'p', text: '' };
+      blocks.push(nb);
+      touchNote(note, blocks);
+      renderActiveNoteEditor();
+      focusBlock(nb.id);
+    }
+  });
+
+  // Clipboard Paste (Ctrl+V):
+  // 1) In Note List View: pasting a web URL automatically fetches, summarizes, and adds a note!
+  // 2) In Web Clipper Paste Zone: automatically fills #clipper-source-url from Windows CF_HTML SourceURL!
+  // 3) In Editor View: pasting an image or copied webpage text automatically attaches a OneNote-style clickable source URL!
+  window.addEventListener('paste', async (e) => {
+    const activeEl = document.activeElement;
+    const isTextInput =
+      activeEl &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+
+    // 1. Pasting a standalone web URL in Note List View (or anywhere outside note body editor) automatically clips & summarizes!
+    const isInsideNoteEditorField =
+      activeEl &&
+      (activeEl.id === 'note-title-input' ||
+        activeEl.id === 'note-tag-input' ||
+        activeEl.id === 'scratchpad-textarea' ||
+        activeEl.id === 'clipper-paste-zone' ||
+        activeEl.id === 'gemini-api-key-input' ||
+        activeEl.id === 'modal-gemini-key-input' ||
+        activeEl.classList?.contains('block-editable') ||
+        activeEl.classList?.contains('toggle-details-input') ||
+        activeEl.closest?.('.block-table'));
+
+    if (
+      !['vault', 'graph', 'trash'].includes(activeNav) &&
+      (activeViewMode === 'list' || !isInsideNoteEditorField || activeEl?.id === 'list-quick-url-input')
+    ) {
+      const pastedText = (e.clipboardData?.getData('text/plain') || '').trim();
+      if (/^https?:\/\/\S+$/i.test(pastedText)) {
+        e.preventDefault();
+        const quickInput = document.getElementById('list-quick-url-input');
+        if (quickInput) quickInput.value = '';
+        clipAndSummarizeUrl(pastedText, {
+          summarize: true,
+          openEditor: activeViewMode === 'editor'
+        });
+        return;
+      }
+    }
+
+    // 2. If user pastes inside Web Clipper Paste Zone, auto-populate #clipper-source-url
+    if (activeNav === 'clipper' && activeEl?.id === 'clipper-paste-zone') {
+      const srcUrl = await detectClipboardSourceUrl(e.clipboardData);
+      const srcInput = document.getElementById('clipper-source-url');
+      if (srcUrl && srcInput && !srcInput.value.trim()) {
+        srcInput.value = srcUrl;
+        showToast('복사한 웹페이지의 원문 출처 링크가 자동 감지되었습니다.');
+      }
+      return;
+    }
+
+    if (activeNav === 'clipper' || activeViewMode !== 'editor') return;
+
+    // 3. Pasting an image in Editor View
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          insertImageFileIntoNote(file);
+          const srcUrl = await detectClipboardSourceUrl(e.clipboardData);
+          if (srcUrl) {
+            appendOneNoteSourceLinkToActiveNote(srcUrl);
+          }
+          return;
+        }
+      }
+    }
+
+    // 4. OneNote-style Web Text Copy & Paste in Editor View:
+    // When copying a part of a webpage and pasting into a note block, automatically attach the source URL link!
+    const htmlClip = e.clipboardData?.getData('text/html') || '';
+    const plainClip = (e.clipboardData?.getData('text/plain') || '').trim();
+    if (htmlClip && plainClip && !/^https?:\/\/\S+$/i.test(plainClip)) {
+      const focusedRow = activeEl?.closest?.('.block-row');
+      const targetBlockId = focusedRow?.dataset?.blockId || null;
+      const srcUrl = await detectClipboardSourceUrl(e.clipboardData);
+      if (srcUrl) {
+        appendOneNoteSourceLinkToActiveNote(srcUrl, targetBlockId);
+      }
+    }
+  });
+
+  // Quick URL Summarize Bar in Note List View
+  const triggerListQuickUrl = async () => {
+    const inp = document.getElementById('list-quick-url-input');
+    if (!inp) return;
+    const url = inp.value.trim();
+    if (!url) return showToast('요약할 웹 주소(URL)를 입력하거나 붙여넣어 주세요.');
+    inp.value = '';
+    await clipAndSummarizeUrl(url, { summarize: true, openEditor: false });
+  };
+  document.getElementById('btn-list-url-summarize')?.addEventListener('click', triggerListQuickUrl);
+  document.getElementById('list-quick-url-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      triggerListQuickUrl();
+    }
+  });
+
+  document.getElementById('image-upload-input').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) insertImageFileIntoNote(file);
+  });
+
+  // App Lock Unlock
+  document.getElementById('app-lock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pass = document.getElementById('app-lock-input').value;
+    const verifier = state.settings.appLockVerifier || state.settings.vaultMasterVerifier;
+    const ok = verifier ? await VaultCrypto.verifyPassword(pass, verifier) : true;
+    const errEl = document.getElementById('app-lock-error');
+    if (ok) {
+      errEl.classList.add('hidden');
+      document.getElementById('app-lock-overlay').classList.add('hidden');
+    } else {
+      errEl.classList.remove('hidden');
+    }
+  });
+
+  const handleEmergencyWipe = async () => {
+    if (!confirm('이 기기(브라우저)에 저장된 모든 로컬 데이터를 삭제하시겠습니까?')) return;
+    await VaultStorage.wipeAllLocalData();
+    location.reload();
+  };
+  document.getElementById('btn-emergency-wipe-lock').addEventListener('click', handleEmergencyWipe);
+  document.getElementById('btn-wipe-local-device').addEventListener('click', handleEmergencyWipe);
+
+  // Sidebar Navigation Click -> Show Note List View!
+  document.querySelectorAll('.nav-group .nav-item[data-nav]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectCategoryNav(btn.dataset.nav);
+    });
+  });
+
+  document.getElementById('btn-add-folder').addEventListener('click', () => {
+    const name = prompt('새 폴더 이름:');
+    if (!name || !name.trim()) return;
+    const newFolder = { id: uid('folder'), name: name.trim() };
+    state.folders.push(newFolder);
+    scheduleSave();
+    selectCategoryNav(`folder:${newFolder.id}`);
+  });
+
+  document.getElementById('btn-new-note').addEventListener('click', () => createNewNote());
+  document.getElementById('btn-new-note-in-list').addEventListener('click', () => createNewNote());
+  document.getElementById('btn-empty-create-note').addEventListener('click', () => createNewNote());
+
+  document.getElementById('btn-empty-trash').addEventListener('click', () => {
+    if (!confirm('휴지통의 모든 노트를 영구 삭제하시겠습니까?')) return;
+    state.notes = state.notes.filter((n) => !n.trashed);
+    activeNoteId = state.notes[0]?.id || null;
+    scheduleSave();
+    renderAll();
+    showToast('휴지통을 비웠습니다.');
+  });
+
+  // Topbar View Segment
+  document.querySelectorAll('.view-Segment .seg-btn[data-viewmode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeViewMode = btn.dataset.viewmode;
+      if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
+      if (activeViewMode === 'editor' && !activeNoteId) {
+        const first = getFilteredNotes()[0];
+        if (first) activeNoteId = first.id;
+      }
+      renderAll();
+    });
+  });
+
+  document.getElementById('btn-close-split').addEventListener('click', () => {
+    activeViewMode = 'editor';
+    renderAll();
+  });
+  document.getElementById('split-note-select').addEventListener('change', (e) => {
+    secondaryNoteId = e.target.value;
+    renderSecondarySplitPane();
+  });
+
+  // Sidebar & List View Search Inputs
+  document.getElementById('inline-filter-input').addEventListener('input', (e) => {
+    const listSearch = document.getElementById('list-view-search');
+    if (listSearch && listSearch.value !== e.target.value) listSearch.value = e.target.value;
+    if (activeViewMode !== 'list') activeViewMode = 'list';
+    renderAll();
+  });
+  document.getElementById('list-view-search').addEventListener('input', () => {
+    renderMainNoteListView();
+    renderSidebar();
+  });
+  document.getElementById('sort-select').addEventListener('change', () => {
+    renderMainNoteListView();
+    renderSidebar();
+  });
+
+  // Title Input
+  document.getElementById('note-title-input').addEventListener('input', (e) => {
+    const note = getActiveNote();
+    if (!note) return;
+    note.title = e.target.value.replace(/\r?\n/g, ' ');
+    if (e.target.value !== note.title) e.target.value = note.title;
+    autoResizeTextarea(e.target);
+    touchNote(note);
+  });
+  document.getElementById('note-title-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const note = getActiveNote();
+      const blocks = getEditableBlocksForNote(note);
+      if (blocks && blocks[0]) focusBlock(blocks[0].id);
+    }
+  });
+
+  document.getElementById('btn-summarize-note')?.addEventListener('click', () => {
+    summarizeCurrentActiveNote();
+  });
+
+  document.getElementById('btn-open-note-graph')?.addEventListener('click', () => {
+    const note = getActiveNote();
+    if (note) {
+      graphCenterNoteId = note.id;
+    }
+    graphViewMode = 'local';
+    selectCategoryNav('graph');
+  });
+
+  document.getElementById('btn-toggle-fav').addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note) return;
+    note.favorite = !note.favorite;
+    touchNote(note);
+    renderAll();
+  });
+
+  document.getElementById('note-folder-select').addEventListener('change', (e) => {
+    const note = getActiveNote();
+    if (!note) return;
+    note.folderId = e.target.value;
+    touchNote(note);
+    renderAll();
+  });
+
+  document.getElementById('note-status-select').addEventListener('change', (e) => {
+    const note = getActiveNote();
+    if (!note) return;
+    note.status = e.target.value;
+    touchNote(note);
+  });
+
+  document.getElementById('note-tag-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.replace(/^#/, '').trim();
+      const note = getActiveNote();
+      if (!val || !note) return;
+      note.tags = note.tags || [];
+      if (!note.tags.includes(val)) note.tags.push(val);
+      e.target.value = '';
+      touchNote(note);
+      renderAll();
+    }
+  });
+
+  // Note Encryption Toggle (Verified against master key if set)
+  document.getElementById('btn-toggle-note-encrypt').addEventListener('click', async () => {
+    const note = getActiveNote();
+    if (!note) return;
+
+    if (!note.isEncrypted) {
+      let pass = unlockedVaultPassword;
+      if (!pass) {
+        pass = prompt('노트를 암호화하여 잠글 마스터 비밀번호를 입력하세요:');
+        if (!pass) return;
+        if (state.settings.vaultMasterVerifier) {
+          const valid = await VaultCrypto.verifyPassword(pass, state.settings.vaultMasterVerifier);
+          if (!valid) return showToast('기존 마스터 비밀번호와 일치하지 않습니다.');
+        } else {
+          state.settings.vaultMasterVerifier = await VaultCrypto.createVerifier(pass);
+        }
+      }
+      const encrypted = await VaultCrypto.encryptData(note.blocks || [], pass);
+      // Immediately lock the note on screen so the content is hidden behind the password gate
+      decryptedNotesSessionMap.delete(note.id);
+      note.encryptedPayload = encrypted;
+      note.blocks = [];
+      note.isEncrypted = true;
+      unlockedVaultPassword = pass;
+      scheduleSave();
+      renderAll();
+      setTimeout(() => document.getElementById('note-decrypt-pass')?.focus(), 20);
+      showToast('노트가 AES-256으로 암호화되어 잠겼습니다. 비밀번호를 입력해야 열람됩니다.');
+    } else {
+      const blocks = getEditableBlocksForNote(note);
+      if (!blocks) return showToast('먼저 노트를 열람한 뒤 해제할 수 있습니다.');
+      note.blocks = blocks;
+      delete note.encryptedPayload;
+      note.isEncrypted = false;
+      decryptedNotesSessionMap.delete(note.id);
+      scheduleSave();
+      renderAll();
+      showToast('노트 암호화 잠금이 완전히 해제되었습니다.');
+    }
+  });
+
+  document.getElementById('btn-relock-note')?.addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note || !note.isEncrypted) return;
+    decryptedNotesSessionMap.delete(note.id);
+    renderAll();
+    setTimeout(() => document.getElementById('note-decrypt-pass')?.focus(), 20);
+    showToast('노트 화면이 다시 잠겼습니다.');
+  });
+
+  const handleUnlockEncryptedNote = async () => {
+    const note = getActiveNote();
+    const pass = document.getElementById('note-decrypt-pass').value;
+    if (!note || !pass) return;
+    try {
+      const decBlocks = await VaultCrypto.decryptData(note.encryptedPayload, pass);
+      decryptedNotesSessionMap.set(note.id, decBlocks);
+      unlockedVaultPassword = pass;
+      document.getElementById('note-decrypt-pass').value = '';
+      renderActiveNoteEditor();
+      showToast('노트 잠금이 해제되어 내용을 표시합니다.');
+    } catch {
+      showToast('비밀번호가 일치하지 않습니다.');
+    }
+  };
+  document.getElementById('btn-unlock-encrypted-note').addEventListener('click', handleUnlockEncryptedNote);
+  document.getElementById('note-decrypt-pass')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleUnlockEncryptedNote();
+    }
+  });
+
+  document.getElementById('btn-export-md').addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note) return;
+    const files = VaultStorage.notesToMarkdownFiles([note], state.folders);
+    if (!files[0]) return;
+    const blob = new Blob([files[0].content], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${note.title || 'note'}.md`;
+    a.click();
+  });
+
+  document.getElementById('btn-restore-note').addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note) return;
+    note.trashed = false;
+    scheduleSave();
+    renderAll();
+    showToast('노트가 복원되었습니다.');
+  });
+
+  document.getElementById('btn-delete-note').addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note) return;
+    if (note.trashed) {
+      state.notes = state.notes.filter((n) => n.id !== note.id);
+      showToast('영구 삭제되었습니다.');
+    } else {
+      note.trashed = true;
+      showToast('휴지통으로 이동되었습니다.');
+    }
+    const remaining = getFilteredNotes();
+    activeNoteId = remaining[0]?.id || null;
+    activeViewMode = 'list';
+    scheduleSave();
+    renderAll();
+  });
+
+  // Slash Menu Items (Block Type & Block Action)
+  document.querySelectorAll('#slash-menu .slash-item[data-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (slashTargetBlockId) applyBlockType(slashTargetBlockId, btn.dataset.type);
+    });
+  });
+  document.querySelectorAll('#slash-menu .slash-item[data-blockact]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (slashTargetBlockId) executeBlockAction(slashTargetBlockId, btn.dataset.blockact);
+    });
+  });
+
+  // Scratchpad
+  document.getElementById('btn-Quick-Scratchpad').addEventListener('click', () => {
+    document.getElementById('scratchpad-drawer').classList.toggle('hidden');
+  });
+  document.getElementById('btn-close-scratchpad').addEventListener('click', () => {
+    document.getElementById('scratchpad-drawer').classList.add('hidden');
+  });
+  document.getElementById('scratchpad-textarea').addEventListener('input', (e) => {
+    state.scratchpad = e.target.value;
+    scheduleSave(false);
+  });
+  document.getElementById('btn-promote-scratchpad').addEventListener('click', () => {
+    const text = (state.scratchpad || '').trim();
+    if (!text) return;
+    const lines = text.split('\n').filter(Boolean);
+    const title = lines[0]?.slice(0, 50) || '빠른 메모';
+    const now = new Date().toISOString();
+    const newNote = {
+      id: uid('note'),
+      title,
+      folderId: state.folders[0]?.id || 'f_work',
+      docType: 'note',
+      status: 'todo',
+      priority: 'normal',
+      favorite: false,
+      trashed: false,
+      isEncrypted: false,
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+      blocks: lines.map((l) => ({ id: uid('b'), type: 'p', text: l }))
+    };
+    state.notes.unshift(newNote);
+    openNoteInEditor(newNote.id);
+    scheduleSave();
+    showToast('정식 노트로 변환되었습니다.');
+  });
+
+  // Secure Vault
+  document.getElementById('vault-unlock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pass = document.getElementById('vault-master-input').value;
+    const errEl = document.getElementById('vault-error-msg');
+    if (!state.settings.vaultMasterVerifier) {
+      state.settings.vaultMasterVerifier = await VaultCrypto.createVerifier(pass);
+      unlockedVaultPassword = pass;
+      scheduleSave();
+      errEl.classList.add('hidden');
+      document.getElementById('vault-master-input').value = '';
+      renderSecureVaultView();
+    } else {
+      const ok = await VaultCrypto.verifyPassword(pass, state.settings.vaultMasterVerifier);
+      if (ok) {
+        unlockedVaultPassword = pass;
+        errEl.classList.add('hidden');
+        document.getElementById('vault-master-input').value = '';
+        renderSecureVaultView();
+      } else {
+        errEl.classList.remove('hidden');
+      }
+    }
+  });
+
+  document.getElementById('btn-lock-vault').addEventListener('click', () => {
+    unlockedVaultPassword = null;
+    decryptedVaultItemsCache = [];
+    renderSecureVaultView();
+  });
+
+  document.querySelectorAll('.vault-cat-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.vault-cat-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeVaultCategory = btn.dataset.vcat;
+      renderSecureVaultView();
+    });
+  });
+
+  document.getElementById('btn-add-vault-item').addEventListener('click', () => {
+    if (!unlockedVaultPassword) return showToast('먼저 금고 비밀번호를 입력해 잠금을 해제하세요.');
+    document.getElementById('vault-item-modal').classList.remove('hidden');
+  });
+  document.getElementById('btn-close-vault-item-modal').addEventListener('click', () => {
+    document.getElementById('vault-item-modal').classList.add('hidden');
+  });
+  document.getElementById('vault-item-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!unlockedVaultPassword) return;
+    const payload = {
+      category: document.getElementById('vi-category').value,
+      title: document.getElementById('vi-title').value.trim(),
+      username: document.getElementById('vi-username').value.trim(),
+      secret: document.getElementById('vi-secret').value,
+      url: document.getElementById('vi-url').value.trim(),
+      notes: document.getElementById('vi-notes').value.trim()
+    };
+    const encryptedPayload = await VaultCrypto.encryptData(payload, unlockedVaultPassword);
+    state.vaultItems.unshift({
+      id: uid('vi'),
+      createdAt: new Date().toISOString(),
+      encryptedPayload
+    });
+    e.target.reset();
+    document.getElementById('vault-item-modal').classList.add('hidden');
+    scheduleSave();
+    renderSecureVaultView();
+  });
+
+  // Graph Controls & Canvas Click
+  document.getElementById('btn-graph-mode-local')?.addEventListener('click', () => {
+    graphViewMode = 'local';
+    if (!graphCenterNoteId && activeNoteId) graphCenterNoteId = activeNoteId;
+    renderKnowledgeGraph();
+  });
+  document.getElementById('btn-graph-mode-global')?.addEventListener('click', () => {
+    graphViewMode = 'global';
+    renderKnowledgeGraph();
+  });
+  document.getElementById('graph-center-note-select')?.addEventListener('change', (e) => {
+    graphCenterNoteId = e.target.value;
+    activeNoteId = e.target.value;
+    graphViewMode = 'local';
+    renderKnowledgeGraph();
+  });
+  document.getElementById('btn-graph-open-center')?.addEventListener('click', () => {
+    const targetId = graphCenterNoteId || activeNoteId;
+    if (targetId) openNoteInEditor(targetId);
+  });
+
+  document.getElementById('knowledge-graph-canvas').addEventListener('click', (e) => {
+    const rect = e.target.getBoundingClientRect();
+    const scaleX = e.target.width / rect.width;
+    const scaleY = e.target.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    for (const node of graphNodePositions) {
+      if (Math.hypot(x - node.x, y - node.y) <= node.r + 12) {
+        openNoteInEditor(node.note.id);
+        break;
+      }
+    }
+  });
+
+  // Web Clipper
+  document.getElementById('btn-fetch-url-clip').addEventListener('click', async () => {
+    const url = document.getElementById('clipper-url-input').value.trim();
+    if (!url) return;
+    const summarize = document.getElementById('chk-clipper-summarize')?.checked !== false;
+    const targetFolderId = document.getElementById('clipper-target-folder')?.value || 'f_clip';
+    document.getElementById('clipper-url-input').value = '';
+    await clipAndSummarizeUrl(url, { summarize, openEditor: true, targetFolderId });
+  });
+
+  document.getElementById('btn-save-clip').addEventListener('click', async () => {
+    const pasteZone = document.getElementById('clipper-paste-zone');
+    const customTitle = document.getElementById('clipper-custom-title').value.trim();
+    const sourceUrl = document.getElementById('clipper-source-url').value.trim();
+    const summarize = document.getElementById('chk-clipper-summarize')?.checked !== false;
+    const html = pasteZone.innerHTML.trim();
+    if (!html) return showToast('붙여넣은 내용이 없습니다.');
+    const parsed = parseHtmlToBlocks(html, sourceUrl);
+    const noteTitle = customTitle || parsed.title || '웹 클리핑';
+    let finalBlocks = parsed.blocks;
+    let tags = ['클리핑'];
+    if (summarize) {
+      let sumResult = null;
+      if ((state.settings.geminiApiKey || '').trim()) {
+        try {
+          sumResult = await summarizeWithGeminiAI(noteTitle, parsed.blocks, sourceUrl, false);
+        } catch {
+          sumResult = null;
+        }
+      }
+      if (!sumResult) {
+        sumResult = summarizeExtractedArticle(noteTitle, parsed.blocks, sourceUrl);
+      }
+      finalBlocks = sumResult.blocks;
+      tags = ['요약', '클리핑', ...sumResult.autoTags.filter((t) => t !== '요약' && t !== '클리핑')];
+    }
+    const now = new Date().toISOString();
+    const newNote = {
+      id: uid('note'),
+      title: noteTitle,
+      folderId: document.getElementById('clipper-target-folder').value || 'f_clip',
+      docType: 'clip',
+      status: 'todo',
+      priority: 'normal',
+      favorite: false,
+      trashed: false,
+      isEncrypted: false,
+      tags,
+      createdAt: now,
+      updatedAt: now,
+      blocks: finalBlocks
+    };
+    state.notes.unshift(newNote);
+    pasteZone.innerHTML = '';
+    document.getElementById('clipper-custom-title').value = '';
+    document.getElementById('clipper-source-url').value = '';
+    scheduleSave();
+    openNoteInEditor(newNote.id);
+    showToast('노트로 요약 저장되었습니다.');
+  });
+
+  // Search Modal
+  document.getElementById('btn-close-search').addEventListener('click', () => {
+    document.getElementById('search-modal').classList.add('hidden');
+  });
+  document.getElementById('global-search-input').addEventListener('input', renderGlobalSearchResults);
+
+  // Cloud Sync Modal
+  const refreshOneDriveSyncBadge = async () => {
+    const badge = document.getElementById('onedrive-sync-status-badge');
+    if (!badge) return;
+    const hasGdrive = Boolean((state.settings.gdriveToken || '').trim());
+    const hasToken = Boolean((state.settings.onedriveToken || '').trim());
+    const hasDirHandle = await VaultStorage.restoreBrowserDirectoryHandle();
+    const hasPcDir = Boolean((state.settings.pcVaultDir || '').trim());
+    if (hasGdrive || hasToken || hasDirHandle || hasPcDir) {
+      const modeLabel = hasGdrive
+        ? '자동 동기화 켜짐 (Google Drive 영구 연결)'
+        : hasToken && (hasDirHandle || hasPcDir)
+        ? '자동 동기화 켜짐 (PC 폴더 + 스마트폰 API)'
+        : hasToken
+        ? '자동 동기화 켜짐 (OneDrive API)'
+        : '자동 동기화 켜짐 (원드라이브 폴더)';
+      badge.textContent = modeLabel;
+      badge.style.background = '#e8f5e9';
+      badge.style.color = '#1b5e20';
+    } else {
+      badge.textContent = '연결 대기 중';
+      badge.style.background = '#f0f0ed';
+      badge.style.color = '#666';
+    }
+  };
+
+  document.getElementById('btn-cloud-sync-modal').addEventListener('click', () => {
+    const odEl = document.getElementById('onedrive-token-input');
+    if (odEl) odEl.value = state.settings.onedriveToken || '';
+    const gdEl = document.getElementById('gdrive-token-input');
+    if (gdEl) gdEl.value = state.settings.gdriveToken || '';
+    refreshOneDriveSyncBadge();
+    document.getElementById('cloud-sync-modal').classList.remove('hidden');
+  });
+  document.getElementById('btn-close-cloud-modal').addEventListener('click', () => {
+    document.getElementById('cloud-sync-modal').classList.add('hidden');
+  });
+
+  document.getElementById('onedrive-token-input')?.addEventListener('change', (e) => {
+    state.settings.onedriveToken = e.target.value.trim();
+    scheduleSave(false);
+    refreshOneDriveSyncBadge();
+  });
+
+  document.getElementById('gdrive-token-input')?.addEventListener('change', (e) => {
+    state.settings.gdriveToken = e.target.value.trim();
+    scheduleSave(false);
+  });
+
+  document.getElementById('detected-cloud-folders').addEventListener('change', (e) => {
+    if (e.target.value) {
+      document.getElementById('custom-vault-dir-input').value = e.target.value;
+      state.settings.pcVaultDir = e.target.value;
+      scheduleSave(false);
+      refreshOneDriveSyncBadge();
+    }
+  });
+
+  document.getElementById('chk-auto-pc-sync').addEventListener('change', (e) => {
+    state.settings.autoPcSync = e.target.checked;
+    scheduleSave(false);
+  });
+
+  document.getElementById('btn-pick-custom-folder').addEventListener('click', async () => {
+    try {
+      const folderName = await VaultStorage.pickBrowserDirectory();
+      const existing = await VaultStorage.loadFromBrowserDirectory();
+      if (existing && Array.isArray(existing.notes) && existing.notes.length > 0 && (existing.lastSavedAt || 0) > (state.lastSavedAt || 0)) {
+        await applyRemoteSyncedState(existing, Date.now());
+        showToast(`'${folderName}' 폴더의 최신 원드라이브 노트를 불러오고 자동 동기화를 연결했습니다.`);
+      } else {
+        state.lastSavedAt = Date.now();
+        await VaultStorage.saveToBrowserDirectory(state);
+        showToast(`'${folderName}' 원드라이브 폴더와 자동 동기화가 연결되었습니다.`);
+      }
+      refreshOneDriveSyncBadge();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  document.getElementById('btn-sync-pc-save').addEventListener('click', async () => {
+    const dir = document.getElementById('custom-vault-dir-input').value.trim() || state.settings.pcVaultDir;
+    if (!dir) return showToast('동기화 폴더 경로를 지정해주세요.');
+    state.settings.pcVaultDir = dir;
+    state.lastSavedAt = Date.now();
+    try {
+      const res = await VaultStorage.syncWithPCFolder(dir, state, 'save');
+      if (res.ok) showToast(`원드라이브 폴더 저장 완료: ${res.file}`);
+      else showToast(`오류: ${res.error}`);
+      refreshOneDriveSyncBadge();
+    } catch {
+      exportVaultJsonFile();
+    }
+  });
+
+  document.getElementById('btn-sync-pc-load').addEventListener('click', async () => {
+    const dir = document.getElementById('custom-vault-dir-input').value.trim();
+    if (!dir) return;
+    const res = await VaultStorage.syncWithPCFolder(dir, state, 'load');
+    if (res.ok && res.data) {
+      await applyRemoteSyncedState(res.data, Date.now());
+      showToast('원드라이브 폴더에서 데이터를 불러왔습니다.');
+      refreshOneDriveSyncBadge();
+    } else {
+      showToast(res.message || res.error || '불러오기 실패');
+    }
+  });
+
+  document.getElementById('btn-onedrive-push').addEventListener('click', async () => {
+    const token = document.getElementById('onedrive-token-input').value.trim();
+    if (!token) return showToast('OneDrive 토큰을 입력하세요.');
+    state.settings.onedriveToken = token;
+    state.lastSavedAt = Date.now();
+    await VaultStorage.saveState(state);
+    refreshOneDriveSyncBadge();
+    try {
+      await VaultStorage.syncOneDriveAPI(token, state, 'save');
+      showToast('OneDrive 자동 동기화 연결 및 업로드 완료');
+    } catch (err) {
+      showToast(`OneDrive 오류: ${err.message}`);
+    }
+  });
+  document.getElementById('btn-onedrive-pull').addEventListener('click', async () => {
+    const token = document.getElementById('onedrive-token-input').value.trim();
+    if (!token) return showToast('OneDrive 토큰을 입력하세요.');
+    state.settings.onedriveToken = token;
+    await VaultStorage.saveState(state);
+    refreshOneDriveSyncBadge();
+    try {
+      const remote = await VaultStorage.syncOneDriveAPI(token, state, 'load');
+      if (remote && Array.isArray(remote.notes)) {
+        remote.settings = { ...(remote.settings || {}), onedriveToken: token };
+        await applyRemoteSyncedState(remote, Date.now());
+        showToast('OneDrive 불러오기 및 자동 동기화 연결 완료');
+      } else {
+        state.lastSavedAt = Date.now();
+        await VaultStorage.syncOneDriveAPI(token, state, 'save');
+        showToast('OneDrive에 새 동기화 파일을 생성하고 자동 동기화를 연결했습니다.');
+      }
+    } catch (err) {
+      showToast(`OneDrive 오류: ${err.message}`);
+    }
+  });
+
+  document.getElementById('btn-copy-gdrive-script')?.addEventListener('click', async () => {
+    const scriptCode = [
+      'function doGet(e) { return handle(e); }',
+      'function doPost(e) { return handle(e); }',
+      'function handle(e) {',
+      '  var folderName = "VaultNote_Sync";',
+      '  var fileName = "vaultnote-sync.vnvault.json";',
+      '  var folders = DriveApp.getFoldersByName(folderName);',
+      '  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);',
+      '  var files = folder.getFilesByName(fileName);',
+      '  var file = files.hasNext() ? files.next() : null;',
+      '  if (e && e.postData && e.postData.contents) {',
+      '    if (file) file.setContent(e.postData.contents);',
+      '    else folder.createFile(fileName, e.postData.contents, MimeType.PLAIN_TEXT);',
+      '    return ContentService.createTextOutput(JSON.stringify({ ok: true, updatedAt: Date.now() })).setMimeType(ContentService.MimeType.JSON);',
+      '  }',
+      '  if (!file) return ContentService.createTextOutput(JSON.stringify({ ok: true, empty: true })).setMimeType(ContentService.MimeType.JSON);',
+      '  return ContentService.createTextOutput(file.getBlob().getDataAsString("UTF-8")).setMimeType(ContentService.MimeType.JSON);',
+      '}'
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(scriptCode);
+      showToast('구글 드라이브 자동화 코드가 클립보드에 복사되었습니다!');
+    } catch {
+      showToast('복사 실패');
+    }
+  });
+
+  document.getElementById('btn-gdrive-push').addEventListener('click', async () => {
+    const token = document.getElementById('gdrive-token-input').value.trim();
+    if (!token) return showToast('Google Drive 연결 주소(URL) 또는 토큰을 입력하세요.');
+    state.settings.gdriveToken = token;
+    state.lastSavedAt = Date.now();
+    await VaultStorage.saveState(state);
+    refreshOneDriveSyncBadge();
+    try {
+      await VaultStorage.syncGoogleDriveAPI(token, state, 'save');
+      showToast('Google Drive 영구 자동 동기화 연결 및 업로드 완료');
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+  document.getElementById('btn-gdrive-pull').addEventListener('click', async () => {
+    const token = document.getElementById('gdrive-token-input').value.trim();
+    if (!token) return showToast('Google Drive 연결 주소(URL) 또는 토큰을 입력하세요.');
+    state.settings.gdriveToken = token;
+    await VaultStorage.saveState(state);
+    refreshOneDriveSyncBadge();
+    try {
+      const remote = await VaultStorage.syncGoogleDriveAPI(token, state, 'load');
+      if (remote && Array.isArray(remote.notes)) {
+        remote.settings = { ...(remote.settings || {}), gdriveToken: token };
+        await applyRemoteSyncedState(remote, 'Google Drive 불러오기 완료');
+        showToast('Google Drive 불러오기 및 자동 동기화 연결 완료');
+      } else {
+        state.lastSavedAt = Date.now();
+        await VaultStorage.syncGoogleDriveAPI(token, state, 'save');
+        showToast('내 구글 드라이브에 새 동기화 파일을 생성하고 자동 동기화를 연결했습니다.');
+      }
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  document.getElementById('btn-export-vault-file').addEventListener('click', exportVaultJsonFile);
+  document.getElementById('import-vault-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const imported = JSON.parse(await file.text());
+      if (imported && Array.isArray(imported.notes)) {
+        state = imported;
+        activeNoteId = state.notes[0]?.id || null;
+        await VaultStorage.saveState(state);
+        renderAll();
+        document.getElementById('cloud-sync-modal').classList.add('hidden');
+        showToast('복원 완료');
+      }
+    } catch (err) {
+      showToast(`파일 오류: ${err.message}`);
+    }
+  });
+
+  // Security Modal
+  const refreshGeminiKeyModalUI = () => {
+    const inp = document.getElementById('gemini-api-key-input');
+    const badge = document.getElementById('gemini-key-status-badge');
+    const key = (state.settings.geminiApiKey || '').trim();
+    if (inp) inp.value = key;
+    if (badge) {
+      badge.textContent = key ? `✓ API 키 등록됨 (${key.slice(0, 8)}...)` : '미등록';
+    }
+  };
+
+  document.getElementById('btn-security-modal').addEventListener('click', () => {
+    refreshGeminiKeyModalUI();
+    document.getElementById('security-modal').classList.remove('hidden');
+  });
+  document.getElementById('btn-close-security-modal').addEventListener('click', () => {
+    document.getElementById('security-modal').classList.add('hidden');
+  });
+  document.getElementById('btn-lock-now').addEventListener('click', () =>
+    lockEverything('화면이 잠금 상태로 전환되었습니다.', true)
+  );
+
+  document.getElementById('btn-save-app-lock').addEventListener('click', async () => {
+    const pass = document.getElementById('set-app-lock-pass').value;
+    if (!pass) return;
+    state.settings.appLockVerifier = await VaultCrypto.createVerifier(pass);
+    document.getElementById('set-app-lock-pass').value = '';
+    scheduleSave();
+    showToast('앱 진입 잠금이 설정되었습니다.');
+  });
+
+  document.getElementById('btn-Remove-app-lock').addEventListener('click', () => {
+    state.settings.appLockVerifier = null;
+    scheduleSave();
+    showToast('앱 진입 잠금이 해제되었습니다.');
+  });
+
+  document.getElementById('auto-lock-minutes').addEventListener('change', (e) => {
+    state.settings.autoLockMinutes = Number(e.target.value);
+    scheduleSave();
+    resetIdleTimer();
+  });
+
+  document.getElementById('btn-save-vault-master').addEventListener('click', async () => {
+    const pass = document.getElementById('set-vault-master-pass').value;
+    if (!pass) return;
+    state.settings.vaultMasterVerifier = await VaultCrypto.createVerifier(pass);
+    unlockedVaultPassword = pass;
+    document.getElementById('set-vault-master-pass').value = '';
+    scheduleSave();
+    showToast('마스터 비밀번호가 설정되었습니다.');
+  });
+
+  document.getElementById('btn-toggle-gemini-key-vis')?.addEventListener('click', (e) => {
+    const inp = document.getElementById('gemini-api-key-input');
+    if (!inp) return;
+    const isHidden = inp.type === 'password';
+    inp.type = isHidden ? 'text' : 'password';
+    e.currentTarget.textContent = isHidden ? '숨김' : '보기';
+  });
+
+  document.getElementById('btn-save-gemini-key')?.addEventListener('click', () => {
+    const key = (document.getElementById('gemini-api-key-input')?.value || '').trim();
+    state.settings.geminiApiKey = key;
+    refreshGeminiKeyModalUI();
+    scheduleSave();
+    showToast(key ? 'Google Gemini API 키가 저장되었습니다.' : 'Google Gemini API 키가 해제되었습니다.');
+  });
+
+  document.getElementById('btn-close-summarize-modal')?.addEventListener('click', () => {
+    document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
+  });
+  document.getElementById('btn-confirm-offline-summarize')?.addEventListener('click', () => {
+    document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
+    runOfflineSummarizeOnActiveNote('오프라인 자체 요약 완료 (외부 전송 없음)');
+  });
+  document.getElementById('btn-confirm-ai-summarize')?.addEventListener('click', async () => {
+    await runAISummarizeOnActiveNote();
+  });
+
+  document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+    state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
+    scheduleSave(false);
+    renderAll();
+  });
+}
+
+function toggleSidebar() {
+  state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed', state.settings.sidebarCollapsed);
+  scheduleSave(false);
+}
+
+function createNewNote() {
+  const now = new Date().toISOString();
+  const defaultFolderId = activeNav.startsWith('folder:')
+    ? activeNav.slice(7)
+    : state.folders[0]?.id || 'f_work';
+
+  const newNote = {
+    id: uid('note'),
+    title: '',
+    folderId: defaultFolderId,
+    docType: 'note',
+    status: 'todo',
+    priority: 'normal',
+    favorite: activeNav === 'favorites',
+    trashed: false,
+    isEncrypted: false,
+    tags: activeNav.startsWith('tag:') ? [activeNav.slice(4)] : [],
+    createdAt: now,
+    updatedAt: now,
+    blocks: [{ id: uid('b'), type: 'p', text: '' }]
+  };
+
+  state.notes.unshift(newNote);
+  activeNoteId = newNote.id;
+  if (['vault', 'graph', 'clipper', 'trash'].includes(activeNav)) activeNav = 'all';
+  activeViewMode = 'editor';
+  scheduleSave();
+  renderAll();
+
+  setTimeout(() => {
+    document.getElementById('note-title-input')?.focus();
+  }, 20);
+}
+
+function insertImageFileIntoNote(file) {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const focusedRow = document.activeElement?.closest?.('.block-row');
+  const focusedBlockId = focusedRow?.dataset?.blockId || null;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const imgBlock = {
+      id: uid('b'),
+      type: 'image',
+      dataUrl: ev.target.result,
+      width: '75%',
+      text: ''
+    };
+    const focusedIdx = focusedBlockId ? blocks.findIndex((b) => b.id === focusedBlockId) : -1;
+    if (focusedIdx !== -1) {
+      // If current block is an empty paragraph, replace it with image + trailing paragraph
+      if (blocks[focusedIdx].type === 'p' && !(blocks[focusedIdx].text || '').trim()) {
+        const nextP = { id: uid('b'), type: 'p', text: '' };
+        blocks.splice(focusedIdx, 1, imgBlock, nextP);
+      } else {
+        blocks.splice(focusedIdx + 1, 0, imgBlock);
+      }
+    } else {
+      blocks.push(imgBlock);
+      blocks.push({ id: uid('b'), type: 'p', text: '' });
+    }
+    touchNote(note, blocks);
+    renderActiveNoteEditor();
+    showToast('이미지가 삽입되었습니다. 우측 모서리를 끌어 크기를 조절하세요.');
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * OneNote-style automatic source link attribution when pasting copied web content into a note.
+ */
+function appendOneNoteSourceLinkToActiveNote(sourceUrl, afterBlockId = null) {
+  if (!sourceUrl) return;
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  // Avoid duplicate consecutive source link for the same URL
+  const alreadyHasSameSource = blocks.some(
+    (b) => (b.text || '').includes(sourceUrl)
+  );
+  if (alreadyHasSameSource) return;
+
+  const sourceBlock = {
+    id: uid('b'),
+    type: 'callout',
+    text: `출처: ${sourceUrl}`
+  };
+
+  const targetIdx = afterBlockId ? blocks.findIndex((b) => b.id === afterBlockId) : -1;
+  if (targetIdx !== -1) {
+    blocks.splice(targetIdx + 1, 0, sourceBlock);
+  } else {
+    blocks.push(sourceBlock);
+  }
+
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  showToast('웹페이지 원문 출처 링크가 자동으로 함께 표시되었습니다.');
+}
+
+/**
+ * Applies a computed summary result (from Offline 4-Rule Engine or Google Gemini AI)
+ * to the currently active note.
+ */
+function applySummaryResultToActiveNote(sumResult, toastMessage) {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks || !sumResult) return;
+
+  blocks.splice(0, blocks.length, ...sumResult.blocks);
+  if (!note.isEncrypted) {
+    note.blocks = blocks;
+  }
+
+  note.tags = note.tags || [];
+  if (!note.tags.includes('요약')) note.tags.push('요약');
+  for (const kw of (sumResult.autoTags || []).slice(0, 2)) {
+    if (!note.tags.includes(kw)) note.tags.push(kw);
+  }
+
+  touchNote(note, blocks);
+  renderAll();
+  document.getElementById('primary-editor-pane')?.scrollTo({ top: 0, behavior: 'smooth' });
+  showToast(toastMessage || `상단에 핵심 요약 ${sumResult.summaryCount}줄이 정리되었습니다.`, 3200);
+}
+
+function runOfflineSummarizeOnActiveNote(customPrefix = '') {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const cleanBlocks = stripExistingSummaryBlocks(blocks);
+  const sourceBlock = cleanBlocks.find((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+  const sourceUrl = sourceBlock ? sourceBlock.text.replace(/^출처:\s*/, '').trim() : '';
+
+  const sumResult = summarizeExtractedArticle(note.title || '', cleanBlocks, sourceUrl);
+  if (sumResult.summaryCount === 0) {
+    showToast('요약할 문장이 부족합니다. 내용을 조금 더 작성해주세요.');
+    return;
+  }
+
+  const msg = customPrefix
+    ? `${customPrefix}: 핵심 요약 ${sumResult.summaryCount}줄이 상단에 정리되었습니다.`
+    : `상단에 핵심 요약 ${sumResult.summaryCount}줄이 정리되었습니다.`;
+  applySummaryResultToActiveNote(sumResult, msg);
+}
+
+async function runAISummarizeOnActiveNote() {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  // Double-check security restriction: NEVER allow public AI on security folder or encrypted notes
+  if (isNoteRestrictedFromPublicAI(note)) {
+    document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
+    runOfflineSummarizeOnActiveNote('보안 노트는 외부 전송 없이 기기 내부에서만 요약됨');
+    return;
+  }
+
+  // Check if user entered an API key inside the confirmation modal
+  const modalKeyInput = document.getElementById('modal-gemini-key-input');
+  if (modalKeyInput && modalKeyInput.value.trim()) {
+    state.settings.geminiApiKey = modalKeyInput.value.trim();
+    const secKeyInput = document.getElementById('gemini-api-key-input');
+    if (secKeyInput) secKeyInput.value = state.settings.geminiApiKey;
+    scheduleSave();
+  }
+
+  if (!(state.settings.geminiApiKey || '').trim()) {
+    const keyBox = document.getElementById('modal-gemini-key-box');
+    if (keyBox) {
+      keyBox.classList.remove('hidden');
+      modalKeyInput?.focus();
+    }
+    showToast('AI 고품질 요약을 사용하려면 무료 Gemini API 키를 입력하거나, 아래 [오프라인 자체 요약]을 눌러주세요.', 3600);
+    return;
+  }
+
+  document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
+  showToast('민감정보를 제외하고 AI 핵심 요약을 생성하는 중...');
+
+  const cleanBlocks = stripExistingSummaryBlocks(blocks);
+  const sourceBlock = cleanBlocks.find((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+  const sourceUrl = sourceBlock ? sourceBlock.text.replace(/^출처:\s*/, '').trim() : '';
+
+  try {
+    const aiResult = await summarizeWithGeminiAI(note.title || '', cleanBlocks, sourceUrl, true);
+    const maskNotice = aiResult.totalMasked > 0 ? ` (민감정보 ${aiResult.totalMasked}건 자동 보호됨)` : '';
+    applySummaryResultToActiveNote(
+      aiResult,
+      `AI 고품질 핵심 요약이 상단에 정리되었습니다.${maskNotice}`
+    );
+  } catch {
+    showToast('AI 서버 연결에 실패하여 기기 내부 [오프라인 자체 요약]으로 자동 전환되었습니다.', 3400);
+    runOfflineSummarizeOnActiveNote('오프라인 자체 요약 완료');
+  }
+}
+
+/**
+ * Summarize the currently active note according to the 3-tier security policy:
+ * 1) Security Folder / Encrypted Note -> Immediately run 100% On-Device Offline Summarizer (Public AI completely excluded)
+ * 2) User-Written Normal Note -> Show Confirmation Modal with sensitive-data masking notice & Offline/AI choice
+ */
+function summarizeCurrentActiveNote() {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const cleanBlocks = stripExistingSummaryBlocks(blocks);
+  const totalTextLen = cleanBlocks
+    .filter((b) => !(b.type === 'callout' && (b.text || '').startsWith('출처:')))
+    .reduce((acc, b) => acc + ((b.text || '').trim().length + (b.details || '').trim().length), 0);
+
+  if (totalTextLen < 10) {
+    showToast('요약할 본문 내용을 먼저 작성해주세요.');
+    return;
+  }
+
+  // Tier 3: Security Folder or Encrypted Note -> Completely exclude public AI from the start!
+  if (isNoteRestrictedFromPublicAI(note)) {
+    runOfflineSummarizeOnActiveNote('보안 폴더/암호화 노트 보호 (외부 전송 없음)');
+    return;
+  }
+
+  // Tier 2: Normal User Note -> Show Confirmation Modal before any external AI transmission
+  const { totalMasked } = prepareSafeNotePayloadForAI(note.title || '', cleanBlocks);
+  const maskedInfoEl = document.getElementById('summarize-masked-info');
+  if (maskedInfoEl) {
+    maskedInfoEl.textContent =
+      totalMasked > 0
+        ? `감지된 민감정보 ${totalMasked}건(전화번호·이메일·계좌·비밀번호·시크릿 블록 등)이 전송 전 기기에서 [비공개_정보]로 자동 마스킹됩니다.`
+        : '감지된 민감정보 패턴(전화번호·계좌·비밀번호 등)이 없으며, 안심하고 요약할 수 있습니다.';
+  }
+
+  const hasKey = Boolean((state.settings.geminiApiKey || '').trim());
+  const keyBox = document.getElementById('modal-gemini-key-box');
+  if (keyBox) {
+    keyBox.classList.toggle('hidden', hasKey);
+  }
+
+  document.getElementById('summarize-confirm-modal')?.classList.remove('hidden');
+}
+
+function openSearchModal() {
+  const modal = document.getElementById('search-modal');
+  modal.classList.remove('hidden');
+  const inp = document.getElementById('global-search-input');
+  inp.value = '';
+  renderGlobalSearchResults();
+  setTimeout(() => inp.focus(), 10);
+}
+
+function renderGlobalSearchResults() {
+  const q = document.getElementById('global-search-input').value.trim().toLowerCase();
+  const listEl = document.getElementById('search-results-list');
+  listEl.innerHTML = '';
+
+  const matches = state.notes
+    .filter((n) => !n.trashed)
+    .filter((n) => {
+      if (!q) return true;
+      const inTitle = (n.title || '').toLowerCase().includes(q);
+      const inTags = (n.tags || []).some((t) => t.toLowerCase().includes(q));
+      const inBody = !n.isEncrypted && (n.blocks || []).some((b) => (b.text || '').toLowerCase().includes(q));
+      return inTitle || inTags || inBody;
+    })
+    .slice(0, 12);
+
+  for (const n of matches) {
+    const div = document.createElement('div');
+    div.className = 'search-result-item';
+    div.innerHTML = `
+      <div style="font-weight:600;">${escapeHtml(n.title || '제목 없음')}</div>
+      <div class="text-muted">${escapeHtml(getNotePlainSnippet(n))}</div>
+    `;
+    div.addEventListener('click', () => {
+      document.getElementById('search-modal').classList.add('hidden');
+      openNoteInEditor(n.id);
+    });
+    listEl.appendChild(div);
+  }
+}
+
+function exportVaultJsonFile() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'vaultnote-sync.vnvault.json';
+  a.click();
+}
+
+initApp();
