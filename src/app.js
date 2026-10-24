@@ -2993,15 +2993,44 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     throw new Error('TOO_SHORT');
   }
 
-  const promptText = [
-    '당신은 전문 문서 요약 정리 도우미입니다. 아래 문서의 전체 맥락(서론·본론·결론)을 파악하여 한국어로 명확하게 핵심만 요약해주세요.',
-    '반드시 아래 JSON 형식으로만 응답하세요:',
-    '{"oneLine":"문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)","bullets":["핵심 요점 1 (완결된 문장)","핵심 요점 2 (완결된 문장)","핵심 요점 3 (완결된 문장)","핵심 요점 4 (필요시)"],"tags":["키워드1","키워드2","키워드3"]}',
-    '',
-    `문서 제목: ${safeTitle || '제목 없음'}`,
-    '문서 본문:',
-    safeBody.slice(0, 12000)
-  ].join('\n');
+  // Detect whether the document is primarily in a foreign language (e.g. English, Japanese, etc.)
+  const hangulMatches = safeBody.match(/[가-힣]/g);
+  const hangulCount = hangulMatches ? hangulMatches.length : 0;
+  const isForeignDoc = hangulCount < 18 && safeBody.length >= 35;
+
+  const promptText = isForeignDoc
+    ? [
+        '당신은 전문 이중언어 문서 요약 정리 도우미입니다. 아래 외국어(영어 등) 문서를 정밀 분석하여 두 가지 요약을 작성해주세요.',
+        '1) 문서 원어로 된 핵심 요약 (originalSummary)',
+        '2) 자연스럽고 유려한 한국어 번역 요약 (koreanSummary)',
+        '반드시 아래 JSON 형식으로만 응답하세요:',
+        JSON.stringify({
+          isForeign: true,
+          originalLangName: 'English',
+          koreanSummary: {
+            oneLine: '한국어로 번역된 한 줄 핵심 결론 (40~90자)',
+            bullets: ['한국어 핵심 요점 1', '한국어 핵심 요점 2', '한국어 핵심 요점 3']
+          },
+          originalSummary: {
+            oneLine: 'One-line core conclusion in the original language',
+            bullets: ['Key bullet point 1 in original language', 'Key bullet point 2 in original language', 'Key bullet point 3 in original language']
+          },
+          tags: ['한국어키워드1', '한국어키워드2', '한국어키워드3']
+        }),
+        '',
+        `문서 제목: ${safeTitle || 'No Title'}`,
+        '문서 본문:',
+        safeBody.slice(0, 12000)
+      ].join('\n')
+    : [
+        '당신은 전문 문서 요약 정리 도우미입니다. 아래 문서의 전체 맥락(서론·본론·결론)을 파악하여 한국어로 명확하게 핵심만 요약해주세요.',
+        '반드시 아래 JSON 형식으로만 응답하세요:',
+        '{"isForeign":false,"oneLine":"문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)","bullets":["핵심 요점 1 (완결된 문장)","핵심 요점 2 (완결된 문장)","핵심 요점 3 (완결된 문장)","핵심 요점 4 (필요시)"],"tags":["키워드1","키워드2","키워드3"]}',
+        '',
+        `문서 제목: ${safeTitle || '제목 없음'}`,
+        '문서 본문:',
+        safeBody.slice(0, 12000)
+      ].join('\n');
 
   // Use fast low-latency Gemini Flash-Lite models (~1.0s response time) with a strict 6-second timeout per model
   const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
@@ -3043,14 +3072,10 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     }
   }
 
-  if (!parsedJson || (!parsedJson.oneLine && !Array.isArray(parsedJson.bullets))) {
+  if (!parsedJson || (!parsedJson.oneLine && !parsedJson.koreanSummary && !Array.isArray(parsedJson.bullets))) {
     throw lastErr || new Error('AI_PARSE_FAILED');
   }
 
-  const oneLine = String(parsedJson.oneLine || '').trim();
-  const bullets = Array.isArray(parsedJson.bullets)
-    ? parsedJson.bullets.map((s) => String(s || '').trim()).filter(Boolean).slice(0, 5)
-    : [];
   const autoTags = Array.isArray(parsedJson.tags)
     ? parsedJson.tags.map((t) => String(t || '').replace(/^#/, '').trim()).filter(Boolean).slice(0, 3)
     : [];
@@ -3064,26 +3089,73 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     });
   }
 
-  structuredBlocks.push({
-    id: uid('b'),
-    type: 'h2',
-    text: '핵심 요약'
-  });
+  // A. Bilingual Summary for Foreign Language Documents
+  if (parsedJson.koreanSummary && parsedJson.originalSummary) {
+    const kOneLine = String(parsedJson.koreanSummary.oneLine || '').trim();
+    const kBullets = Array.isArray(parsedJson.koreanSummary.bullets) ? parsedJson.koreanSummary.bullets : [];
+    const oOneLine = String(parsedJson.originalSummary.oneLine || '').trim();
+    const oBullets = Array.isArray(parsedJson.originalSummary.bullets) ? parsedJson.originalSummary.bullets : [];
 
-  if (oneLine) {
+    // 1. Korean Translated Summary
     structuredBlocks.push({
       id: uid('b'),
-      type: 'callout',
-      text: `핵심 요지: ${oneLine}`
+      type: 'h2',
+      text: '📌 한국어 핵심 요약 (번역)'
     });
-  }
+    if (kOneLine) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'callout',
+        text: `핵심 요지: ${kOneLine}`
+      });
+    }
+    for (const line of kBullets) {
+      if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+    }
 
-  for (const line of bullets) {
+    // 2. Native Original Language Summary
+    const origLangName = parsedJson.originalLangName || 'Original';
     structuredBlocks.push({
       id: uid('b'),
-      type: 'bullet',
-      text: line
+      type: 'h2',
+      text: `🌐 원문 핵심 요약 (${origLangName})`
     });
+    if (oOneLine) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'callout',
+        text: `Key Takeaway: ${oOneLine}`
+      });
+    }
+    for (const line of oBullets) {
+      if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+    }
+  } else {
+    // B. Standard Korean Summary
+    const oneLine = String(parsedJson.oneLine || '').trim();
+    const bullets = Array.isArray(parsedJson.bullets)
+      ? parsedJson.bullets.map((s) => String(s || '').trim()).filter(Boolean).slice(0, 5)
+      : [];
+
+    structuredBlocks.push({
+      id: uid('b'),
+      type: 'h2',
+      text: '핵심 요약'
+    });
+    if (oneLine) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'callout',
+        text: `핵심 요지: ${oneLine}`
+      });
+    }
+    for (const line of bullets) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'bullet',
+        text: line
+      });
+    }
   }
 
   structuredBlocks.push({
@@ -3094,13 +3166,13 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
   structuredBlocks.push({
     id: uid('b'),
     type: 'h2',
-    text: '본문 내용'
+    text: isForeignDoc ? '원문 본문 내용' : '본문 내용'
   });
   structuredBlocks.push(...bodyBlocks);
 
   return {
-    blocks: structuredBlocks.slice(0, 220),
-    summaryCount: bullets.length + (oneLine ? 1 : 0),
+    blocks: structuredBlocks.slice(0, 240),
+    summaryCount: 6,
     autoTags,
     totalMasked,
     usedAI: true
