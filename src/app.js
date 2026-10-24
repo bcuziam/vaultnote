@@ -3370,10 +3370,57 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
 }
 
 /**
+ * Test connectivity and validity of a Gemini API key
+ */
+async function testGeminiApiKey(rawKey) {
+  const key = (rawKey || '').trim().replace(/^["']|["']$/g, '');
+  if (!key) return { ok: false, error: 'NO_KEY', message: 'API 키가 비어있습니다. 먼저 키를 입력해주세요.' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Ping' }] }],
+        generationConfig: { maxOutputTokens: 5 }
+      })
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      return { ok: true, message: 'Google Gemini 2.0 Flash 정상 연결됨 (작동 준비 완료)' };
+    }
+
+    let errJson = null;
+    try { errJson = await res.json(); } catch {}
+    const serverMsg = errJson?.error?.message || `HTTP ${res.status}`;
+
+    if (res.status === 400 || res.status === 403) {
+      return { ok: false, error: 'INVALID_KEY', message: `API 키 오류: 키가 유효하지 않습니다. (${serverMsg})` };
+    }
+    if (res.status === 429) {
+      return { ok: false, error: 'QUOTA', message: `할당량 초과: 무료 API 분당 또는 일일 한도를 초과했습니다. (${serverMsg})` };
+    }
+    return { ok: false, error: `HTTP_${res.status}`, message: `Google 서버 오류 (${res.status}): ${serverMsg}` };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      return { ok: false, error: 'TIMEOUT', message: '응답 시간 초과 (12초): 네트워크 상태를 확인해주세요.' };
+    }
+    return { ok: false, error: 'NETWORK', message: `네트워크 통신 오류: ${err.message || '인터넷 연결 또는 확장프로그램 차단 확인'}` };
+  }
+}
+
+/**
  * High-Quality Abstractive Summarizer using Google Gemini API (with Automatic Sensitive-Data Masking)
  */
 async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '', isUserNote = false) {
-  const apiKey = (state.settings.geminiApiKey || '').trim();
+  const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
     throw new Error('NO_API_KEY');
   }
@@ -3429,13 +3476,20 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       ].join('\n');
 
   // Standard Google Gemini Flash models with fallback order
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
   let parsedJson = null;
   let lastErr = null;
 
+  const safetySettings = [
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+  ];
+
   for (const model of models) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9500);
+    const timer = setTimeout(() => controller.abort(), 22000);
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(endpoint, {
@@ -3447,23 +3501,62 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
           generationConfig: {
             temperature: 0.2,
             responseMimeType: 'application/json'
-          }
+          },
+          safetySettings
         })
       });
       clearTimeout(timer);
+
       if (!res.ok) {
-        lastErr = new Error(`HTTP_${res.status}`);
+        let errJson = null;
+        try { errJson = await res.json(); } catch {}
+        const serverMsg = errJson?.error?.message || '';
+
+        // If auth or quota fails, stop retrying models with the same key
+        if (res.status === 400 || res.status === 403) {
+          throw new Error(`API_KEY_INVALID: ${serverMsg || 'API 키가 올바르지 않거나 권한이 없습니다.'}`);
+        }
+        if (res.status === 429) {
+          throw new Error(`QUOTA_EXCEEDED: ${serverMsg || '무료 API 할당량(분당 15회 또는 일일 한도)을 초과했습니다.'}`);
+        }
+
+        lastErr = new Error(`HTTP_${res.status}: ${serverMsg}`);
         continue;
       }
+
       const data = await res.json();
-      const rawReply = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const firstCandidate = data?.candidates?.[0];
+      if (firstCandidate?.finishReason === 'SAFETY') {
+        throw new Error('SAFETY_BLOCKED: 콘텐츠가 안전 정책에 의해 차단되었습니다.');
+      }
+
+      const rawReply = firstCandidate?.content?.parts?.[0]?.text || '';
       const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        parsedJson = JSON.parse(jsonMatch[0]);
-        break;
+        try {
+          parsedJson = JSON.parse(jsonMatch[0]);
+          break;
+        } catch {
+          try {
+            const sanitized = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+            parsedJson = JSON.parse(sanitized);
+            break;
+          } catch {}
+        }
       }
     } catch (err) {
       clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        lastErr = new Error('TIMEOUT: AI 서버 응답 시간(22초)이 초과되었습니다.');
+        continue;
+      }
+      if (
+        err.message?.startsWith('API_KEY_INVALID') ||
+        err.message?.startsWith('QUOTA_EXCEEDED') ||
+        err.message?.startsWith('SAFETY_BLOCKED')
+      ) {
+        throw err;
+      }
       lastErr = err;
     }
   }
@@ -3771,7 +3864,21 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
             showToast(`AI 고품질 핵심 요약이 반영되었습니다: ${noteTitle.slice(0, 24)}`);
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          console.warn('[Gemini Auto-Summarize Failed]:', err);
+          let reason = 'AI 통신 실패';
+          const msg = String(err?.message || '');
+          if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) {
+            reason = 'API 키 불일치 (키 확인 필요)';
+          } else if (msg.includes('QUOTA_EXCEEDED') || msg.includes('429')) {
+            reason = 'API 일일/분당 할당량 초과';
+          } else if (msg.includes('TIMEOUT')) {
+            reason = 'AI 서버 응답 시간 초과';
+          } else if (msg.includes('SAFETY_BLOCKED')) {
+            reason = '콘텐츠 안전 정책 감지';
+          }
+          showToast(`AI 요약 연결 실패 (${reason}) -> 오프라인 추출 요약이 유지되었습니다.`, 3800);
+        });
     }
 
     return newNote;
@@ -5162,10 +5269,17 @@ function bindEvents() {
   const refreshGeminiKeyModalUI = () => {
     const inp = document.getElementById('gemini-api-key-input');
     const badge = document.getElementById('gemini-key-status-badge');
-    const key = (state.settings.geminiApiKey || '').trim();
+    const feedback = document.getElementById('gemini-key-test-feedback');
+    const key = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
     if (inp) inp.value = key;
     if (badge) {
-      badge.textContent = key ? `✓ API 키 등록됨 (${key.slice(0, 8)}...)` : '미등록';
+      badge.textContent = key ? `✓ API 키 등록됨 (${key.slice(0, 6)}...${key.slice(-4)})` : '미등록';
+      badge.style.background = key ? 'var(--primary-color, #10b981)' : '';
+      badge.style.color = key ? '#ffffff' : '';
+    }
+    if (feedback) {
+      feedback.textContent = key ? '💡 [테스트] 버튼을 눌러 Google Gemini 서버와의 실시간 통신 상태를 확인할 수 있습니다.' : '';
+      feedback.style.color = 'var(--text-muted)';
     }
   };
 
@@ -5219,12 +5333,41 @@ function bindEvents() {
     e.currentTarget.textContent = isHidden ? '숨김' : '보기';
   });
 
+  document.getElementById('btn-test-gemini-key')?.addEventListener('click', async () => {
+    const inp = document.getElementById('gemini-api-key-input');
+    const feedback = document.getElementById('gemini-key-test-feedback');
+    const key = (inp?.value || '').trim().replace(/^["']|["']$/g, '');
+    if (!key) {
+      if (feedback) {
+        feedback.textContent = '❌ API 키를 먼저 입력해주세요.';
+        feedback.style.color = 'var(--text-danger, #e53e3e)';
+      }
+      return showToast('Gemini API 키를 먼저 입력해주세요.');
+    }
+
+    if (feedback) {
+      feedback.textContent = '⏳ Google Gemini 2.0 Flash 통신 확인 중...';
+      feedback.style.color = 'var(--text-muted)';
+    }
+
+    const testRes = await testGeminiApiKey(key);
+    if (feedback) {
+      feedback.textContent = (testRes.ok ? '✅ ' : '❌ ') + testRes.message;
+      feedback.style.color = testRes.ok ? 'var(--primary-color, #10b981)' : 'var(--text-danger, #e53e3e)';
+    }
+    showToast(testRes.message, testRes.ok ? 3000 : 4500);
+  });
+
   document.getElementById('btn-save-gemini-key')?.addEventListener('click', () => {
-    const key = (document.getElementById('gemini-api-key-input')?.value || '').trim();
+    const key = (document.getElementById('gemini-api-key-input')?.value || '').trim().replace(/^["']|["']$/g, '');
     state.settings.geminiApiKey = key;
     refreshGeminiKeyModalUI();
     scheduleSave();
-    showToast(key ? 'Google Gemini API 키가 저장되었습니다.' : 'Google Gemini API 키가 해제되었습니다.');
+    if (key) {
+      showToast('Google Gemini API 키가 저장되었습니다. [테스트] 버튼을 눌러 연결을 확인해보세요.');
+    } else {
+      showToast('Google Gemini API 키가 해제되었습니다.');
+    }
   });
 
   document.getElementById('btn-close-summarize-modal')?.addEventListener('click', () => {
@@ -5236,6 +5379,28 @@ function bindEvents() {
   });
   document.getElementById('btn-confirm-ai-summarize')?.addEventListener('click', async () => {
     await runAISummarizeOnActiveNote();
+  });
+  document.getElementById('btn-modal-test-gemini-key')?.addEventListener('click', async () => {
+    const inp = document.getElementById('modal-gemini-key-input');
+    const feedback = document.getElementById('modal-gemini-key-feedback');
+    const key = (inp?.value || state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+    if (!key) {
+      if (feedback) {
+        feedback.textContent = '❌ 먼저 API 키를 입력해주세요.';
+        feedback.style.color = 'var(--text-danger, #e53e3e)';
+      }
+      return showToast('Gemini API 키를 먼저 입력해주세요.');
+    }
+    if (feedback) {
+      feedback.textContent = '⏳ Google Gemini 2.0 Flash 통신 확인 중...';
+      feedback.style.color = 'var(--text-muted)';
+    }
+    const testRes = await testGeminiApiKey(key);
+    if (feedback) {
+      feedback.textContent = (testRes.ok ? '✅ ' : '❌ ') + testRes.message;
+      feedback.style.color = testRes.ok ? 'var(--primary-color, #10b981)' : 'var(--text-danger, #e53e3e)';
+    }
+    showToast(testRes.message, testRes.ok ? 3000 : 4500);
   });
 
   document.getElementById('btn-theme-toggle').addEventListener('click', () => {
@@ -5467,14 +5632,21 @@ async function runAISummarizeOnActiveNote() {
   } catch (err) {
     console.warn('[Gemini AI Summarize Error]:', err);
     let reason = 'AI 통신 실패';
-    if (err.message === 'NO_API_KEY') {
+    const msg = String(err?.message || '');
+    if (msg.includes('NO_API_KEY')) {
       reason = 'Gemini API 키가 설정되지 않음';
-    } else if (err.message === 'TOO_SHORT') {
+    } else if (msg.includes('TOO_SHORT')) {
       reason = '요약할 본문 텍스트 부족';
-    } else if (String(err.message).includes('400') || String(err.message).includes('403')) {
-      reason = 'API 키 불일치 또는 할당량 초과';
+    } else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) {
+      reason = 'API 키 불일치 (키 확인 필요)';
+    } else if (msg.includes('QUOTA_EXCEEDED') || msg.includes('429')) {
+      reason = 'API 일일/분당 할당량 초과';
+    } else if (msg.includes('TIMEOUT')) {
+      reason = 'AI 서버 응답 시간 초과';
+    } else if (msg.includes('SAFETY_BLOCKED')) {
+      reason = '콘텐츠 안전 정책 감지';
     }
-    showToast(`${reason} -> 기기 내부 [오프라인 자체 요약]으로 자동 전환되었습니다.`, 3600);
+    showToast(`${reason} -> 기기 내부 [오프라인 자체 요약]으로 자동 전환되었습니다.`, 4200);
     runOfflineSummarizeOnActiveNote('오프라인 자체 요약 완료');
   }
 }
@@ -5515,8 +5687,13 @@ function summarizeCurrentActiveNote() {
         : '감지된 민감정보 패턴(전화번호·계좌·비밀번호 등)이 없으며, 안심하고 요약할 수 있습니다.';
   }
 
-  const hasKey = Boolean((state.settings.geminiApiKey || '').trim());
+  const curKey = (state.settings.geminiApiKey || '').trim();
+  const hasKey = Boolean(curKey);
   const keyBox = document.getElementById('modal-gemini-key-box');
+  const modalKeyInp = document.getElementById('modal-gemini-key-input');
+  if (modalKeyInp && curKey) modalKeyInp.value = curKey;
+  const modalFeedback = document.getElementById('modal-gemini-key-feedback');
+  if (modalFeedback) modalFeedback.textContent = '';
   if (keyBox) {
     keyBox.classList.toggle('hidden', hasKey);
   }
