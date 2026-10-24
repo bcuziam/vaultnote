@@ -3574,6 +3574,11 @@ function bindEvents() {
       activeEl &&
       (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
 
+    // If pasting inside any modal (Cloud Sync, Security, Vault, Search, etc.), never intercept with web clipping!
+    if (activeEl && (activeEl.closest?.('.modal-backdrop') || activeEl.closest?.('.modal-card'))) {
+      return;
+    }
+
     // 1. Pasting a standalone web URL in Note List View (or anywhere outside note body editor) automatically clips & summarizes!
     const isInsideNoteEditorField =
       activeEl &&
@@ -3583,9 +3588,15 @@ function bindEvents() {
         activeEl.id === 'clipper-paste-zone' ||
         activeEl.id === 'gemini-api-key-input' ||
         activeEl.id === 'modal-gemini-key-input' ||
+        activeEl.id === 'gdrive-token-input' ||
+        activeEl.id === 'onedrive-token-input' ||
         activeEl.classList?.contains('block-editable') ||
         activeEl.classList?.contains('toggle-details-input') ||
         activeEl.closest?.('.block-table'));
+
+    if (isTextInput && !isInsideNoteEditorField && activeEl?.id !== 'list-quick-url-input') {
+      return;
+    }
 
     if (
       !['vault', 'graph', 'trash'].includes(activeNav) &&
