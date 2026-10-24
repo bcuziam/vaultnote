@@ -3709,6 +3709,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
     let html = '';
     let readerMarkdown = '';
     let finalUrl = url;
+    let jinaTimedOut = false;
 
     const localRes = await fetch(`/api/clip?url=${encodeURIComponent(url)}`).catch(() => null);
     if (localRes && localRes.ok) {
@@ -3720,16 +3721,25 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       }
     }
     if (!html && !readerMarkdown) {
-      // 1. Try Jina Reader with sufficient rendering timeout (22s) for JS-heavy news portals
-      try {
-        const jinaRes = await fetch(`https://r.jina.ai/${url}`, { signal: AbortSignal.timeout(22000) });
-        if (jinaRes && jinaRes.ok) {
-          const jinaText = await jinaRes.text();
-          if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
-            readerMarkdown = jinaText;
+      // 1. Try Jina Reader. First request of a short link (e.g. naver.me) can take 20s+ to render,
+      //    but Jina caches it, so a second attempt is usually fast. Retry once only on timeout/network error.
+      for (let attempt = 0; attempt < 2 && !readerMarkdown; attempt++) {
+        try {
+          if (attempt === 1) showToast('응답이 지연되어 한 번 더 시도하는 중... (단축 주소는 처음에 시간이 걸릴 수 있습니다)', 4000);
+          const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
+            signal: AbortSignal.timeout(attempt === 0 ? 45000 : 30000)
+          });
+          if (jinaRes && jinaRes.ok) {
+            const jinaText = await jinaRes.text();
+            if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
+              readerMarkdown = jinaText;
+            }
           }
+          break; // Got a definite HTTP answer (success or refusal): no point retrying
+        } catch (e) {
+          jinaTimedOut = true; // timeout or network error -> retry once
         }
-      } catch {}
+      }
 
       // 2. If Jina failed or was blocked, try CORS proxies with timeout
       if (!html && !readerMarkdown) {
@@ -3762,18 +3772,17 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       let domain = '';
       try { domain = new URL(url).hostname; } catch {}
       const fallbackTitle = `웹페이지 링크: ${domain || url}`;
+      const isShortLink = /(^|\.)(naver\.me|bit\.ly|t\.co|tinyurl\.com|is\.gd|goo\.gl|ow\.ly|buff\.ly|lnkd\.in|youtu\.be|cnn\.it|bbc\.in|url\.kr|vo\.la)$/i.test(domain);
+      const failMsg = jinaTimedOut
+        ? `⏱️ ${domain}의 응답이 지연되어 본문을 가져오지 못했습니다. (보안 차단이 아니라 시간 초과일 수 있습니다.)`
+        : `⚠️ 해당 웹사이트(${domain})의 외부 크롤러 접근 차단(보안 정책)으로 인해 URL 자동 추출이 제한되었습니다.`;
+      const failHint = jinaTimedOut || isShortLink
+        ? `💡 해결 방법: 잠시 후 같은 주소로 다시 시도해 보세요. (처음 읽는 단축 주소는 느리지만 두 번째는 빨라집니다.) 계속 안 되면 단축 주소 대신 주소창에 나온 기사 전체 주소를 붙여 넣거나, 본문을 복사(Ctrl+C)해 [웹 클리퍼 붙여넣기] 영역에 붙여넣기(Ctrl+V)하세요.`
+        : `💡 해결 방법: 브라우저에서 해당 기사 페이지를 열고 본문을 복사(Ctrl+C)한 후, VaultNote의 [웹 클리퍼 붙여넣기] 영역이나 본문에 붙여넣기(Ctrl+V)하시면 서식과 이미지까지 즉시 완벽하게 저장 및 요약됩니다.`;
       const fallbackBlocks = [
         { id: uid('b'), type: 'callout', text: `출처: ${url}` },
-        {
-          id: uid('b'),
-          type: 'p',
-          text: `⚠️ 해당 웹사이트(${domain})의 외부 크롤러 접근 차단(보안 정책)으로 인해 URL 자동 추출이 제한되었습니다.`
-        },
-        {
-          id: uid('b'),
-          type: 'p',
-          text: `💡 해결 방법: 브라우저에서 해당 기사 페이지를 열고 본문을 복사(Ctrl+C)한 후, VaultNote의 [웹 클리퍼 붙여넣기] 영역이나 본문에 붙여넣기(Ctrl+V)하시면 서식과 이미지까지 즉시 완벽하게 저장 및 요약됩니다.`
-        }
+        { id: uid('b'), type: 'p', text: failMsg },
+        { id: uid('b'), type: 'p', text: failHint }
       ];
 
       const folderId = targetFolderId || (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
@@ -3800,7 +3809,12 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       if (openEditor) openNoteInEditor(fallbackNote.id);
       else renderAll();
 
-      showToast('사이트 보안 차단으로 본문 자동 추출이 제한되었습니다. 기사 복사/붙여넣기를 이용해주세요.', 4500);
+      showToast(
+        jinaTimedOut
+          ? '응답 지연으로 본문을 가져오지 못했습니다. 잠시 후 같은 주소로 다시 시도하거나 기사 전체 주소를 사용해주세요.'
+          : '사이트 보안 차단으로 본문 자동 추출이 제한되었습니다. 기사 복사/붙여넣기를 이용해주세요.',
+        4500
+      );
       return fallbackNote;
     }
 
