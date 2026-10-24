@@ -8,7 +8,7 @@
   <title>VaultNote</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=25" />
+  <link rel="stylesheet" href="./src/styles.css?v=27" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -37,6 +37,7 @@
         <div class="brand-row">
           <span class="brand-title">VaultNote</span>
           <span id="sync-status-badge" class="sync-dot">저장됨</span>
+          <button type="button" id="btn-close-sidebar" class="sidebar-close-btn icon-btn" title="메뉴 닫기">✕</button>
         </div>
         <button id="btn-new-note" class="btn btn-primary btn-sm" title="새 노트 작성 (Alt+N)">＋ 새 노트</button>
       </div>
@@ -108,6 +109,7 @@
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
       </div>
     </aside>
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
     <!-- 우측 넓은 메인 영역 -->
     <main id="main-workspace" class="main-workspace">
@@ -685,6 +687,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=25"></script>
+  <script type="module" src="./src/app.js?v=27"></script>
 </body>
 </html>

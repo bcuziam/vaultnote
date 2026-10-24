@@ -803,7 +803,7 @@ function selectCategoryNav(navKey) {
     renderAll();
   }
   if (window.innerWidth <= 820) {
-    document.getElementById('sidebar').classList.add('collapsed');
+    closeSidebar();
   }
 }
 
@@ -815,7 +815,7 @@ function openNoteInEditor(noteId) {
   activeViewMode = 'editor';
   renderAll();
   if (window.innerWidth <= 820) {
-    document.getElementById('sidebar').classList.add('collapsed');
+    closeSidebar();
   }
 }
 
@@ -874,9 +874,9 @@ function renderMainNoteListView() {
         <div class="main-note-snippet">${escapeHtml(getNotePlainSnippet(note))}</div>
       </div>
       <div class="main-note-right">
-        ${tagsText ? `<span>${tagsText}</span>` : ''}
+        ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
         <span class="note-folder-badge">${escapeHtml(folderName)}</span>
-        <span>${formatDate(note.updatedAt)}</span>
+        <span class="note-date-badge">${formatDate(note.updatedAt)}</span>
         ${
           isTrash
             ? `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
@@ -3459,6 +3459,11 @@ async function initApp() {
   setupBookmarklet();
   initNavigationHistory();
   bindEvents();
+  if (window.innerWidth <= 820) {
+    updateSidebarUI(true);
+  } else {
+    updateSidebarUI(Boolean(state.settings.sidebarCollapsed));
+  }
   renderAll(true);
   resetIdleTimer();
 
@@ -3593,6 +3598,8 @@ function bindEvents() {
 
   // Toggle Sidebar, List View, Editor Width
   document.getElementById('btn-toggle-sidebar').addEventListener('click', toggleSidebar);
+  document.getElementById('btn-close-sidebar')?.addEventListener('click', closeSidebar);
+  document.getElementById('sidebar-backdrop')?.addEventListener('click', closeSidebar);
   document.getElementById('btn-show-list-view').addEventListener('click', () => {
     if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
     activeViewMode = 'list';
@@ -4605,9 +4612,26 @@ function bindEvents() {
   });
 }
 
+function updateSidebarUI(collapsed) {
+  state.settings.sidebarCollapsed = collapsed;
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (sidebar) sidebar.classList.toggle('collapsed', collapsed);
+  if (backdrop) {
+    const isMobile = window.innerWidth <= 820;
+    backdrop.classList.toggle('hidden', collapsed || !isMobile);
+  }
+}
+
 function toggleSidebar() {
-  state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed;
-  document.getElementById('sidebar').classList.toggle('collapsed', state.settings.sidebarCollapsed);
+  const sidebar = document.getElementById('sidebar');
+  const isCurrentlyCollapsed = sidebar ? sidebar.classList.contains('collapsed') : state.settings.sidebarCollapsed;
+  updateSidebarUI(!isCurrentlyCollapsed);
+  scheduleSave(false);
+}
+
+function closeSidebar() {
+  updateSidebarUI(true);
   scheduleSave(false);
 }
 
