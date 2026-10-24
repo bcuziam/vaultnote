@@ -2329,6 +2329,16 @@ const GENERIC_GRAPH_TAGS = new Set([
   'clip', 'note', 'summary', 'memo', 'news', 'article'
 ]);
 
+const URL_WEB_STOPWORDS = new Set([
+  'http', 'https', 'www', 'com', 'org', 'net', 'gov', 'edu', 'io', 'kr', 'co', 'uk', 'jp',
+  'html', 'htm', 'php', 'asp', 'aspx', 'jsp', 'url', 'uri', 'link', 'href', 'src',
+  'view', 'index', 'page', 'site', 'post', 'article', 'news', 'media', 'press',
+  'image', 'images', 'img', 'photo', 'photos', 'pic', 'pics', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg',
+  'ref', 'source', 'author', 'title', 'content', 'text', 'comment', 'comments', 'reply',
+  'null', 'undefined', 'true', 'false', 'width', 'height', 'style', 'class', 'id', 'div', 'span',
+  'edition', 'cnn', 'bbc', 'naver', 'daum', 'google', 'blog', 'feed', 'rss', 'live'
+]);
+
 function isMeaningfulTopicTag(tag = '') {
   if (!tag) return false;
   const clean = String(tag).replace(/^#/, '').trim().toLowerCase();
@@ -2336,7 +2346,9 @@ function isMeaningfulTopicTag(tag = '') {
   if (GENERIC_GRAPH_TAGS.has(clean)) return false;
   if (KOREAN_STOPWORDS.has(clean)) return false;
   if (ENGLISH_STOPWORDS.has(clean)) return false;
+  if (URL_WEB_STOPWORDS.has(clean)) return false;
   if (/^\d+$/.test(clean)) return false;
+  if (/^[a-z]+$/.test(clean) && clean.length < 3) return false;
   return true;
 }
 
@@ -2344,17 +2356,12 @@ function sanitizeExistingNoteTags() {
   let changed = false;
   for (const n of state.notes) {
     if (Array.isArray(n.tags)) {
-      const beforeLen = n.tags.length;
+      const beforeStr = JSON.stringify(n.tags);
       n.tags = n.tags.filter((t) => {
-        const lower = String(t || '').replace(/^#/, '').trim().toLowerCase();
-        return (
-          t === '요약' ||
-          t === '클리핑' ||
-          t === '가이드' ||
-          (isMeaningfulTopicTag(t) && !ENGLISH_STOPWORDS.has(lower))
-        );
+        if (t === '요약' || t === '클리핑' || t === '가이드') return true;
+        return isMeaningfulTopicTag(t);
       });
-      if (n.tags.length !== beforeLen) changed = true;
+      if (JSON.stringify(n.tags) !== beforeStr) changed = true;
     }
   }
   if (changed) scheduleSave(false);
@@ -3172,9 +3179,15 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
     candidateSentences = collectCandidates(2);
   }
 
-  // Tokenize words for frequency & keyword extraction
+  // Tokenize words for frequency & keyword extraction (stripping URLs & Web noise)
+  const cleanStrForTokens = (str) =>
+    String(str || '')
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/www\.\S+/gi, ' ')
+      .replace(/[a-zA-Z0-9_-]+\.(com|org|net|gov|edu|io|kr|co|html|php)/gi, ' ');
+
   const tokenize = (str) =>
-    (String(str || '').match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
+    (cleanStrForTokens(str).match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
       .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
       .filter((w) => isMeaningfulTopicTag(w.toLowerCase()));
 
@@ -3399,14 +3412,14 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
         safeBody.slice(0, 12000)
       ].join('\n');
 
-  // Use fast low-latency Gemini Flash-Lite models (~1.0s response time) with a strict 6-second timeout per model
-  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+  // Standard Google Gemini Flash models with fallback order
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
   let parsedJson = null;
   let lastErr = null;
 
   for (const model of models) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6500);
+    const timer = setTimeout(() => controller.abort(), 9500);
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(endpoint, {
@@ -3439,12 +3452,15 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     }
   }
 
-  if (!parsedJson || (!parsedJson.oneLine && !parsedJson.koreanSummary && !Array.isArray(parsedJson.bullets))) {
+  if (!parsedJson || (!parsedJson.oneLine && !parsedJson.koreanSummary && !parsedJson.korean && !Array.isArray(parsedJson.bullets))) {
     throw lastErr || new Error('AI_PARSE_FAILED');
   }
 
   const autoTags = Array.isArray(parsedJson.tags)
-    ? parsedJson.tags.map((t) => String(t || '').replace(/^#/, '').trim()).filter(Boolean).slice(0, 3)
+    ? parsedJson.tags
+        .map((t) => String(t || '').replace(/^#/, '').trim())
+        .filter(isMeaningfulTopicTag)
+        .slice(0, 4)
     : [];
 
   const structuredBlocks = [];
@@ -3457,45 +3473,66 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
   }
 
   // A. Bilingual Summary for Foreign Language Documents
-  if (parsedJson.koreanSummary && parsedJson.originalSummary) {
-    const kOneLine = String(parsedJson.koreanSummary.oneLine || '').trim();
-    const kBullets = Array.isArray(parsedJson.koreanSummary.bullets) ? parsedJson.koreanSummary.bullets : [];
-    const oOneLine = String(parsedJson.originalSummary.oneLine || '').trim();
-    const oBullets = Array.isArray(parsedJson.originalSummary.bullets) ? parsedJson.originalSummary.bullets : [];
+  const kSum =
+    parsedJson.koreanSummary ||
+    (parsedJson.korean && typeof parsedJson.korean === 'object' ? parsedJson.korean : null);
+  const oSum =
+    parsedJson.originalSummary ||
+    parsedJson.englishSummary ||
+    (parsedJson.original && typeof parsedJson.original === 'object' ? parsedJson.original : null);
 
+  if (kSum || oSum) {
     // 1. Korean Translated Summary
-    structuredBlocks.push({
-      id: uid('b'),
-      type: 'h2',
-      text: '📌 한국어 핵심 요약 (번역)'
-    });
-    if (kOneLine) {
+    if (kSum) {
+      const kOneLine = String(kSum.oneLine || kSum.summary || '').trim();
+      const kBullets = Array.isArray(kSum.bullets)
+        ? kSum.bullets
+        : Array.isArray(kSum.points)
+        ? kSum.points
+        : [];
+
       structuredBlocks.push({
         id: uid('b'),
-        type: 'callout',
-        text: `핵심 요지: ${kOneLine}`
+        type: 'h2',
+        text: '📌 한국어 핵심 요약 (번역)'
       });
-    }
-    for (const line of kBullets) {
-      if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      if (kOneLine) {
+        structuredBlocks.push({
+          id: uid('b'),
+          type: 'callout',
+          text: `핵심 요지: ${kOneLine}`
+        });
+      }
+      for (const line of kBullets) {
+        if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      }
     }
 
     // 2. Native Original Language Summary
-    const origLangName = parsedJson.originalLangName || 'Original';
-    structuredBlocks.push({
-      id: uid('b'),
-      type: 'h2',
-      text: `🌐 원문 핵심 요약 (${origLangName})`
-    });
-    if (oOneLine) {
+    if (oSum) {
+      const origLangName = parsedJson.originalLangName || 'English';
+      const oOneLine = String(oSum.oneLine || oSum.summary || '').trim();
+      const oBullets = Array.isArray(oSum.bullets)
+        ? oSum.bullets
+        : Array.isArray(oSum.points)
+        ? oSum.points
+        : [];
+
       structuredBlocks.push({
         id: uid('b'),
-        type: 'callout',
-        text: `Key Takeaway: ${oOneLine}`
+        type: 'h2',
+        text: `🌐 원문 핵심 요약 (${origLangName})`
       });
-    }
-    for (const line of oBullets) {
-      if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      if (oOneLine) {
+        structuredBlocks.push({
+          id: uid('b'),
+          type: 'callout',
+          text: `Key Takeaway: ${oOneLine}`
+        });
+      }
+      for (const line of oBullets) {
+        if (line) structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      }
     }
   } else {
     // B. Standard Korean Summary
@@ -3517,11 +3554,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       });
     }
     for (const line of bullets) {
-      structuredBlocks.push({
-        id: uid('b'),
-        type: 'bullet',
-        text: line
-      });
+      structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
     }
   }
 
@@ -3661,7 +3694,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
     if (summarize) {
       const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
       finalBlocks = localSum.blocks;
-      tags = ['요약', '클리핑', ...localSum.autoTags.filter((t) => t !== '요약' && t !== '클리핑')];
+      tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
     }
 
     const folderId =
@@ -3708,7 +3741,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
           if (aiSum && aiSum.blocks && !newNote.trashed && !newNote.isEncrypted) {
             newNote.blocks = aiSum.blocks;
             for (const kw of aiSum.autoTags || []) {
-              if (!newNote.tags.includes(kw)) newNote.tags.push(kw);
+              if (isMeaningfulTopicTag(kw) && !newNote.tags.includes(kw)) newNote.tags.push(kw);
             }
             newNote.updatedAt = new Date().toISOString();
             scheduleSave();
@@ -3946,6 +3979,7 @@ async function initApp() {
     state.notes.forEach((n) => {
       n.title = stripLeadingEmojis(n.title);
     });
+    sanitizeExistingNoteTags();
   } else {
     await VaultStorage.saveState(state);
   }
@@ -4780,7 +4814,7 @@ function bindEvents() {
         sumResult = summarizeExtractedArticle(noteTitle, parsed.blocks, sourceUrl);
       }
       finalBlocks = sumResult.blocks;
-      tags = ['요약', '클리핑', ...sumResult.autoTags.filter((t) => t !== '요약' && t !== '클리핑')];
+      tags = ['요약', '클리핑', ...sumResult.autoTags.filter(isMeaningfulTopicTag)];
     }
     const now = new Date().toISOString();
     const newNote = {
@@ -5332,7 +5366,7 @@ function applySummaryResultToActiveNote(sumResult, toastMessage) {
 
   note.tags = note.tags || [];
   if (!note.tags.includes('요약')) note.tags.push('요약');
-  for (const kw of (sumResult.autoTags || []).slice(0, 2)) {
+  for (const kw of (sumResult.autoTags || []).filter(isMeaningfulTopicTag).slice(0, 2)) {
     if (!note.tags.includes(kw)) note.tags.push(kw);
   }
 
