@@ -170,6 +170,8 @@ let activeVaultCategory = 'all';
 let idleTimer = null;
 let draggedNoteId = null;
 let draggedBlockId = null;
+let selectedBlockIds = new Set();
+let lastSelectedBlockId = null;
 
 // ============================================================================
 // Utility Functions
@@ -808,6 +810,7 @@ function selectCategoryNav(navKey) {
 }
 
 function openNoteInEditor(noteId) {
+  clearBlockSelection();
   activeNoteId = noteId;
   if (['vault', 'graph', 'clipper'].includes(activeNav)) {
     activeNav = 'all';
@@ -943,6 +946,7 @@ function renderActiveNoteEditor() {
   const editorContent = document.getElementById('note-editor-content');
 
   if (!note) {
+    clearBlockSelection();
     encryptedGate.classList.add('hidden');
     editorContent.classList.add('hidden');
     emptyState.classList.remove('hidden');
@@ -967,6 +971,7 @@ function renderActiveNoteEditor() {
 
   encryptedGate.classList.add('hidden');
   editorContent.classList.remove('hidden');
+  initNoteUndoHistory(note);
 
   const titleInput = document.getElementById('note-title-input');
   if (document.activeElement !== titleInput) {
@@ -1014,6 +1019,105 @@ function renderActiveNoteEditor() {
   renderBacklinksPanel(note, blocks);
 }
 
+// ============================================================================
+// Multi-Block Selection & Batch Deletion Engine (Notion / Obsidian style)
+// ============================================================================
+function clearBlockSelection() {
+  selectedBlockIds.clear();
+  lastSelectedBlockId = null;
+  document.querySelectorAll('#blocks-container .block-row.selected-block-row').forEach((el) => {
+    el.classList.remove('selected-block-row');
+  });
+  updateMultiBlockActionBar();
+}
+
+function updateMultiBlockActionBar() {
+  const bar = document.getElementById('multi-block-action-bar');
+  const countEl = document.getElementById('multi-block-count');
+  if (!bar) return;
+  const count = selectedBlockIds.size;
+  if (count > 0) {
+    if (countEl) countEl.textContent = `${count}개 줄 선택됨`;
+    bar.classList.remove('hidden');
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+function toggleBlockSelection(blockId, isShift = false) {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  if (isShift && lastSelectedBlockId) {
+    const idx1 = blocks.findIndex((b) => b.id === lastSelectedBlockId);
+    const idx2 = blocks.findIndex((b) => b.id === blockId);
+    if (idx1 !== -1 && idx2 !== -1) {
+      const start = Math.min(idx1, idx2);
+      const end = Math.max(idx1, idx2);
+      for (let i = start; i <= end; i++) {
+        selectedBlockIds.add(blocks[i].id);
+      }
+    } else {
+      selectedBlockIds.add(blockId);
+      lastSelectedBlockId = blockId;
+    }
+  } else {
+    if (selectedBlockIds.has(blockId)) {
+      selectedBlockIds.delete(blockId);
+      if (lastSelectedBlockId === blockId) {
+        lastSelectedBlockId = selectedBlockIds.size > 0 ? Array.from(selectedBlockIds)[selectedBlockIds.size - 1] : null;
+      }
+    } else {
+      selectedBlockIds.add(blockId);
+      lastSelectedBlockId = blockId;
+    }
+  }
+
+  document.querySelectorAll('#blocks-container .block-row').forEach((row) => {
+    const bId = row.dataset.blockId;
+    row.classList.toggle('selected-block-row', selectedBlockIds.has(bId));
+  });
+
+  updateMultiBlockActionBar();
+}
+
+function selectAllBlocks() {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks || blocks.length === 0) return;
+  selectedBlockIds.clear();
+  blocks.forEach((b) => selectedBlockIds.add(b.id));
+  lastSelectedBlockId = blocks[blocks.length - 1].id;
+  document.querySelectorAll('#blocks-container .block-row').forEach((row) => {
+    row.classList.add('selected-block-row');
+  });
+  updateMultiBlockActionBar();
+}
+
+function deleteSelectedBlocks() {
+  if (selectedBlockIds.size === 0) return;
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  const count = selectedBlockIds.size;
+  recordPreActionSnapshot();
+
+  const remaining = blocks.filter((b) => !selectedBlockIds.has(b.id));
+  if (remaining.length === 0) {
+    remaining.push({ id: uid('b'), type: 'p', text: '' });
+  }
+
+  blocks.length = 0;
+  blocks.push(...remaining);
+
+  clearBlockSelection();
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  showToast(`${count}개 줄이 삭제되었습니다. (되돌리기: ↩ 또는 Ctrl+Z)`);
+}
+
 function renderBlocksList(note, blocks) {
   const container = document.getElementById('blocks-container');
   container.innerHTML = '';
@@ -1023,9 +1127,18 @@ function renderBlocksList(note, blocks) {
     if (!note.isEncrypted) note.blocks = blocks;
   }
 
+  const validIds = new Set(blocks.map((b) => b.id));
+  for (const id of selectedBlockIds) {
+    if (!validIds.has(id)) selectedBlockIds.delete(id);
+  }
+  updateMultiBlockActionBar();
+
   blocks.forEach((block, idx) => {
     const row = document.createElement('div');
     row.className = `block-row block-${block.type || 'p'}`;
+    if (selectedBlockIds.has(block.id)) {
+      row.classList.add('selected-block-row');
+    }
     row.dataset.blockId = block.id;
 
     const gutter = document.createElement('div');
@@ -1035,12 +1148,16 @@ function renderBlocksList(note, blocks) {
     dragBtn.type = 'button';
     dragBtn.className = 'block-drag-btn';
     dragBtn.textContent = '⋮⋮';
-    dragBtn.title = '마우스로 잡고 위아래로 끌어 줄 순서 이동';
+    dragBtn.title = '클릭: 줄 선택 (Shift+클릭: 범위 선택) / 드래그: 순서 이동';
     dragBtn.addEventListener('mousedown', () => {
       row.draggable = true;
     });
     dragBtn.addEventListener('mouseup', () => {
       row.draggable = false;
+    });
+    dragBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleBlockSelection(block.id, e.shiftKey);
     });
 
     const plusBtn = document.createElement('button');
@@ -1054,6 +1171,12 @@ function renderBlocksList(note, blocks) {
     });
     gutter.appendChild(dragBtn);
     gutter.appendChild(plusBtn);
+
+    gutter.addEventListener('click', (e) => {
+      if (e.target.closest('.block-plus-btn')) return;
+      e.stopPropagation();
+      toggleBlockSelection(block.id, e.shiftKey);
+    });
 
     row.addEventListener('dragstart', (e) => {
       draggedBlockId = block.id;
@@ -1105,6 +1228,11 @@ function renderBlocksList(note, blocks) {
 
     const body = document.createElement('div');
     body.className = 'block-body';
+    body.addEventListener('focusin', () => {
+      if (selectedBlockIds.size > 0 && !selectedBlockIds.has(block.id)) {
+        clearBlockSelection();
+      }
+    });
 
     if (block.type === 'divider') {
       const hrWrap = document.createElement('div');
@@ -1412,6 +1540,7 @@ function renderBlocksList(note, blocks) {
         if (e.key === 'Enter' && !e.shiftKey && block.type !== 'code') {
           e.preventDefault();
           closeSlashMenu();
+          recordPreActionSnapshot();
           if (['todo', 'bullet', 'number'].includes(block.type) && !block.text.trim()) {
             block.type = 'p';
             touchNote(note, blocks);
@@ -1428,6 +1557,7 @@ function renderBlocksList(note, blocks) {
         } else if (e.key === 'Backspace' && ta.value === '') {
           e.preventDefault();
           closeSlashMenu();
+          recordPreActionSnapshot();
           if (block.type !== 'p') {
             block.type = 'p';
             touchNote(note, blocks);
@@ -1631,11 +1761,155 @@ function focusBlock(blockId) {
   }, 10);
 }
 
+// ============================================================================
+// Note Editor Undo / Redo Engine (Ctrl+Z / Ctrl+Y & Mobile Buttons)
+// ============================================================================
+let noteUndoStack = [];
+let noteRedoStack = [];
+let lastSnapshotNoteId = null;
+let lastSnapshotJson = '';
+let undoDebounceTimer = null;
+
+function getNoteSnapshot(note) {
+  if (!note) return null;
+  const blocks = getEditableBlocksForNote(note) || [];
+  return {
+    noteId: note.id,
+    title: note.title || '',
+    blocks: JSON.parse(JSON.stringify(blocks))
+  };
+}
+
+function updateUndoRedoButtonState() {
+  const btnUndo = document.getElementById('btn-editor-undo');
+  const btnRedo = document.getElementById('btn-editor-redo');
+  if (btnUndo) {
+    btnUndo.disabled = noteUndoStack.length === 0;
+  }
+  if (btnRedo) {
+    btnRedo.disabled = noteRedoStack.length === 0;
+  }
+}
+
+function initNoteUndoHistory(note) {
+  if (!note) return;
+  if (lastSnapshotNoteId !== note.id) {
+    noteUndoStack = [];
+    noteRedoStack = [];
+    lastSnapshotNoteId = note.id;
+    const snap = getNoteSnapshot(note);
+    lastSnapshotJson = snap ? JSON.stringify({ title: snap.title, blocks: snap.blocks }) : '';
+    updateUndoRedoButtonState();
+  }
+}
+
+function recordPreActionSnapshot() {
+  const note = getActiveNote();
+  if (!note) return;
+  const snap = getNoteSnapshot(note);
+  if (!snap) return;
+  const snapJson = JSON.stringify({ title: snap.title, blocks: snap.blocks });
+  if (lastSnapshotJson && lastSnapshotJson !== snapJson) {
+    noteUndoStack.push(JSON.parse(lastSnapshotJson));
+    if (noteUndoStack.length > 60) noteUndoStack.shift();
+    noteRedoStack = [];
+  }
+  lastSnapshotJson = snapJson;
+  updateUndoRedoButtonState();
+}
+
+function pushUndoSnapshot(immediate = false) {
+  const note = getActiveNote();
+  if (!note) return;
+  const snap = getNoteSnapshot(note);
+  if (!snap) return;
+  const snapJson = JSON.stringify({ title: snap.title, blocks: snap.blocks });
+
+  if (lastSnapshotNoteId !== note.id) {
+    initNoteUndoHistory(note);
+    return;
+  }
+
+  if (snapJson === lastSnapshotJson) return;
+
+  clearTimeout(undoDebounceTimer);
+  if (immediate) {
+    if (lastSnapshotJson) {
+      noteUndoStack.push(JSON.parse(lastSnapshotJson));
+      if (noteUndoStack.length > 60) noteUndoStack.shift();
+      noteRedoStack = [];
+    }
+    lastSnapshotJson = snapJson;
+    updateUndoRedoButtonState();
+  } else {
+    undoDebounceTimer = setTimeout(() => {
+      if (lastSnapshotJson && lastSnapshotJson !== snapJson) {
+        noteUndoStack.push(JSON.parse(lastSnapshotJson));
+        if (noteUndoStack.length > 60) noteUndoStack.shift();
+        noteRedoStack = [];
+      }
+      lastSnapshotJson = snapJson;
+      updateUndoRedoButtonState();
+    }, 400);
+  }
+}
+
+function performUndo() {
+  const note = getActiveNote();
+  if (!note || noteUndoStack.length === 0) return false;
+  clearTimeout(undoDebounceTimer);
+
+  const currentBlocks = getEditableBlocksForNote(note) || [];
+  const currentSnap = { title: note.title || '', blocks: JSON.parse(JSON.stringify(currentBlocks)) };
+  noteRedoStack.push(currentSnap);
+
+  const prevSnap = noteUndoStack.pop();
+  note.title = prevSnap.title;
+  if (note.isEncrypted && unlockedVaultPassword) {
+    unlockedDecryptedBlocks[note.id] = prevSnap.blocks;
+  } else {
+    note.blocks = prevSnap.blocks;
+  }
+  lastSnapshotJson = JSON.stringify({ title: prevSnap.title, blocks: prevSnap.blocks });
+
+  touchNote(note, prevSnap.blocks);
+  renderActiveNoteEditor();
+  updateUndoRedoButtonState();
+  showToast('되돌리기 완료 (Undo)', 1200);
+  return true;
+}
+
+function performRedo() {
+  const note = getActiveNote();
+  if (!note || noteRedoStack.length === 0) return false;
+  clearTimeout(undoDebounceTimer);
+
+  const currentBlocks = getEditableBlocksForNote(note) || [];
+  const currentSnap = { title: note.title || '', blocks: JSON.parse(JSON.stringify(currentBlocks)) };
+  noteUndoStack.push(currentSnap);
+
+  const nextSnap = noteRedoStack.pop();
+  note.title = nextSnap.title;
+  if (note.isEncrypted && unlockedVaultPassword) {
+    unlockedDecryptedBlocks[note.id] = nextSnap.blocks;
+  } else {
+    note.blocks = nextSnap.blocks;
+  }
+  lastSnapshotJson = JSON.stringify({ title: nextSnap.title, blocks: nextSnap.blocks });
+
+  touchNote(note, nextSnap.blocks);
+  renderActiveNoteEditor();
+  updateUndoRedoButtonState();
+  showToast('다시 실행 완료 (Redo)', 1200);
+  return true;
+}
+
 /**
  * Light-weight touchNote that does NOT rebuild the editor DOM during typing
  */
 function touchNote(note, updatedBlocks = null) {
   if (!note) return;
+  pushUndoSnapshot(false);
   note.updatedAt = new Date().toISOString();
   if (note.isEncrypted && updatedBlocks && unlockedVaultPassword) {
     VaultCrypto.encryptData(updatedBlocks, unlockedVaultPassword).then((enc) => {
@@ -1681,6 +1955,7 @@ function applyBlockType(blockId, newType) {
 
   const target = blocks.find((b) => b.id === blockId);
   if (target) {
+    recordPreActionSnapshot();
     target.type = newType;
     if (target.text === '/') target.text = '';
     if (newType === 'table') {
@@ -1697,6 +1972,11 @@ function applyBlockType(blockId, newType) {
 }
 
 function executeBlockAction(blockId, action) {
+  if (action === 'select') {
+    closeSlashMenu();
+    toggleBlockSelection(blockId);
+    return;
+  }
   if (action === 'summarize') {
     closeSlashMenu();
     summarizeCurrentActiveNote();
@@ -1709,6 +1989,7 @@ function executeBlockAction(blockId, action) {
   const idx = blocks.findIndex((b) => b.id === blockId);
   if (idx === -1) return;
 
+  recordPreActionSnapshot();
   if (action === 'up' && idx > 0) {
     const tmp = blocks[idx - 1];
     blocks[idx - 1] = blocks[idx];
@@ -2336,7 +2617,6 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
     }
   }
 
-  let foundHeadline = false;
   let inBody = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -2349,64 +2629,58 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
       break;
     }
 
-    // 2. Identify the main headline anchor to skip all navigation/header menus before the article
-    if (!foundHeadline) {
-      if (line.startsWith('#')) {
-        const cleanH = line.replace(/^#+\s*/, '').replace(/\[|\]/g, '').trim();
-        const cleanT = (extractedTitle || '').replace(/\[|\]/g, '').trim();
-        if (cleanT && (cleanH.includes(cleanT.slice(0, 8)) || cleanT.includes(cleanH.slice(0, 8)))) {
-          foundHeadline = true;
-          if (!extractedTitle) extractedTitle = cleanH;
-          continue;
-        }
-      }
-      // If no Title: header was present, check if this line is an h1 or h2 that looks like a title
-      if (!extractedTitle && (line.startsWith('# ') || line.startsWith('## ')) && line.length >= 10) {
-        extractedTitle = line.replace(/^#+\s*/, '').trim();
-        foundHeadline = true;
-        continue;
-      }
-      continue;
-    }
-
-    // 3. Filter out UI buttons, reactions, audio player controls, font tools, and social shares
+    // 2. Filter out navigation buttons, menus, and boilerplate links before article content
     if (/^((\[.*?\]\(.*?\)\s*)+)$/.test(line) && !line.includes('Image')) continue;
     if (/^(\*|\-)\s*\[.*\]\(.*\)$/.test(line)) continue;
     if (/^(_입력_|_수정_|_PICK_|_성별_|_말하기 속도_|_기자_)/.test(line)) continue;
-    if (/^(구독|닫기|본문듣기|글자크기|\*\*글자크기\*\*|인쇄하기|SNS 보내기|기사 원문|반응|언론사별 바로가기|이동 통신망|텍스트 음성 변환)/i.test(line)) continue;
+    if (/^(구독|닫기|본문듣기|글자크기|\*\*글자크기\*\*|인쇄하기|SNS 보내기|기사 원문|반응|언론사별 바로가기|이동 통신망|텍스트 음성 변환|본문 바로가기|이전 페이지)/i.test(line)) continue;
     if (line.includes('office_logo') || line.includes('favicon')) continue;
 
-    // 4. Genuine body detector: requires a substantial sentence, image, or subheading
-    if (!inBody) {
-      if (line.length >= 18 || line.includes('Image') || (line.startsWith('**') && line.length >= 15) || line.startsWith('###')) {
-        inBody = true;
-      } else {
-        continue;
-      }
-    }
-
-    // 5. Structure into clean blocks
+    // 3. Image Detection: Always capture real images (never downgrade to plain text links)
     const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
     if (imgMatch) {
+      inBody = true;
       blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
-    } else if (line.startsWith('### ') || line.startsWith('#### ')) {
-      blocks.push({ id: uid('b'), type: 'h3', text: line.replace(/^#+\s*/, '').trim() });
-    } else if (line.startsWith('> ')) {
-      blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim() });
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      blocks.push({ id: uid('b'), type: 'bullet', text: line.slice(2).trim() });
-    } else {
-      blocks.push({ id: uid('b'), type: 'p', text: line });
+      continue;
+    }
+
+    // 4. Headline & Subheading detection
+    if (line.startsWith('#')) {
+      const cleanH = line.replace(/^#+\s*/, '').replace(/\[|\]/g, '').trim();
+      const cleanT = (extractedTitle || '').replace(/\[|\]/g, '').trim();
+      if (cleanT && (cleanH.includes(cleanT.slice(0, 8)) || cleanT.includes(cleanH.slice(0, 8)))) {
+        inBody = true;
+        if (!extractedTitle) extractedTitle = cleanH;
+        continue;
+      }
+      blocks.push({ id: uid('b'), type: 'h3', text: cleanH });
+      inBody = true;
+      continue;
+    }
+
+    // 5. Genuine content: Substantial sentences, bold lead lines, quotes
+    if (line.length >= 15 || line.startsWith('**') || line.startsWith('> ')) {
+      inBody = true;
+      if (line.startsWith('> ')) {
+        blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim() });
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        blocks.push({ id: uid('b'), type: 'bullet', text: line.slice(2).trim() });
+      } else {
+        blocks.push({ id: uid('b'), type: 'p', text: line });
+      }
     }
   }
 
-  // Fallback: If strict parser found 0 blocks, parse conservatively
+  // Fallback: If strict parser found 0 blocks, parse conservatively with image support
   if (blocks.filter((b) => b.type !== 'callout').length === 0) {
     for (const rawLine of lines) {
       const line = rawLine.trim();
       if (!line || line.startsWith('Title: ') || line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
-      if (/^(구독|닫기|본문듣기|글자크기|인쇄하기|SNS 보내기)/i.test(line)) continue;
-      if (line.length >= 20) {
+      if (/^(구독|닫기|본문듣기|글자크기|인쇄하기|SNS 보내기|이전 페이지|본문 바로가기)/i.test(line)) continue;
+      const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
+      if (imgMatch) {
+        blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
+      } else if (line.length >= 18) {
         blocks.push({ id: uid('b'), type: 'p', text: line });
       }
     }
@@ -3597,6 +3871,29 @@ function bindEvents() {
 
   // Global Shortcuts
   window.addEventListener('keydown', (e) => {
+    // Undo (Ctrl+Z / Cmd+Z) & Redo (Ctrl+Y / Ctrl+Shift+Z)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const activeEl = document.activeElement;
+      const isInsideNoteBody = activeEl && (activeEl.classList?.contains('block-editable') || activeEl.id === 'note-title-input');
+      if (isInsideNoteBody || activeViewMode === 'editor') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          performRedo();
+        } else {
+          performUndo();
+        }
+        return;
+      }
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      const activeEl = document.activeElement;
+      const isInsideNoteBody = activeEl && (activeEl.classList?.contains('block-editable') || activeEl.id === 'note-title-input');
+      if (isInsideNoteBody || activeViewMode === 'editor') {
+        e.preventDefault();
+        performRedo();
+        return;
+      }
+    }
+
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       openSearchModal();
@@ -3614,7 +3911,21 @@ function bindEvents() {
       lockEverything('화면이 잠금 상태로 전환되었습니다.', true);
     } else if (e.key === 'Escape') {
       closeSlashMenu();
+      if (selectedBlockIds.size > 0) {
+        clearBlockSelection();
+      }
       document.getElementById('search-modal').classList.add('hidden');
+    }
+
+    // Delete or Backspace key when multiple blocks are selected
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBlockIds.size > 0) {
+      const activeEl = document.activeElement;
+      const isOutsideEditor = activeEl && activeEl.closest('.modal-backdrop, #search-modal, #note-title-input, #note-tag-input, #scratchpad-drawer');
+      if (!isOutsideEditor) {
+        e.preventDefault();
+        deleteSelectedBlocks();
+        return;
+      }
     }
   });
 
@@ -3666,6 +3977,30 @@ function bindEvents() {
   });
   document.getElementById('btn-nav-forward')?.addEventListener('click', () => {
     window.history.forward();
+  });
+
+  // Undo / Redo Buttons
+  document.getElementById('btn-editor-undo')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    performUndo();
+  });
+  document.getElementById('btn-editor-redo')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    performRedo();
+  });
+
+  // Multi-block batch action bar listeners
+  document.getElementById('btn-delete-selected-blocks')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    deleteSelectedBlocks();
+  });
+  document.getElementById('btn-select-all-blocks')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    selectAllBlocks();
+  });
+  document.getElementById('btn-cancel-block-selection')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    clearBlockSelection();
   });
 
   // Toggle Sidebar, List View, Editor Width

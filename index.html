@@ -8,7 +8,7 @@
   <title>VaultNote</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=28" />
+  <link rel="stylesheet" href="./src/styles.css?v=31" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -117,6 +117,8 @@
       <header class="workspace-topbar">
         <div class="topbar-left">
           <button type="button" id="btn-toggle-sidebar" class="icon-btn" title="사이드바 접기/펼치기 (Ctrl+\)">◧ 메뉴</button>
+          <button type="button" id="btn-editor-undo" class="icon-btn" title="되돌리기 / 실행 취소 (Ctrl+Z)" style="font-weight:700;">↩</button>
+          <button type="button" id="btn-editor-redo" class="icon-btn" title="다시 실행 (Ctrl+Y)" style="font-weight:700;">↪</button>
           <button type="button" id="btn-nav-back" class="icon-btn" title="이전 페이지로 뒤로가기 (Alt+←)">←</button>
           <button type="button" id="btn-nav-forward" class="icon-btn" title="다음 페이지로 앞으로가기 (Alt+→)">→</button>
           <button type="button" id="btn-show-list-view" class="icon-btn" title="현재 분류의 노트 목록 보기">≡ 목록 보기</button>
@@ -433,6 +435,7 @@
     <button type="button" class="slash-item" data-type="secret"><strong>가림(보안) 블록</strong> <span>마우스 오버 시 표시</span></button>
     <button type="button" class="slash-item" data-type="divider"><strong>구분선</strong> <span>가로선 (---)</span></button>
     <div class="slash-menu-title" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;">블록 작업</div>
+    <button type="button" class="slash-item" data-blockact="select"><strong>줄 다중 선택 모드</strong> <span>여러 줄 일괄 삭제/선택</span></button>
     <button type="button" class="slash-item" data-blockact="summarize"><strong>문서 상단 요약정리</strong> <span>본문 핵심 요약 생성</span></button>
     <button type="button" class="slash-item" data-blockact="up"><strong>위로 이동</strong> <span>한 줄 위로</span></button>
     <button type="button" class="slash-item" data-blockact="down"><strong>아래로 이동</strong> <span>한 줄 아래로</span></button>
@@ -685,8 +688,18 @@
     </div>
   </div>
 
+  <!-- 여러 줄 일괄 선택 및 삭제 액션바 (Notion 스타일) -->
+  <div id="multi-block-action-bar" class="multi-block-action-bar hidden">
+    <span id="multi-block-count" class="multi-block-count">0개 줄 선택됨</span>
+    <button type="button" id="btn-select-all-blocks" class="btn-multi-select-all" title="문서 전체 줄 선택">전체선택</button>
+    <button type="button" id="btn-delete-selected-blocks" class="btn-multi-del" title="선택한 줄 삭제 (Delete 또는 Backspace)">
+      <span>🗑️ 일괄 삭제</span>
+    </button>
+    <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">취소</button>
+  </div>
+
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=28"></script>
+  <script type="module" src="./src/app.js?v=31"></script>
 </body>
 </html>

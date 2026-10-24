@@ -147,6 +147,18 @@ select:focus {
   background: var(--bg-hover);
   color: var(--text-main);
 }
+.icon-btn:disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+#btn-editor-undo, #btn-editor-redo {
+  font-size: 14px;
+  padding: 3px 6px;
+  min-width: 26px;
+  text-align: center;
+  transition: opacity 0.12s ease;
+}
 
 .text-btn {
   background: none;
@@ -827,8 +839,93 @@ select:focus {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 2px 0;
+  padding: 2px 4px;
   position: relative;
+  border-radius: 4px;
+  transition: background 0.08s ease;
+}
+.block-row.selected-block-row {
+  background: rgba(33, 150, 243, 0.16) !important;
+  outline: 1.5px solid rgba(33, 150, 243, 0.4);
+}
+.block-row.selected-block-row .block-gutter {
+  opacity: 1 !important;
+}
+.block-row.selected-block-row .block-drag-btn {
+  color: #1976d2 !important;
+  font-weight: 700;
+}
+
+/* Multi-block selection action bar (Floating bottom pill) */
+.multi-block-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  padding: 8px 18px;
+  border-radius: 9999px;
+  font-size: 13.5px;
+  animation: slideUpAction 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.multi-block-action-bar.hidden {
+  display: none !important;
+}
+@keyframes slideUpAction {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.multi-block-count {
+  font-weight: 600;
+  color: var(--text-color, #333333);
+  padding-right: 6px;
+  border-right: 1px solid var(--border-color, #e0e0e0);
+}
+.btn-multi-del {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e53935;
+  color: #ffffff !important;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+}
+.btn-multi-del:hover {
+  background: #c62828;
+}
+.btn-multi-del:active {
+  transform: scale(0.97);
+}
+.btn-multi-cancel, .btn-multi-select-all {
+  background: transparent;
+  color: var(--text-color, #555);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-multi-cancel:hover, .btn-multi-select-all:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-color, #111);
 }
 
 .block-gutter {
@@ -1743,5 +1840,19 @@ select:focus {
   }
   .btn-row-trash, .btn-row-del, .btn-row-restore {
     margin-left: auto;
+  }
+
+  /* 모바일 터치 환경에서 블록 핸들 표시 및 다중 선택 액션바 반응형 */
+  .block-gutter {
+    opacity: 0.7;
+    width: 32px;
+  }
+  .multi-block-action-bar {
+    bottom: 16px;
+    width: calc(100% - 32px);
+    max-width: 400px;
+    justify-content: space-between;
+    padding: 8px 14px;
+    box-sizing: border-box;
   }
 }
