@@ -172,6 +172,7 @@ let draggedNoteId = null;
 let draggedBlockId = null;
 let selectedBlockIds = new Set();
 let lastSelectedBlockId = null;
+let lastTrashedNoteIds = [];
 
 // ============================================================================
 // Utility Functions
@@ -180,14 +181,43 @@ function uid(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function showToast(msg, duration = 2200) {
+function showToast(msg, duration = 2400, actionLabel = null, onAction = null) {
   const container = document.getElementById('toast-container');
   if (!container) return;
   const el = document.createElement('div');
   el.className = 'toast';
-  el.textContent = msg;
+  const span = document.createElement('span');
+  span.textContent = msg;
+  el.appendChild(span);
+
+  if (actionLabel && typeof onAction === 'function') {
+    const actBtn = document.createElement('button');
+    actBtn.type = 'button';
+    actBtn.className = 'toast-action-btn';
+    actBtn.textContent = actionLabel;
+    actBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.remove();
+      onAction();
+    });
+    el.appendChild(actBtn);
+  }
+
   container.appendChild(el);
   setTimeout(() => el.remove(), duration);
+}
+
+function undoLastNoteTrash() {
+  if (lastTrashedNoteIds.length === 0) return false;
+  const noteId = lastTrashedNoteIds.pop();
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note || !note.trashed) return false;
+  note.trashed = false;
+  activeNoteId = note.id;
+  scheduleSave();
+  renderAll();
+  showToast(`'${note.title || '제목 없음'}' 노트가 복원되었습니다.`);
+  return true;
 }
 
 function formatDate(iso) {
@@ -913,9 +943,12 @@ function renderMainNoteListView() {
     item.querySelector('.btn-row-trash')?.addEventListener('click', (e) => {
       e.stopPropagation();
       note.trashed = true;
+      lastTrashedNoteIds.push(note.id);
       scheduleSave();
       renderAll();
-      showToast('휴지통으로 이동되었습니다.');
+      showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
+        undoLastNoteTrash();
+      });
     });
 
     item.addEventListener('click', () => {
@@ -2258,30 +2291,86 @@ async function renderSecureVaultView() {
 }
 
 // ============================================================================
-// Knowledge Graph Canvas View
+// Stopwords & Intelligent Semantic Filtering (Korean & English - Obsidian style)
 // ============================================================================
-let graphNodePositions = [];
-let graphViewMode = 'local'; // 'local' (선택 문서 중심) | 'global' (전체 문서 보기)
-let graphCenterNoteId = null;
-
-const GENERIC_GRAPH_TAGS = new Set([
-  '클리핑',
-  '요약',
-  '웹스크랩',
-  '스크랩',
-  '메모',
-  '노트',
-  '가이드',
-  '일반',
-  '기타',
-  '뉴스',
-  '기사'
+const KOREAN_STOPWORDS = new Set([
+  '있는', '있다', '있는지', '없는', '없다', '하는', '한다', '했다', '하고', '하여', '해서', '된다', '됐다',
+  '대한', '통해', '위해', '따른', '따라', '관련', '이번', '지난', '최근', '현재', '오늘', '내일', '올해',
+  '경우', '대해', '에서', '으로', '에게', '부터', '까지', '보다', '처럼', '만큼', '및', '등', '것', '수',
+  '그', '이', '저', '우리', '기자', '뉴스', '사진', '제공', '무단', '배포', '금지', '시간', '오전', '오후',
+  '말했다', '밝혔다', '전했다', '이어', '또한', '하지만', '그러나', '그리고', '가장', '다시', '함께', '모두',
+  '다른', '어떤', '이런', '그런', '저런', '때문'
 ]);
 
+const ENGLISH_STOPWORDS = new Set([
+  'a', 'about', 'above', 'after', 'again', 'against', 'all', 'also', 'am', 'an', 'and', 'any', 'are', 'aren',
+  'arent', 'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by',
+  'can', 'cannot', 'could', 'couldn', 'couldnt', 'did', 'didn', 'didnt', 'do', 'does', 'doesn', 'doesnt',
+  'doing', 'don', 'dont', 'down', 'during', 'each', 'even', 'few', 'for', 'from', 'further', 'had', 'hadn',
+  'hadnt', 'has', 'hasn', 'hasnt', 'have', 'haven', 'havent', 'having', 'he', 'hed', 'hell', 'hes', 'her',
+  'here', 'heres', 'hers', 'herself', 'him', 'himself', 'his', 'how', 'hows', 'i', 'id', 'ill', 'im', 'ive',
+  'if', 'in', 'into', 'is', 'isn', 'isnt', 'it', 'its', 'itself', 'just', 'let', 'lets', 'like', 'made', 'make',
+  'many', 'may', 'me', 'might', 'more', 'most', 'must', 'mustn', 'mustnt', 'my', 'myself', 'no', 'nor', 'not',
+  'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out', 'over', 'own',
+  'same', 'say', 'says', 'said', 'shall', 'shant', 'she', 'shed', 'shell', 'shes', 'should', 'shouldn', 'shouldnt',
+  'so', 'some', 'such', 'than', 'that', 'thats', 'the', 'their', 'theirs', 'them', 'themselves', 'then',
+  'there', 'theres', 'these', 'they', 'theyd', 'theyll', 'theyre', 'theyve', 'this', 'those', 'through', 'time',
+  'to', 'too', 'under', 'until', 'up', 'us', 'very', 'was', 'wasn', 'wasnt', 'we', 'wed', 'well', 'were', 'weren',
+  'werent', 'what', 'whats', 'when', 'whens', 'where', 'wheres', 'which', 'while', 'who', 'whos', 'whom', 'why',
+  'whys', 'with', 'won', 'wont', 'would', 'wouldn', 'wouldnt', 'you', 'youd', 'youll', 'youre', 'youve',
+  'your', 'yours', 'yourself', 'yourselves', 'one', 'two', 'three', 'first', 'second', 'new', 'way', 'get', 'got',
+  'still', 'has', 'had', 'see', 'now', 'know', 'come', 'take', 'back', 'part', 'even', 'well', 'high', 'last',
+  'long', 'great', 'little', 'own', 'other', 'old', 'right', 'big', 'small', 'next', 'early', 'young', 'important',
+  'few', 'public', 'bad', 'same', 'able', 'per', 'via', 'etc', 'inc', 'corp', 'co'
+]);
+
+const GENERIC_GRAPH_TAGS = new Set([
+  '클리핑', '요약', '웹스크랩', '스크랩', '메모', '노트', '가이드', '일반', '기타', '뉴스', '기사', '링크',
+  'clip', 'note', 'summary', 'memo', 'news', 'article'
+]);
+
+function isMeaningfulTopicTag(tag = '') {
+  if (!tag) return false;
+  const clean = String(tag).replace(/^#/, '').trim().toLowerCase();
+  if (clean.length < 2) return false;
+  if (GENERIC_GRAPH_TAGS.has(clean)) return false;
+  if (KOREAN_STOPWORDS.has(clean)) return false;
+  if (ENGLISH_STOPWORDS.has(clean)) return false;
+  if (/^\d+$/.test(clean)) return false;
+  return true;
+}
+
+function sanitizeExistingNoteTags() {
+  let changed = false;
+  for (const n of state.notes) {
+    if (Array.isArray(n.tags)) {
+      const beforeLen = n.tags.length;
+      n.tags = n.tags.filter((t) => {
+        const lower = String(t || '').replace(/^#/, '').trim().toLowerCase();
+        return (
+          t === '요약' ||
+          t === '클리핑' ||
+          t === '가이드' ||
+          (isMeaningfulTopicTag(t) && !ENGLISH_STOPWORDS.has(lower))
+        );
+      });
+      if (n.tags.length !== beforeLen) changed = true;
+    }
+  }
+  if (changed) scheduleSave(false);
+}
+
 function extractSignificantTitleKeywords(title = '') {
-  return (String(title || '').match(/[가-힣]{2,}|[A-Za-z0-9]{2,}/g) || [])
-    .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지)$/, ''))
-    .filter((w) => w.length >= 2 && !GENERIC_GRAPH_TAGS.has(w) && !KOREAN_STOPWORDS.has(w.toLowerCase()));
+  const words = String(title || '').match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [];
+  return words
+    .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
+    .filter((w) => {
+      const lower = w.toLowerCase();
+      if (/^[A-Za-z]+$/.test(w)) {
+        return w.length >= 4 && !ENGLISH_STOPWORDS.has(lower);
+      }
+      return w.length >= 2 && !GENERIC_GRAPH_TAGS.has(w) && !KOREAN_STOPWORDS.has(lower);
+    });
 }
 
 function getGraphEdgeInfo(noteA, noteB) {
@@ -2292,29 +2381,40 @@ function getGraphEdgeInfo(noteA, noteB) {
   const aLinks = new Set((noteA.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
   const bLinks = new Set((noteB.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
 
+  // 1. Direct [[WikiLink]] reference (Obsidian style - highest fidelity connection)
   if ((bTitle && aLinks.has(bTitle)) || (aTitle && bLinks.has(aTitle))) {
     return { connected: true, type: 'wiki', label: '[[링크]]' };
   }
 
-  const sharedTopicTags = (noteA.tags || []).filter(
-    (t) => !GENERIC_GRAPH_TAGS.has(t.trim()) && (noteB.tags || []).includes(t)
-  );
+  // 2. Shared Meaningful Topic Tag (non-generic, non-stopword)
+  const aTopicTags = (noteA.tags || []).filter(isMeaningfulTopicTag);
+  const bTopicTagsSet = new Set((noteB.tags || []).filter(isMeaningfulTopicTag).map((t) => t.toLowerCase()));
+  const sharedTopicTags = aTopicTags.filter((t) => bTopicTagsSet.has(t.toLowerCase()));
   if (sharedTopicTags.length > 0) {
-    return { connected: true, type: 'tag', label: `#${sharedTopicTags[0]}` };
+    const displayTag = sharedTopicTags[0].replace(/^#/, '');
+    return { connected: true, type: 'tag', label: `#${displayTag}` };
   }
 
-  // Also check if two notes share a distinctive title keyword (e.g., two articles about the same person/topic)
+  // 3. Shared Distinctive Topic/Entity Keyword in Titles
   const aKw = extractSignificantTitleKeywords(noteA.title);
-  const bKwSet = new Set(extractSignificantTitleKeywords(noteB.title));
-  const sharedTitleKw = aKw.filter((w) => bKwSet.has(w));
+  const bKwSet = new Set(extractSignificantTitleKeywords(noteB.title).map((w) => w.toLowerCase()));
+  const sharedTitleKw = aKw.filter((w) => bKwSet.has(w.toLowerCase()));
   if (sharedTitleKw.length > 0) {
-    return { connected: true, type: 'keyword', label: `연관어: ${sharedTitleKw[0]}` };
+    return { connected: true, type: 'keyword', label: `주제: ${sharedTitleKw[0]}` };
   }
 
   return { connected: false };
 }
 
+// ============================================================================
+// Knowledge Graph Canvas View
+// ============================================================================
+let graphNodePositions = [];
+let graphViewMode = 'local'; // 'local' (선택 문서 중심) | 'global' (전체 문서 보기)
+let graphCenterNoteId = null;
+
 function renderKnowledgeGraph() {
+  sanitizeExistingNoteTags();
   const canvas = document.getElementById('knowledge-graph-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -2889,13 +2989,6 @@ function parseHtmlToBlocks(htmlString, sourceUrl = '', readerMarkdown = '') {
  * Extracts 3~5 key summary sentences and top keyword tags from parsed article blocks,
  * and constructs a structured Notion-style summary + full content note.
  */
-const KOREAN_STOPWORDS = new Set([
-  '있는', '있다', '있는지', '없는', '없다', '하는', '한다', '했다', '하고', '하여', '해서', '된다', '됐다',
-  '대한', '통해', '위해', '따른', '따라', '관련', '이번', '지난', '최근', '현재', '오늘', '내일', '올해',
-  '경우', '대해', '에서', '으로', '에게', '부터', '까지', '보다', '처럼', '만큼', '및', '등', '것', '수',
-  '그', '이', '저', '우리', '기자', '뉴스', '사진', '제공', '무단', '배포', '금지', '시간', '오전', '오후'
-]);
-
 function stripExistingSummaryBlocks(rawBlocks = []) {
   const cleaned = [];
   let skippingSummary = false;
@@ -3083,7 +3176,7 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
   const tokenize = (str) =>
     (String(str || '').match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
       .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
-      .filter((w) => w.length >= 2 && !KOREAN_STOPWORDS.has(w.toLowerCase()));
+      .filter((w) => isMeaningfulTopicTag(w.toLowerCase()));
 
   const wordFreq = new Map();
   const titleWords = new Set(tokenize(title));
@@ -3101,11 +3194,11 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
     }
   }
 
-  // Top 3 automatic keyword tags
+  // Top 3 automatic keyword tags (strictly validated topic keywords, non-stopword)
   const autoTags = [...wordFreq.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([w]) => w)
-    .filter((w) => w.length >= 2 && w.length <= 12)
+    .filter(isMeaningfulTopicTag)
     .slice(0, 3);
 
   // Rule 3: Korean Discourse & Conclusion Marker Bonus
@@ -3478,13 +3571,82 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       }
     }
     if (!html && !readerMarkdown) {
-      const jinaRes = await fetch(`https://r.jina.ai/${url}`).catch(() => null);
-      if (jinaRes && jinaRes.ok) {
-        readerMarkdown = await jinaRes.text();
-      } else {
-        const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-        html = await proxyRes.text();
+      // 1. Try Jina Reader
+      try {
+        const jinaRes = await fetch(`https://r.jina.ai/${url}`, { signal: AbortSignal.timeout(7000) });
+        if (jinaRes && jinaRes.ok) {
+          const jinaText = await jinaRes.text();
+          if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
+            readerMarkdown = jinaText;
+          }
+        }
+      } catch {}
+
+      // 2. If Jina failed or was blocked, try CORS proxies with timeout
+      if (!html && !readerMarkdown) {
+        const proxies = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        ];
+        for (const proxyUrl of proxies) {
+          try {
+            const pRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(7000) });
+            if (pRes && pRes.ok) {
+              const pText = await pRes.text();
+              if (pText && pText.length > 200 && !pText.includes('522: Connection timed out') && !pText.includes('Cloudflare')) {
+                html = pText;
+                break;
+              }
+            }
+          } catch {}
+        }
       }
+    }
+
+    if (!html && !readerMarkdown) {
+      let domain = '';
+      try { domain = new URL(url).hostname; } catch {}
+      const fallbackTitle = `웹페이지 링크: ${domain || url}`;
+      const fallbackBlocks = [
+        { id: uid('b'), type: 'callout', text: `출처: ${url}` },
+        {
+          id: uid('b'),
+          type: 'p',
+          text: `⚠️ 해당 웹사이트(${domain})의 외부 크롤러 접근 차단(보안 정책)으로 인해 URL 자동 추출이 제한되었습니다.`
+        },
+        {
+          id: uid('b'),
+          type: 'p',
+          text: `💡 해결 방법: 브라우저에서 해당 기사 페이지를 열고 본문을 복사(Ctrl+C)한 후, VaultNote의 [웹 클리퍼 붙여넣기] 영역이나 본문에 붙여넣기(Ctrl+V)하시면 서식과 이미지까지 즉시 완벽하게 저장 및 요약됩니다.`
+        }
+      ];
+
+      const folderId = targetFolderId || (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
+      const now = new Date().toISOString();
+      const fallbackNote = {
+        id: uid('note'),
+        title: fallbackTitle,
+        folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
+        docType: 'clip',
+        status: 'todo',
+        priority: 'normal',
+        favorite: activeNav === 'favorites',
+        trashed: false,
+        isEncrypted: false,
+        tags: ['클리핑', '링크'],
+        createdAt: now,
+        updatedAt: now,
+        blocks: fallbackBlocks
+      };
+
+      state.notes.unshift(fallbackNote);
+      activeNoteId = fallbackNote.id;
+      scheduleSave();
+      if (openEditor) openNoteInEditor(fallbackNote.id);
+      else renderAll();
+
+      showToast('사이트 보안 차단으로 본문 자동 추출이 제한되었습니다. 기사 복사/붙여넣기를 이용해주세요.', 4500);
+      return fallbackNote;
     }
 
     const parsed = html
@@ -3882,6 +4044,11 @@ function bindEvents() {
         } else {
           performUndo();
         }
+        return;
+      }
+      if (!isInsideNoteBody && lastTrashedNoteIds.length > 0) {
+        e.preventDefault();
+        undoLastNoteTrash();
         return;
       }
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
@@ -4412,7 +4579,10 @@ function bindEvents() {
       showToast('영구 삭제되었습니다.');
     } else {
       note.trashed = true;
-      showToast('휴지통으로 이동되었습니다.');
+      lastTrashedNoteIds.push(note.id);
+      showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
+        undoLastNoteTrash();
+      });
     }
     const remaining = getFilteredNotes();
     activeNoteId = remaining[0]?.id || null;

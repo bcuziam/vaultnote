@@ -1751,6 +1751,23 @@ select:focus {
   border-radius: 6px;
   font-size: 12.5px;
   box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toast-action-btn {
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.38);
 }
 
 @media (max-width: 820px) {
