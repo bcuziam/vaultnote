@@ -3604,9 +3604,9 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       }
     }
     if (!html && !readerMarkdown) {
-      // 1. Try Jina Reader
+      // 1. Try Jina Reader with sufficient rendering timeout (22s) for JS-heavy news portals
       try {
-        const jinaRes = await fetch(`https://r.jina.ai/${url}`, { signal: AbortSignal.timeout(7000) });
+        const jinaRes = await fetch(`https://r.jina.ai/${url}`, { signal: AbortSignal.timeout(22000) });
         if (jinaRes && jinaRes.ok) {
           const jinaText = await jinaRes.text();
           if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
@@ -3623,10 +3623,16 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
         ];
         for (const proxyUrl of proxies) {
           try {
-            const pRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(7000) });
+            const pRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
             if (pRes && pRes.ok) {
               const pText = await pRes.text();
-              if (pText && pText.length > 200 && !pText.includes('522: Connection timed out') && !pText.includes('Cloudflare')) {
+              if (
+                pText &&
+                pText.length > 200 &&
+                !pText.includes('522: Connection timed out') &&
+                !pText.includes('Cloudflare') &&
+                !pText.includes('name="isbot"')
+              ) {
                 html = pText;
                 break;
               }
@@ -5442,8 +5448,17 @@ async function runAISummarizeOnActiveNote() {
       aiResult,
       `AI 고품질 핵심 요약이 상단에 정리되었습니다.${maskNotice}`
     );
-  } catch {
-    showToast('AI 서버 연결에 실패하여 기기 내부 [오프라인 자체 요약]으로 자동 전환되었습니다.', 3400);
+  } catch (err) {
+    console.warn('[Gemini AI Summarize Error]:', err);
+    let reason = 'AI 통신 실패';
+    if (err.message === 'NO_API_KEY') {
+      reason = 'Gemini API 키가 설정되지 않음';
+    } else if (err.message === 'TOO_SHORT') {
+      reason = '요약할 본문 텍스트 부족';
+    } else if (String(err.message).includes('400') || String(err.message).includes('403')) {
+      reason = 'API 키 불일치 또는 할당량 초과';
+    }
+    showToast(`${reason} -> 기기 내부 [오프라인 자체 요약]으로 자동 전환되었습니다.`, 3600);
     runOfflineSummarizeOnActiveNote('오프라인 자체 요약 완료');
   }
 }
