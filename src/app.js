@@ -3377,23 +3377,29 @@ async function testGeminiApiKey(rawKey) {
   if (!key) return { ok: false, error: 'NO_KEY', message: 'API 키가 비어있습니다. 먼저 키를 입력해주세요.' };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Ping' }] }],
-        generationConfig: { maxOutputTokens: 5 }
-      })
-    });
+    // Uses the same verified model IDs as the real summarizer, trying each in order.
+    const testModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+    let res = null;
+    for (const m of testModels) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`;
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Ping' }] }],
+          generationConfig: { maxOutputTokens: 5 }
+        })
+      });
+      if (res.ok || res.status !== 404) break;
+    }
     clearTimeout(timer);
 
     if (res.ok) {
-      return { ok: true, message: 'Google Gemini 2.0 Flash 정상 연결됨 (작동 준비 완료)' };
+      return { ok: true, message: 'Google Gemini 정상 연결됨 (작동 준비 완료)' };
     }
 
     let errJson = null;
@@ -3410,7 +3416,7 @@ async function testGeminiApiKey(rawKey) {
   } catch (err) {
     clearTimeout(timer);
     if (err.name === 'AbortError') {
-      return { ok: false, error: 'TIMEOUT', message: '응답 시간 초과 (12초): 네트워크 상태를 확인해주세요.' };
+      return { ok: false, error: 'TIMEOUT', message: '응답 시간 초과 (15초): 네트워크 상태를 확인해주세요.' };
     }
     return { ok: false, error: 'NETWORK', message: `네트워크 통신 오류: ${err.message || '인터넷 연결 또는 확장프로그램 차단 확인'}` };
   }
@@ -3476,7 +3482,8 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       ].join('\n');
 
   // Standard Google Gemini Flash models with fallback order
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+  // NOTE: Verified-working model IDs (original v1 deployment). Do NOT change without live-key testing.
+  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
   let parsedJson = null;
   let lastErr = null;
 
