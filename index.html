@@ -8,7 +8,7 @@
   <title>VaultNote</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=23" />
+  <link rel="stylesheet" href="./src/styles.css?v=25" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -512,8 +512,9 @@
               <h5>OneDrive 자동 동기화 (주 저장소)</h5>
               <input type="password" id="onedrive-token-input" placeholder="OneDrive Access Token 입력 (저장 시 자동 동기화)" class="mb-8" />
               <div class="btn-group">
-                <button type="button" id="btn-onedrive-push" class="btn btn-primary btn-sm">자동 동기화 저장 & 즉시 업로드</button>
-                <button type="button" id="btn-onedrive-pull" class="btn btn-secondary btn-sm">즉시 불러오기</button>
+                <button type="button" id="btn-onedrive-smart-sync" class="btn btn-primary btn-sm">자동 동기화 연결 (스마트 동기화)</button>
+                <button type="button" id="btn-onedrive-pull" class="btn btn-secondary btn-sm">클라우드에서 불러오기</button>
+                <button type="button" id="btn-onedrive-push" class="btn btn-secondary btn-sm">클라우드로 내보내기</button>
               </div>
             </div>
             <div class="api-card">
@@ -527,8 +528,9 @@
               </div>
               <input type="text" id="gdrive-token-input" placeholder="3. 배포된 웹앱 URL (https://script.google.com/.../exec) 붙여넣기" class="mb-8" />
               <div class="btn-group">
-                <button type="button" id="btn-gdrive-push" class="btn btn-primary btn-sm">자동 동기화 연결 & 즉시 업로드</button>
-                <button type="button" id="btn-gdrive-pull" class="btn btn-secondary btn-sm">즉시 불러오기</button>
+                <button type="button" id="btn-gdrive-smart-sync" class="btn btn-primary btn-sm">자동 동기화 연결 (스마트 동기화)</button>
+                <button type="button" id="btn-gdrive-pull" class="btn btn-secondary btn-sm">클라우드에서 불러오기 (새 기기)</button>
+                <button type="button" id="btn-gdrive-push" class="btn btn-secondary btn-sm">클라우드로 내보내기</button>
               </div>
             </div>
           </div>
@@ -683,6 +685,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=23"></script>
+  <script type="module" src="./src/app.js?v=25"></script>
 </body>
 </html>

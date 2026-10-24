@@ -2261,7 +2261,9 @@ const NOISE_SELECTORS = [
   '.comment', '.comments', '#comments', '.reply', '.replies',
   '.ad', '.ads', '.advertisement', '.banner', '.sponsor',
   '.share', '.social', '.sns', '.related', '.recommend', '.popular',
-  '.copyright', '.byline', '.reporter_area', '.journalistcard', '.media_end_linked'
+  '.copyright', '.byline', '.reporter_area', '.journalistcard', '.media_end_linked',
+  '.media_end_head_more', '.media_end_categorize', '.media_end_head_info', '.media_end_head_tool',
+  '#cbox_module', '#article_bottom', '#right_content'
 ].join(', ');
 
 function findBestArticleContainer(doc) {
@@ -2322,39 +2324,94 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
   if (sourceUrl) {
     blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}` });
   }
-  let extractedTitle = '';
+
   const lines = mdText.split(/\r?\n/);
+  let extractedTitle = '';
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    const l = rawLine.trim();
+    if (l.startsWith('Title: ')) {
+      extractedTitle = l.slice(7).trim();
+      break;
+    }
+  }
+
+  let foundHeadline = false;
+  let inBody = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
     if (!line) continue;
-    if (line.startsWith('Title: ')) {
-      extractedTitle = line.slice(7).trim();
+    if (line.startsWith('Title: ') || line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
+
+    // 1. Stop parsing when reaching copyright, comment sections, or recommended news footers
+    if (inBody && /(Copyright\s*ⓒ|All\s*rights\s*reserved|무단\s*전재|기사\s*섹션\s*분류|댓글\s*\(\d+\)|이\s*시각\s*주요뉴스|가장\s*많이\s*본\s*뉴스|랭킹\s*뉴스|관련기사|인기기사)/i.test(line)) {
+      break;
+    }
+
+    // 2. Identify the main headline anchor to skip all navigation/header menus before the article
+    if (!foundHeadline) {
+      if (line.startsWith('#')) {
+        const cleanH = line.replace(/^#+\s*/, '').replace(/\[|\]/g, '').trim();
+        const cleanT = (extractedTitle || '').replace(/\[|\]/g, '').trim();
+        if (cleanT && (cleanH.includes(cleanT.slice(0, 8)) || cleanT.includes(cleanH.slice(0, 8)))) {
+          foundHeadline = true;
+          if (!extractedTitle) extractedTitle = cleanH;
+          continue;
+        }
+      }
+      // If no Title: header was present, check if this line is an h1 or h2 that looks like a title
+      if (!extractedTitle && (line.startsWith('# ') || line.startsWith('## ')) && line.length >= 10) {
+        extractedTitle = line.replace(/^#+\s*/, '').trim();
+        foundHeadline = true;
+        continue;
+      }
       continue;
     }
-    if (line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
 
-    if (line.startsWith('# ')) {
-      const t = line.slice(2).trim();
-      if (!extractedTitle) extractedTitle = t;
-      blocks.push({ id: uid('b'), type: 'h1', text: t });
-    } else if (line.startsWith('## ')) {
-      blocks.push({ id: uid('b'), type: 'h2', text: line.slice(3).trim() });
+    // 3. Filter out UI buttons, reactions, audio player controls, font tools, and social shares
+    if (/^((\[.*?\]\(.*?\)\s*)+)$/.test(line) && !line.includes('Image')) continue;
+    if (/^(\*|\-)\s*\[.*\]\(.*\)$/.test(line)) continue;
+    if (/^(_입력_|_수정_|_PICK_|_성별_|_말하기 속도_|_기자_)/.test(line)) continue;
+    if (/^(구독|닫기|본문듣기|글자크기|\*\*글자크기\*\*|인쇄하기|SNS 보내기|기사 원문|반응|언론사별 바로가기|이동 통신망|텍스트 음성 변환)/i.test(line)) continue;
+    if (line.includes('office_logo') || line.includes('favicon')) continue;
+
+    // 4. Genuine body detector: requires a substantial sentence, image, or subheading
+    if (!inBody) {
+      if (line.length >= 18 || line.includes('Image') || (line.startsWith('**') && line.length >= 15) || line.startsWith('###')) {
+        inBody = true;
+      } else {
+        continue;
+      }
+    }
+
+    // 5. Structure into clean blocks
+    const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
+    if (imgMatch) {
+      blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
     } else if (line.startsWith('### ') || line.startsWith('#### ')) {
       blocks.push({ id: uid('b'), type: 'h3', text: line.replace(/^#+\s*/, '').trim() });
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      blocks.push({ id: uid('b'), type: 'bullet', text: line.slice(2).trim() });
     } else if (line.startsWith('> ')) {
       blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim() });
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      blocks.push({ id: uid('b'), type: 'bullet', text: line.slice(2).trim() });
     } else {
-      const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
-      if (imgMatch) {
-        blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
-      } else {
+      blocks.push({ id: uid('b'), type: 'p', text: line });
+    }
+  }
+
+  // Fallback: If strict parser found 0 blocks, parse conservatively
+  if (blocks.filter((b) => b.type !== 'callout').length === 0) {
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('Title: ') || line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
+      if (/^(구독|닫기|본문듣기|글자크기|인쇄하기|SNS 보내기)/i.test(line)) continue;
+      if (line.length >= 20) {
         blocks.push({ id: uid('b'), type: 'p', text: line });
       }
     }
   }
+
   return { title: extractedTitle, blocks: blocks.slice(0, 200) };
 }
 
@@ -4281,6 +4338,41 @@ function bindEvents() {
     }
   });
 
+  // Helper to determine if the local device has user-created notes or only empty default welcome notes
+  const isLocalDeviceFreshOrEmpty = () => {
+    if (!state.notes || state.notes.length === 0) return true;
+    const userNotes = state.notes.filter(
+      (n) => !n.trashed && n.id !== 'n_welcome' && n.id !== 'n_security_sync'
+    );
+    return userNotes.length === 0;
+  };
+
+  const handleSmartSyncOneDrive = async () => {
+    const token = document.getElementById('onedrive-token-input').value.trim();
+    if (!token) return showToast('OneDrive 토큰을 입력하세요.');
+    state.settings.onedriveToken = token;
+    showToast('OneDrive 저장 상태 확인 중...');
+    try {
+      const remote = await VaultStorage.syncOneDriveAPI(token, state, 'load');
+      const remoteHasNotes = remote && Array.isArray(remote.notes) && remote.notes.length > 0;
+      if (remoteHasNotes && (isLocalDeviceFreshOrEmpty() || (remote.notes.length > state.notes.length))) {
+        remote.settings = { ...(remote.settings || {}), onedriveToken: token };
+        await applyRemoteSyncedState(remote, 'OneDrive에서 불러옴');
+        showToast(`기존 OneDrive의 ${remote.notes.length}개 노트를 안전하게 불러왔습니다!`);
+      } else {
+        state.lastSavedAt = Date.now();
+        await VaultStorage.saveState(state);
+        await VaultStorage.syncOneDriveAPI(token, state, 'save');
+        showToast('OneDrive에 동기화 저장 및 자동 동기화 연결 완료');
+      }
+      refreshOneDriveSyncBadge();
+    } catch (err) {
+      showToast(`OneDrive 오류: ${err.message}`);
+    }
+  };
+
+  document.getElementById('btn-onedrive-smart-sync')?.addEventListener('click', handleSmartSyncOneDrive);
+
   document.getElementById('btn-onedrive-push').addEventListener('click', async () => {
     const token = document.getElementById('onedrive-token-input').value.trim();
     if (!token) return showToast('OneDrive 토큰을 입력하세요.');
@@ -4290,11 +4382,12 @@ function bindEvents() {
     refreshOneDriveSyncBadge();
     try {
       await VaultStorage.syncOneDriveAPI(token, state, 'save');
-      showToast('OneDrive 자동 동기화 연결 및 업로드 완료');
+      showToast('OneDrive로 내보내기(업로드) 완료');
     } catch (err) {
       showToast(`OneDrive 오류: ${err.message}`);
     }
   });
+
   document.getElementById('btn-onedrive-pull').addEventListener('click', async () => {
     const token = document.getElementById('onedrive-token-input').value.trim();
     if (!token) return showToast('OneDrive 토큰을 입력하세요.');
@@ -4303,14 +4396,12 @@ function bindEvents() {
     refreshOneDriveSyncBadge();
     try {
       const remote = await VaultStorage.syncOneDriveAPI(token, state, 'load');
-      if (remote && Array.isArray(remote.notes)) {
+      if (remote && Array.isArray(remote.notes) && remote.notes.length > 0) {
         remote.settings = { ...(remote.settings || {}), onedriveToken: token };
-        await applyRemoteSyncedState(remote, Date.now());
-        showToast('OneDrive 불러오기 및 자동 동기화 연결 완료');
+        await applyRemoteSyncedState(remote, 'OneDrive에서 불러옴');
+        showToast(`OneDrive에서 ${remote.notes.length}개의 노트를 불러왔습니다.`);
       } else {
-        state.lastSavedAt = Date.now();
-        await VaultStorage.syncOneDriveAPI(token, state, 'save');
-        showToast('OneDrive에 새 동기화 파일을 생성하고 자동 동기화를 연결했습니다.');
+        showToast('OneDrive에 저장된 노트 파일이 없습니다.');
       }
     } catch (err) {
       showToast(`OneDrive 오류: ${err.message}`);
@@ -4345,6 +4436,34 @@ function bindEvents() {
     }
   });
 
+  const handleSmartSyncGDrive = async () => {
+    const token = document.getElementById('gdrive-token-input').value.trim();
+    if (!token) return showToast('Google Drive 연결 주소(URL) 또는 토큰을 입력하세요.');
+    state.settings.gdriveToken = token;
+    showToast('Google Drive 상태 확인 중...');
+    try {
+      const remote = await VaultStorage.syncGoogleDriveAPI(token, state, 'load');
+      const remoteHasNotes = remote && Array.isArray(remote.notes) && remote.notes.length > 0;
+      if (remoteHasNotes && (isLocalDeviceFreshOrEmpty() || (remote.notes.length > state.notes.length))) {
+        // Safe Pull: New device or device with fewer notes will fetch remote cloud data
+        remote.settings = { ...(remote.settings || {}), gdriveToken: token };
+        await applyRemoteSyncedState(remote, 'Google Drive에서 불러옴');
+        showToast(`기존 Google Drive의 ${remote.notes.length}개 노트를 안전하게 불러왔습니다!`);
+      } else {
+        // Initial setup on device with existing notes
+        state.lastSavedAt = Date.now();
+        await VaultStorage.saveState(state);
+        await VaultStorage.syncGoogleDriveAPI(token, state, 'save');
+        showToast('Google Drive에 동기화 저장 및 자동 동기화 연결 완료');
+      }
+      refreshOneDriveSyncBadge();
+    } catch (err) {
+      showToast(`Google Drive 오류: ${err.message}`);
+    }
+  };
+
+  document.getElementById('btn-gdrive-smart-sync')?.addEventListener('click', handleSmartSyncGDrive);
+
   document.getElementById('btn-gdrive-push').addEventListener('click', async () => {
     const token = document.getElementById('gdrive-token-input').value.trim();
     if (!token) return showToast('Google Drive 연결 주소(URL) 또는 토큰을 입력하세요.');
@@ -4354,11 +4473,12 @@ function bindEvents() {
     refreshOneDriveSyncBadge();
     try {
       await VaultStorage.syncGoogleDriveAPI(token, state, 'save');
-      showToast('Google Drive 영구 자동 동기화 연결 및 업로드 완료');
+      showToast('현재 기기의 노트를 Google Drive로 내보냈습니다.');
     } catch (err) {
       showToast(err.message);
     }
   });
+
   document.getElementById('btn-gdrive-pull').addEventListener('click', async () => {
     const token = document.getElementById('gdrive-token-input').value.trim();
     if (!token) return showToast('Google Drive 연결 주소(URL) 또는 토큰을 입력하세요.');
@@ -4367,14 +4487,12 @@ function bindEvents() {
     refreshOneDriveSyncBadge();
     try {
       const remote = await VaultStorage.syncGoogleDriveAPI(token, state, 'load');
-      if (remote && Array.isArray(remote.notes)) {
+      if (remote && Array.isArray(remote.notes) && remote.notes.length > 0) {
         remote.settings = { ...(remote.settings || {}), gdriveToken: token };
-        await applyRemoteSyncedState(remote, 'Google Drive 불러오기 완료');
-        showToast('Google Drive 불러오기 및 자동 동기화 연결 완료');
+        await applyRemoteSyncedState(remote, 'Google Drive에서 불러옴');
+        showToast(`Google Drive에서 기존 ${remote.notes.length}개의 노트를 안전하게 불러왔습니다!`);
       } else {
-        state.lastSavedAt = Date.now();
-        await VaultStorage.syncGoogleDriveAPI(token, state, 'save');
-        showToast('내 구글 드라이브에 새 동기화 파일을 생성하고 자동 동기화를 연결했습니다.');
+        showToast('Google Drive에 저장된 노트 파일이 없습니다.');
       }
     } catch (err) {
       showToast(err.message);
