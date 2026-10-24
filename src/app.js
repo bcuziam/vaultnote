@@ -2724,6 +2724,7 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
     }
   }
 
+  const cleanTitleForMatch = (extractedTitle || '').replace(/[“"”'‘`\[\]\s]/g, '').toLowerCase();
   let inBody = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -2731,22 +2732,41 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
     if (!line) continue;
     if (line.startsWith('Title: ') || line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
 
+    // Filter out portal noise, profile links, and notification headers
+    if (/(사용자\s*링크|프로필\s*사진|내정보\s*보기|로그아웃|로그인|네이버ID|보안설정|내인증서|페이포인트|알림\s*새\s*창|전체\s*알림|알림을\s*모두\s*삭제|읽은\s*알림|레이어\s*닫기|언론사\s*구독|구독해지)/i.test(line)) continue;
+    if (/(office_logo|favicon|naverProfile|blob:http|nid\.naver\.com|notify\.naver\.com|point\.pay\.naver\.com)/i.test(line)) continue;
+    if (/^(Ad\s*Feedback|Advertisement|Follow\s+[A-Za-z]+|Sponsored)/i.test(line)) continue;
+
+    // If not yet in body, wait until we reach the genuine article headline or first substantial paragraph
+    if (!inBody) {
+      const cleanL = line.replace(/^#+\s*/, '').replace(/[“"”'‘`\[\]\s]/g, '').toLowerCase();
+      if (cleanTitleForMatch && cleanTitleForMatch.length >= 5 && (cleanL.includes(cleanTitleForMatch.slice(0, 8)) || cleanTitleForMatch.includes(cleanL.slice(0, 8)))) {
+        inBody = true;
+        continue;
+      }
+      // Fallback: If title not found in headings, look for the first long coherent prose sentence
+      if (line.length >= 40 && /(다\.|니다\.|했다\.|된다\.|이다\.|\.\s*$)/.test(line) && !line.includes('http') && !line.includes('javascript')) {
+        inBody = true;
+      } else {
+        // Skip all pre-article headers, avatars, and navigation bars
+        continue;
+      }
+    }
+
     // 1. Stop parsing when reaching copyright, comment sections, or recommended news footers
-    if (inBody && /(Copyright\s*ⓒ|All\s*rights\s*reserved|무단\s*전재|기사\s*섹션\s*분류|댓글\s*\(\d+\)|이\s*시각\s*주요뉴스|가장\s*많이\s*본\s*뉴스|랭킹\s*뉴스|관련기사|인기기사)/i.test(line)) {
+    if (inBody && /(Copyright\s*ⓒ|All\s*rights\s*reserved|무단\s*전재|기사\s*섹션\s*분류|댓글\s*\(\d+\)|이\s*시각\s*주요뉴스|가장\s*많이\s*본\s*뉴스|랭킹\s*뉴스|관련기사|인기기사|포토뉴스|자동\s*추천)/i.test(line)) {
       break;
     }
 
-    // 2. Filter out navigation buttons, menus, and boilerplate links before article content
+    // 2. Filter out navigation buttons, menus, and boilerplate links before or inside article content
     if (/^((\[.*?\]\(.*?\)\s*)+)$/.test(line) && !line.includes('Image')) continue;
-    if (/^(\*|\-)\s*\[.*\]\(.*\)$/.test(line)) continue;
-    if (/^(_입력_|_수정_|_PICK_|_성별_|_말하기 속도_|_기자_)/.test(line)) continue;
-    if (/^(구독|닫기|본문듣기|글자크기|\*\*글자크기\*\*|인쇄하기|SNS 보내기|기사 원문|반응|언론사별 바로가기|이동 통신망|텍스트 음성 변환|본문 바로가기|이전 페이지)/i.test(line)) continue;
-    if (line.includes('office_logo') || line.includes('favicon')) continue;
+    if (/^(\*|\-)\s*\[.*\]\(.*\)$/.test(line) && !line.includes('Image')) continue;
+    if (/^(_입력_|_수정_|_PICK_|_안내_|_성별_|_말하기 속도_|_기자_)/.test(line)) continue;
+    if (/^(구독|닫기|본문듣기|글자크기|\*\*글자크기\*\*|인쇄하기|SNS\s*보내기|기사\s*원문|\d+\s*반응|언론사별\s*바로가기|이동\s*통신망|텍스트\s*음성\s*변환|본문\s*바로가기|이전\s*페이지)/i.test(line)) continue;
 
     // 3. Image Detection: Always capture real images (never downgrade to plain text links)
     const imgMatch = line.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/);
     if (imgMatch) {
-      inBody = true;
       blocks.push({ id: uid('b'), type: 'image', dataUrl: imgMatch[2], text: imgMatch[1] || '' });
       continue;
     }
@@ -2756,18 +2776,14 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
       const cleanH = line.replace(/^#+\s*/, '').replace(/\[|\]/g, '').trim();
       const cleanT = (extractedTitle || '').replace(/\[|\]/g, '').trim();
       if (cleanT && (cleanH.includes(cleanT.slice(0, 8)) || cleanT.includes(cleanH.slice(0, 8)))) {
-        inBody = true;
-        if (!extractedTitle) extractedTitle = cleanH;
         continue;
       }
       blocks.push({ id: uid('b'), type: 'h3', text: cleanH });
-      inBody = true;
       continue;
     }
 
     // 5. Genuine content: Substantial sentences, bold lead lines, quotes
-    if (line.length >= 15 || line.startsWith('**') || line.startsWith('> ')) {
-      inBody = true;
+    if (line.length >= 10 || line.startsWith('**') || line.startsWith('> ')) {
       if (line.startsWith('> ')) {
         blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim() });
       } else if (line.startsWith('- ') || line.startsWith('* ')) {
