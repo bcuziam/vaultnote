@@ -293,10 +293,57 @@ function stripLeadingEmojis(str = '') {
   return String(str).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\s]+/gu, '').trim() || str;
 }
 
-function getNotePlainSnippet(note) {
+function highlightSearchTerm(text, query) {
+  if (!query || !text) return escapeHtml(text || '');
+  const rawText = String(text);
+  const q = query.trim();
+  if (!q) return escapeHtml(rawText);
+
+  const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const parts = rawText.split(regex);
+  return parts.map((part) => {
+    if (part.toLowerCase() === q.toLowerCase()) {
+      return `<mark class="search-highlight">${escapeHtml(part)}</mark>`;
+    }
+    return escapeHtml(part);
+  }).join('');
+}
+
+function getNotePlainSnippet(note, query = '') {
   if (!note) return '';
   if (note.isEncrypted) return 'AES-256 암호화로 잠긴 노트입니다.';
   const blocks = note.blocks || [];
+
+  // 검색어가 있을 경우 검색어가 포함된 블록(이미지 OCR 포함)의 문맥을 최우선으로 발췌
+  if (query) {
+    const qLower = query.toLowerCase();
+    for (const b of blocks) {
+      if (b.type === 'image' && b.ocrText && b.ocrText.toLowerCase().includes(qLower)) {
+        const idx = b.ocrText.toLowerCase().indexOf(qLower);
+        const start = Math.max(0, idx - 25);
+        const end = Math.min(b.ocrText.length, idx + query.length + 55);
+        const snippet = b.ocrText.slice(start, end);
+        return (start > 0 ? '...' : '') + `📷 [이미지 내 텍스트] ` + snippet + (end < b.ocrText.length ? '...' : '');
+      }
+      const txt = (b.text || '').trim();
+      if (txt && txt.toLowerCase().includes(qLower)) {
+        const idx = txt.toLowerCase().indexOf(qLower);
+        const start = Math.max(0, idx - 25);
+        const end = Math.min(txt.length, idx + query.length + 65);
+        const snippet = txt.slice(start, end);
+        return (start > 0 ? '...' : '') + snippet + (end < txt.length ? '...' : '');
+      }
+      const details = (b.details || '').trim();
+      if (details && details.toLowerCase().includes(qLower)) {
+        const idx = details.toLowerCase().indexOf(qLower);
+        const start = Math.max(0, idx - 25);
+        const end = Math.min(details.length, idx + query.length + 65);
+        const snippet = details.slice(start, end);
+        return (start > 0 ? '...' : '') + snippet + (end < details.length ? '...' : '');
+      }
+    }
+  }
+
   for (const b of blocks) {
     const txt = (b.text || '').trim();
     if (!txt) continue;
@@ -306,6 +353,7 @@ function getNotePlainSnippet(note) {
   }
   for (const b of blocks) {
     if (b.text && b.text.trim()) return b.text.trim().slice(0, 120);
+    if (b.type === 'image' && b.ocrText) return '📷 [이미지 텍스트] ' + b.ocrText.slice(0, 120);
   }
   return '본문 내용 없음';
 }
@@ -586,7 +634,11 @@ function getFilteredNotes() {
     list = list.filter((n) => {
       const inTitle = (n.title || '').toLowerCase().includes(query);
       const inTags = (n.tags || []).some((t) => (`#${t}`).toLowerCase().includes(query) || t.toLowerCase().includes(query));
-      const inBlocks = !n.isEncrypted && (n.blocks || []).some((b) => (b.text || '').toLowerCase().includes(query));
+      const inBlocks = !n.isEncrypted && (n.blocks || []).some((b) => {
+        const textMatch = (b.text || '').toLowerCase().includes(query) || (b.details || '').toLowerCase().includes(query);
+        const ocrMatch = b.type === 'image' && (b.ocrText || '').toLowerCase().includes(query);
+        return textMatch || ocrMatch;
+      });
       return inTitle || inTags || inBlocks;
     });
   }
@@ -803,9 +855,11 @@ function renderSidebar() {
         row.className = `note-list-row ${note.id === activeNoteId && activeViewMode === 'editor' ? 'active' : ''}`;
         row.dataset.quickNoteId = note.id;
         const prefix = note.isEncrypted ? '[잠금] ' : note.favorite ? '★ ' : '';
+        const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
+        const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
         row.innerHTML = `
           <span class="drag-handle" title="마우스로 잡아 순서 이동">⋮⋮</span>
-          <span class="note-list-row-title">${escapeHtml(prefix + (note.title || '제목 없음'))}</span>
+          <span class="note-list-row-title">${highlightedTitle}</span>
         `;
         if (!note.trashed) {
           attachNoteRowDragEvents(row, note.id);
@@ -839,6 +893,78 @@ function selectCategoryNav(navKey) {
   }
 }
 
+let pendingEditorSearchHighlight = '';
+
+function clearSearchHighlights() {
+  document.querySelectorAll('.search-match-block').forEach((el) => {
+    el.classList.remove('search-match-block');
+  });
+  pendingEditorSearchHighlight = '';
+}
+
+function applyEditorSearchHighlight(query) {
+  if (!query) return;
+  const qLower = query.toLowerCase();
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  // 기존 하이라이트 클래스 정리
+  document.querySelectorAll('.search-match-block').forEach((el) => el.classList.remove('search-match-block'));
+
+  // 1. 제목 일치 확인
+  if ((note.title || '').toLowerCase().includes(qLower)) {
+    const titleInput = document.getElementById('note-title-input');
+    if (titleInput) {
+      titleInput.classList.add('search-match-block');
+      titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const idx = titleInput.value.toLowerCase().indexOf(qLower);
+      if (idx !== -1) {
+        titleInput.setSelectionRange(idx, idx + query.length);
+        titleInput.focus({ preventScroll: true });
+      }
+      return;
+    }
+  }
+
+  // 2. 본문 블록 일치 확인
+  let matchedBlock = null;
+  for (const b of blocks) {
+    if ((b.text || '').toLowerCase().includes(qLower) || (b.details || '').toLowerCase().includes(qLower)) {
+      matchedBlock = b;
+      break;
+    }
+    if (b.type === 'image' && b.ocrText && b.ocrText.toLowerCase().includes(qLower)) {
+      matchedBlock = b;
+      break;
+    }
+  }
+
+  if (matchedBlock) {
+    const row = document.querySelector(`.block-row[data-block-id="${matchedBlock.id}"]`);
+    if (row) {
+      row.classList.add('search-match-block');
+      setTimeout(() => {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+
+      if (matchedBlock.type === 'image') {
+        showToast(`🔍 이미지 내 일치 단어: "${query}"`, 3500);
+      } else {
+        const inputEl = row.querySelector('textarea.block-editable, input.block-editable');
+        if (inputEl) {
+          const val = inputEl.value;
+          const idx = val.toLowerCase().indexOf(qLower);
+          if (idx !== -1) {
+            inputEl.setSelectionRange(idx, idx + query.length);
+            inputEl.focus({ preventScroll: true });
+          }
+        }
+      }
+    }
+  }
+}
+
 function openNoteInEditor(noteId) {
   clearBlockSelection();
   activeNoteId = noteId;
@@ -846,9 +972,18 @@ function openNoteInEditor(noteId) {
     activeNav = 'all';
   }
   activeViewMode = 'editor';
+
+  // 검색창에 검색어가 있었다면 기억해 두었다가 본문 진입 시 강조 및 자동 스크롤
+  const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
+  pendingEditorSearchHighlight = query;
+
   renderAll();
   if (window.innerWidth <= 820) {
     closeSidebar();
+  }
+
+  if (pendingEditorSearchHighlight) {
+    applyEditorSearchHighlight(pendingEditorSearchHighlight);
   }
 }
 
@@ -891,6 +1026,7 @@ function renderMainNoteListView() {
   }
 
   const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
+  const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
 
   for (const note of notes) {
     const item = document.createElement('div');
@@ -900,11 +1036,14 @@ function renderMainNoteListView() {
     const tagsText = (note.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ');
     const prefix = note.isEncrypted ? '[암호화] ' : note.favorite ? '★ ' : '';
 
+    const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
+    const highlightedSnippet = highlightSearchTerm(getNotePlainSnippet(note, query), query);
+
     item.innerHTML = `
       ${!isTrash ? `<span class="drag-handle" title="마우스로 잡고 위아래로 끌어 순서 변경 (또는 좌측 폴더로 이동)">⋮⋮</span>` : ''}
       <div class="main-note-left">
-        <div class="main-note-title">${escapeHtml(prefix + (note.title || '제목 없음'))}</div>
-        <div class="main-note-snippet">${escapeHtml(getNotePlainSnippet(note))}</div>
+        <div class="main-note-title">${highlightedTitle}</div>
+        <div class="main-note-snippet">${highlightedSnippet}</div>
       </div>
       <div class="main-note-right">
         ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
@@ -1300,6 +1439,7 @@ function renderBlocksList(note, blocks) {
     } else if (block.type === 'image') {
       body.className += ' block-image';
       const initialWidthStyle = block.width ? `width:${block.width};` : '';
+      const hasOcr = Boolean((block.ocrText || '').trim());
       body.innerHTML = `
         <div class="image-resizer-box" style="${initialWidthStyle}">
           <div class="img-quick-toolbar">
@@ -1308,6 +1448,11 @@ function renderBlocksList(note, blocks) {
             <button type="button" data-imgw="50%" title="폭 50%">50%</button>
             <button type="button" data-imgw="75%" title="폭 75%">75%</button>
             <button type="button" data-imgw="100%" title="폭 100%">100%</button>
+            ${
+              hasOcr
+                ? `<button type="button" data-imgocr="copy" title="인식된 글자 클립보드 복사">📋 글자 복사</button>`
+                : `<button type="button" data-imgocr="run" title="AI 글자인식 (OCR)">🔍 글자인식</button>`
+            }
             <button type="button" data-imgdel="1" style="color:#ff8a80;" title="이미지 삭제">삭제</button>
           </div>
           <img src="${block.dataUrl || ''}" alt="이미지" draggable="false" />
@@ -1316,6 +1461,33 @@ function renderBlocksList(note, blocks) {
         </div>
         <input type="text" class="block-editable" style="font-size:13px;color:var(--text-muted);margin-top:4px;" placeholder="이미지 설명 입력 (비워두고 Backspace로 삭제)..." value="${escapeHtml(block.text || '')}" />
       `;
+
+      // OCR Copy & Run buttons
+      body.querySelector('[data-imgocr="copy"]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (block.ocrText) {
+          navigator.clipboard.writeText(block.ocrText);
+          showToast('이미지에서 인식된 글자를 복사했습니다.');
+        }
+      });
+
+      body.querySelector('[data-imgocr="run"]')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        btn.textContent = '⏳ 인식 중...';
+        btn.disabled = true;
+        await runBackgroundOcrForBlock(note, block);
+        if (block.ocrText) {
+          btn.textContent = '📋 글자 복사';
+          btn.title = '인식된 글자 클립보드 복사';
+          btn.dataset.imgocr = 'copy';
+          btn.disabled = false;
+        } else {
+          btn.textContent = '🔍 글자인식';
+          btn.disabled = false;
+          showToast('글자를 인식하지 못했거나 API 키 및 네트워크를 확인해 주세요.');
+        }
+      });
 
       const resizerBox = body.querySelector('.image-resizer-box');
       const sizeBadge = body.querySelector('.img-size-badge');
@@ -4699,6 +4871,7 @@ function bindEvents() {
 
   // Title Input
   document.getElementById('note-title-input').addEventListener('input', (e) => {
+    clearSearchHighlights();
     const note = getActiveNote();
     if (!note) return;
     note.title = e.target.value.replace(/\r?\n/g, ' ');
@@ -4707,6 +4880,7 @@ function bindEvents() {
     touchNote(note);
   });
   document.getElementById('note-title-input').addEventListener('keydown', (e) => {
+    clearSearchHighlights();
     if (e.key === 'Enter') {
       e.preventDefault();
       const note = getActiveNote();
@@ -4714,6 +4888,10 @@ function bindEvents() {
       if (blocks && blocks[0]) focusBlock(blocks[0].id);
     }
   });
+
+  // 에디터 본문 수정 시 검색 하이라이트 자동 해제
+  document.getElementById('blocks-container')?.addEventListener('input', clearSearchHighlights);
+  document.getElementById('blocks-container')?.addEventListener('keydown', clearSearchHighlights);
 
   document.getElementById('btn-summarize-note')?.addEventListener('click', () => {
     summarizeCurrentActiveNote();
@@ -5485,12 +5663,17 @@ function bindEvents() {
     try {
       const imported = JSON.parse(await file.text());
       if (imported && Array.isArray(imported.notes)) {
+        if (imported._images) {
+          for (const [id, url] of Object.entries(imported._images)) {
+            await VaultStorage.saveImage(id, url);
+          }
+        }
         state = imported;
         activeNoteId = state.notes[0]?.id || null;
         await VaultStorage.saveState(state);
         renderAll();
         document.getElementById('cloud-sync-modal').classList.add('hidden');
-        showToast('복원 완료');
+        showToast('성공적으로 복원되었습니다.');
       }
     } catch (err) {
       showToast(`파일 오류: ${err.message}`);
@@ -5699,7 +5882,153 @@ function createNewNote() {
   }, 20);
 }
 
-function insertImageFileIntoNote(file) {
+/**
+ * 1. 이미지 파일 고효율 압축 및 해상도 최적화 (Canvas WebP / JPEG 0.85)
+ */
+async function optimizeImageFile(file, maxWidth = 1600, maxHeight = 1600, quality = 0.85) {
+  if (!file) return null;
+  // SVG나 150KB 이하의 작은 GIF 등은 원본 보존
+  if (file.type === 'image/svg+xml') {
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.readAsDataURL(file);
+    });
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxWidth || height > maxHeight) {
+        if (width / maxWidth > height / maxHeight) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+
+      let dataUrl = canvas.toDataURL('image/webp', quality);
+      if (!dataUrl.startsWith('data:image/webp')) {
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.readAsDataURL(file);
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * 2. Google Gemini Vision API를 이용한 이미지 텍스트 인식 (OCR)
+ */
+async function recognizeTextFromImageWithGemini(dataUrl) {
+  const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+  if (!apiKey || !navigator.onLine) return null;
+
+  const match = (dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mimeType = match[1];
+  const base64Data = match[2];
+
+  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+  const prompt = '이 이미지에 포함된 모든 글자(텍스트, 한국어, 영어, 숫자, 기호 등)를 누락 없이 정확하게 추출(OCR)해 주세요. 다른 설명이나 사족 없이 오직 이미지에서 읽어낸 글자 내용만 그대로 출력하세요.';
+
+  for (const model of models) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data
+                  }
+                },
+                { text: prompt }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2048
+          }
+        })
+      });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      if (text) return text;
+    } catch (err) {
+      console.warn('Gemini OCR retry model error:', err);
+    }
+  }
+  return null;
+}
+
+/**
+ * 3. 백그라운드 비동기 OCR 실행기 (화면 멈춤 없이 조용히 동작)
+ */
+async function runBackgroundOcrForBlock(note, imgBlock) {
+  const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+  if (!apiKey || !navigator.onLine) {
+    return;
+  }
+
+  try {
+    const text = await recognizeTextFromImageWithGemini(imgBlock.dataUrl);
+    if (text) {
+      imgBlock.ocrText = text;
+      touchNote(note);
+      scheduleSave(false);
+
+      // 현재 화면에 이 이미지 블록이 표시되고 있다면 복사 버튼 즉시 갱신
+      const imgRow = document.querySelector(`.block-row[data-block-id="${imgBlock.id}"]`);
+      if (imgRow) {
+        const toolbar = imgRow.querySelector('.img-quick-toolbar');
+        if (toolbar) {
+          let runBtn = toolbar.querySelector('[data-imgocr="run"]');
+          if (runBtn) {
+            runBtn.textContent = '📋 글자 복사';
+            runBtn.title = '인식된 글자 클립보드 복사';
+            runBtn.dataset.imgocr = 'copy';
+          }
+        }
+      }
+      showToast('이미지 글자인식(OCR) 완료! 검색에 자동 반영됩니다.', 2500);
+    }
+  } catch (err) {
+    console.warn('[VaultNote OCR] 백그라운드 글자인식 오류:', err);
+  }
+}
+
+async function insertImageFileIntoNote(file) {
   const note = getActiveNote();
   const blocks = getEditableBlocksForNote(note);
   if (!note || !blocks) return;
@@ -5707,33 +6036,42 @@ function insertImageFileIntoNote(file) {
   const focusedRow = document.activeElement?.closest?.('.block-row');
   const focusedBlockId = focusedRow?.dataset?.blockId || null;
 
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    const imgBlock = {
-      id: uid('b'),
-      type: 'image',
-      dataUrl: ev.target.result,
-      width: '75%',
-      text: ''
-    };
-    const focusedIdx = focusedBlockId ? blocks.findIndex((b) => b.id === focusedBlockId) : -1;
-    if (focusedIdx !== -1) {
-      // If current block is an empty paragraph, replace it with image + trailing paragraph
-      if (blocks[focusedIdx].type === 'p' && !(blocks[focusedIdx].text || '').trim()) {
-        const nextP = { id: uid('b'), type: 'p', text: '' };
-        blocks.splice(focusedIdx, 1, imgBlock, nextP);
-      } else {
-        blocks.splice(focusedIdx + 1, 0, imgBlock);
-      }
-    } else {
-      blocks.push(imgBlock);
-      blocks.push({ id: uid('b'), type: 'p', text: '' });
-    }
-    touchNote(note, blocks);
-    renderActiveNoteEditor();
-    showToast('이미지가 삽입되었습니다. 우측 모서리를 끌어 크기를 조절하세요.');
+  showToast('이미지 고효율 압축 최적화 중...', 1200);
+  const optimizedDataUrl = await optimizeImageFile(file, 1600, 1600, 0.85);
+
+  const imageId = 'img_' + Math.random().toString(36).slice(2, 10);
+  // 별도 이미지 저장소(IMAGE_STORE)에 저장
+  VaultStorage.saveImage(imageId, optimizedDataUrl);
+
+  const imgBlock = {
+    id: uid('b'),
+    type: 'image',
+    imageId,
+    dataUrl: optimizedDataUrl,
+    width: '75%',
+    text: '',
+    ocrText: ''
   };
-  reader.readAsDataURL(file);
+
+  const focusedIdx = focusedBlockId ? blocks.findIndex((b) => b.id === focusedBlockId) : -1;
+  if (focusedIdx !== -1) {
+    if (blocks[focusedIdx].type === 'p' && !(blocks[focusedIdx].text || '').trim()) {
+      const nextP = { id: uid('b'), type: 'p', text: '' };
+      blocks.splice(focusedIdx, 1, imgBlock, nextP);
+    } else {
+      blocks.splice(focusedIdx + 1, 0, imgBlock);
+    }
+  } else {
+    blocks.push(imgBlock);
+    blocks.push({ id: uid('b'), type: 'p', text: '' });
+  }
+
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  showToast('이미지가 최적화되어 삽입되었습니다. (용량 90% 이상 절감)', 2500);
+
+  // 백그라운드 비동기 글자 인식 실행 (화면 멈춤 없이 조용히 동작)
+  runBackgroundOcrForBlock(note, imgBlock);
 }
 
 /**
@@ -5953,7 +6291,11 @@ function renderGlobalSearchResults() {
       if (!q) return true;
       const inTitle = (n.title || '').toLowerCase().includes(q);
       const inTags = (n.tags || []).some((t) => t.toLowerCase().includes(q));
-      const inBody = !n.isEncrypted && (n.blocks || []).some((b) => (b.text || '').toLowerCase().includes(q));
+      const inBody = !n.isEncrypted && (n.blocks || []).some((b) => {
+        const textMatch = (b.text || '').toLowerCase().includes(q) || (b.details || '').toLowerCase().includes(q);
+        const ocrMatch = b.type === 'image' && (b.ocrText || '').toLowerCase().includes(q);
+        return textMatch || ocrMatch;
+      });
       return inTitle || inTags || inBody;
     })
     .slice(0, 12);
@@ -5962,19 +6304,25 @@ function renderGlobalSearchResults() {
     const div = document.createElement('div');
     div.className = 'search-result-item';
     div.innerHTML = `
-      <div style="font-weight:600;">${escapeHtml(n.title || '제목 없음')}</div>
-      <div class="text-muted">${escapeHtml(getNotePlainSnippet(n))}</div>
+      <div style="font-weight:600;">${highlightSearchTerm(n.title || '제목 없음', q)}</div>
+      <div class="text-muted">${highlightSearchTerm(getNotePlainSnippet(n, q), q)}</div>
     `;
     div.addEventListener('click', () => {
       document.getElementById('search-modal').classList.add('hidden');
+      pendingEditorSearchHighlight = q;
       openNoteInEditor(n.id);
     });
     listEl.appendChild(div);
   }
 }
 
-function exportVaultJsonFile() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8' });
+async function exportVaultJsonFile() {
+  const images = await VaultStorage.getAllImages();
+  const exportPayload = {
+    ...state,
+    _images: images
+  };
+  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'vaultnote-sync.vnvault.json';

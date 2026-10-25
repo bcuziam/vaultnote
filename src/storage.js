@@ -8,8 +8,9 @@
  */
 
 const DB_NAME = 'VaultNoteDB_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for separate image store (image_store)
 const STORE_NAME = 'app_state';
+const IMAGE_STORE = 'image_store';
 const STATE_KEY = 'vaultnote_root_state';
 const DIR_HANDLE_KEY = 'vaultnote_onedrive_dir_handle';
 
@@ -21,6 +22,9 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains(IMAGE_STORE)) {
+        db.createObjectStore(IMAGE_STORE);
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -30,16 +34,104 @@ function openDB() {
 let directoryHandle = null; // Browser File System Access API handle
 
 export const VaultStorage = {
+  // --- Dedicated Image Storage (IMAGE_STORE) ---
+  async saveImage(imageId, dataUrl) {
+    if (!imageId || !dataUrl) return false;
+    try {
+      const db = await openDB();
+      return await new Promise((resolve) => {
+        const tx = db.transaction(IMAGE_STORE, 'readwrite');
+        const store = tx.objectStore(IMAGE_STORE);
+        const req = store.put(dataUrl, imageId);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (err) {
+      console.warn('[VaultStorage] saveImage error:', err);
+      return false;
+    }
+  },
+
+  async getImage(imageId) {
+    if (!imageId) return null;
+    try {
+      const db = await openDB();
+      return await new Promise((resolve) => {
+        const tx = db.transaction(IMAGE_STORE, 'readonly');
+        const store = tx.objectStore(IMAGE_STORE);
+        const req = store.get(imageId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch {
+      return null;
+    }
+  },
+
+  async deleteImage(imageId) {
+    if (!imageId) return;
+    try {
+      const db = await openDB();
+      const tx = db.transaction(IMAGE_STORE, 'readwrite');
+      tx.objectStore(IMAGE_STORE).delete(imageId);
+    } catch {}
+  },
+
+  async getAllImages() {
+    try {
+      const db = await openDB();
+      return await new Promise((resolve) => {
+        const tx = db.transaction(IMAGE_STORE, 'readonly');
+        const store = tx.objectStore(IMAGE_STORE);
+        const images = {};
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            images[cursor.key] = cursor.value;
+            cursor.continue();
+          } else {
+            resolve(images);
+          }
+        };
+        req.onerror = () => resolve({});
+      });
+    } catch {
+      return {};
+    }
+  },
+
   async loadState() {
     try {
       const db = await openDB();
-      return await new Promise((resolve, reject) => {
+      const state = await new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
         const req = store.get(STATE_KEY);
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
       });
+
+      // Hydrate image dataUrls from separate image_store
+      if (state && Array.isArray(state.notes)) {
+        const allImages = await this.getAllImages();
+        for (const n of state.notes) {
+          if (!n.blocks) continue;
+          for (const b of n.blocks) {
+            if (b.type === 'image') {
+              if (b.imageId && allImages[b.imageId]) {
+                b.dataUrl = allImages[b.imageId];
+              } else if (b.dataUrl && !b.imageId) {
+                // Auto-migrate legacy inline images to image_store
+                b.imageId = 'img_' + Math.random().toString(36).slice(2, 10);
+                this.saveImage(b.imageId, b.dataUrl);
+              }
+            }
+          }
+        }
+      }
+
+      return state;
     } catch (err) {
       console.warn('IndexedDB load fallback to localStorage:', err);
       const raw = localStorage.getItem(STATE_KEY);
@@ -48,6 +140,21 @@ export const VaultStorage = {
   },
 
   async saveState(state) {
+    // 1. Save new or updated images to separate IMAGE_STORE
+    if (state && Array.isArray(state.notes)) {
+      for (const n of state.notes) {
+        if (!n.blocks) continue;
+        for (const b of n.blocks) {
+          if (b.type === 'image' && b.dataUrl) {
+            if (!b.imageId) {
+              b.imageId = 'img_' + Math.random().toString(36).slice(2, 10);
+            }
+            this.saveImage(b.imageId, b.dataUrl);
+          }
+        }
+      }
+    }
+
     const payload = {
       ...state,
       lastSavedAt: new Date().toISOString()
@@ -63,7 +170,11 @@ export const VaultStorage = {
       });
     } catch (err) {
       console.warn('IndexedDB save fallback to localStorage:', err);
-      localStorage.setItem(STATE_KEY, JSON.stringify(payload));
+      try {
+        localStorage.setItem(STATE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn('LocalStorage limit exceeded:', e);
+      }
     }
     return payload;
   },

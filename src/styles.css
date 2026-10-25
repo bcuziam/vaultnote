@@ -1307,6 +1307,55 @@ select:focus {
   font-variant-numeric: tabular-nums;
 }
 
+/* 이미지 OCR 글자 복사 및 글자인식 버튼 */
+.img-quick-toolbar button[data-imgocr] {
+  background: rgba(99, 102, 241, 0.45);
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin: 0 2px;
+  white-space: nowrap;
+}
+.img-quick-toolbar button[data-imgocr]:hover {
+  background: rgba(99, 102, 241, 0.75);
+}
+
+/* 검색어 노란 바탕 형광펜 강조 (1단계: 목록 스니펫 & 제목) */
+mark.search-highlight {
+  background-color: #ffd43b;
+  color: #1a1a1a;
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 700;
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.12);
+}
+[data-theme="dark"] mark.search-highlight {
+  background-color: rgba(255, 212, 59, 0.42);
+  color: #fff9db;
+  border-bottom: 2px solid #ffd43b;
+}
+
+/* 본문 검색어 일치 문단 자동 스크롤 & 강조 (2단계: 본문 에디터) */
+.search-match-block {
+  background: rgba(255, 212, 59, 0.22) !important;
+  border-left: 3.5px solid #f59f00 !important;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(245, 159, 0, 0.25);
+  animation: pulseSearchMatch 1.8s ease-out;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+[data-theme="dark"] .search-match-block {
+  background: rgba(255, 212, 59, 0.16) !important;
+  border-left: 3.5px solid #ffd43b !important;
+  box-shadow: 0 0 0 1px rgba(255, 212, 59, 0.2);
+}
+
+@keyframes pulseSearchMatch {
+  0% { background: rgba(255, 212, 59, 0.5); }
+  100% { background: rgba(255, 212, 59, 0.22); }
+}
+
 .editor-bottom-pad {
   height: 120px;
   padding-top: 20px;
