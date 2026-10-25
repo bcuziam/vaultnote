@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=49" />
+  <link rel="manifest" href="./manifest.webmanifest?v=50" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=49" />
+  <link rel="stylesheet" href="./src/styles.css?v=50" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -741,14 +741,14 @@
     <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">취소</button>
   </div>
 
-  <!-- 본문 텍스트 블록 선택 시 플로팅 서식 미니 툴바 -->
+  <!-- PC용 텍스트 선택 시 플로팅 서식 미니 툴바 (미니멀 타이포그래피) -->
   <div id="floating-format-toolbar" class="floating-format-toolbar hidden">
-    <button type="button" data-format="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
-    <button type="button" data-format="italic" title="기울임 (Ctrl+I)"><i>I</i></button>
-    <button type="button" data-format="strike" title="취소선 (Ctrl+Shift+S)"><s>S</s></button>
-    <button type="button" data-format="mark" title="형광펜 강조">🖍️</button>
+    <button type="button" data-format="bold" title="굵게 (Ctrl+B)"><strong class="typo-b">B</strong></button>
+    <button type="button" data-format="italic" title="기울임 (Ctrl+I)"><em class="typo-i">I</em></button>
+    <button type="button" data-format="strike" title="취소선 (Ctrl+Shift+S)"><del class="typo-s">S</del></button>
+    <button type="button" data-format="mark" title="형광펜"><span class="typo-h">H</span></button>
     <div class="color-picker-dropdown-wrap" style="position:relative;">
-      <button type="button" id="btn-toggle-color-picker" title="글자 색상 선택">🎨</button>
+      <button type="button" id="btn-toggle-color-picker" title="글자 색상"><span class="typo-a">A<span class="typo-a-bar"></span></span></button>
       <div id="format-color-palette" class="format-color-palette hidden">
         <span class="color-dot" data-color="#ef4444" style="background:#ef4444;" title="빨간색"></span>
         <span class="color-dot" data-color="#3b82f6" style="background:#3b82f6;" title="파란색"></span>
@@ -760,8 +760,32 @@
     </div>
   </div>
 
+  <!-- 스마트폰 전용 키보드 위 고정 서식 액세서리 바 -->
+  <div id="mobile-format-accessory-bar" class="mobile-format-accessory-bar hidden">
+    <div class="mobile-format-inner">
+      <button type="button" data-format="bold" title="굵게"><strong class="typo-b">B</strong></button>
+      <button type="button" data-format="italic" title="기울임"><em class="typo-i">I</em></button>
+      <button type="button" data-format="strike" title="취소선"><del class="typo-s">S</del></button>
+      <button type="button" data-format="mark" title="형광펜"><span class="typo-h">H</span></button>
+      <button type="button" id="btn-mobile-color" title="글자색"><span class="typo-a">A<span class="typo-a-bar"></span></span></button>
+      <div class="mobile-bar-divider"></div>
+      <button type="button" id="btn-mobile-indent" title="들여쓰기">⇥</button>
+      <button type="button" id="btn-mobile-outdent" title="내어쓰기">⇤</button>
+      <button type="button" id="btn-mobile-hide-bar" class="btn-mobile-close-bar" title="닫기">✕</button>
+    </div>
+    <!-- 모바일 글자색 선택 서브 팔레트 -->
+    <div id="mobile-format-color-palette" class="mobile-format-color-palette hidden">
+      <span class="color-dot" data-color="#ef4444" style="background:#ef4444;" title="빨간색"></span>
+      <span class="color-dot" data-color="#3b82f6" style="background:#3b82f6;" title="파란색"></span>
+      <span class="color-dot" data-color="#10b981" style="background:#10b981;" title="초록색"></span>
+      <span class="color-dot" data-color="#f59e0b" style="background:#f59e0b;" title="주황색"></span>
+      <span class="color-dot" data-color="#a855f7" style="background:#a855f7;" title="보라색"></span>
+      <span class="color-dot" data-color="" style="background:var(--text-main);" title="기본색"></span>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=49"></script>
+  <script type="module" src="./src/app.js?v=50"></script>
 </body>
 </html>

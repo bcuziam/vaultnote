@@ -987,6 +987,7 @@ function renderMainNoteListView() {
   const quickUrlBar = document.getElementById('list-quick-url-bar');
   const container = document.getElementById('note-items-container');
 
+  hideMobileAccessoryBar();
   const navTitle = getCurrentNavTitle();
   const notes = getFilteredNotes();
 
@@ -1193,6 +1194,7 @@ function renderActiveNoteEditor() {
   }
 
   renderBlocksList(note, blocks);
+  showMobileAccessoryBar();
   renderBacklinksPanel(note, blocks);
 }
 
@@ -1362,6 +1364,62 @@ document.addEventListener('selectionchange', () => {
   }, 100);
 });
 
+function updateMobileAccessoryBarPosition() {
+  const bar = document.getElementById('mobile-format-accessory-bar');
+  if (!bar || window.innerWidth > 768) return;
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const bottomOffset = window.innerHeight - (vv.offsetTop + vv.height);
+    bar.style.bottom = `${Math.max(0, Math.round(bottomOffset))}px`;
+  } else {
+    bar.style.bottom = '0px';
+  }
+}
+
+function showMobileAccessoryBar() {
+  if (window.innerWidth > 768 || activeViewMode !== 'editor') return;
+  const bar = document.getElementById('mobile-format-accessory-bar');
+  if (bar) {
+    bar.classList.remove('hidden');
+    updateMobileAccessoryBarPosition();
+  }
+}
+
+function hideMobileAccessoryBar() {
+  const bar = document.getElementById('mobile-format-accessory-bar');
+  if (bar) bar.classList.add('hidden');
+  document.getElementById('mobile-format-color-palette')?.classList.add('hidden');
+}
+
+function indentActiveBlock(delta) {
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  let activeRow = document.activeElement?.closest?.('.block-row');
+  if (!activeRow && activeFormattedTextarea) {
+    activeRow = activeFormattedTextarea.closest?.('.block-row');
+  }
+  if (!activeRow) {
+    activeRow = document.querySelector('.block-row');
+  }
+  const blockId = activeRow?.dataset?.blockId;
+  if (!blockId) return;
+
+  const block = blocks.find((b) => b.id === blockId);
+  if (!block) return;
+
+  recordPreActionSnapshot();
+  if (delta > 0) {
+    block.indent = Math.min((block.indent || 0) + 1, 4);
+  } else {
+    block.indent = Math.max((block.indent || 0) - 1, 0);
+  }
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  focusBlock(block.id);
+}
+
 function hideFloatingFormatToolbar() {
   const toolbar = document.getElementById('floating-format-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
@@ -1369,45 +1427,74 @@ function hideFloatingFormatToolbar() {
 }
 
 function applyFormattingToActiveSelection(formatType, targetTa = null, customColor = '') {
-  const ta = targetTa || activeFormattedTextarea;
+  let ta = targetTa || activeFormattedTextarea;
+  if (!ta) {
+    const focused = document.activeElement;
+    if (focused && focused.classList?.contains('block-editable')) {
+      ta = focused;
+    } else {
+      ta = document.querySelector('.block-row textarea.block-editable:not(.hidden)') || document.querySelector('textarea.block-editable');
+    }
+  }
   if (!ta) return;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  if (typeof start !== 'number' || typeof end !== 'number' || start === end) return;
 
-  const val = ta.value;
+  const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
+  const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ta.value.length;
+  const val = ta.value || '';
   const selected = val.slice(start, end);
   let replacement = selected;
+  let cursorOffset = 0;
 
-  if (formatType === 'bold') {
-    if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
-      replacement = selected.slice(2, -2);
-    } else {
-      replacement = `**${selected}**`;
+  if (start === end) {
+    // 선택 영역이 없을 때: 마크다운 기호를 감싸서 삽입하고 커서를 가운데로 이동
+    if (formatType === 'bold') {
+      replacement = '****';
+      cursorOffset = 2;
+    } else if (formatType === 'italic') {
+      replacement = '**';
+      cursorOffset = 1;
+    } else if (formatType === 'strike') {
+      replacement = '~~~~';
+      cursorOffset = 2;
+    } else if (formatType === 'mark') {
+      replacement = '====';
+      cursorOffset = 2;
+    } else if (formatType === 'color' && customColor) {
+      replacement = `<span style="color:${customColor}"></span>`;
+      cursorOffset = `<span style="color:${customColor}">`.length;
     }
-  } else if (formatType === 'italic') {
-    if (selected.startsWith('*') && selected.endsWith('*') && selected.length >= 2) {
-      replacement = selected.slice(1, -1);
-    } else {
-      replacement = `*${selected}*`;
-    }
-  } else if (formatType === 'strike') {
-    if (selected.startsWith('~~') && selected.endsWith('~~') && selected.length >= 4) {
-      replacement = selected.slice(2, -2);
-    } else {
-      replacement = `~~${selected}~~`;
-    }
-  } else if (formatType === 'mark') {
-    if (selected.startsWith('==') && selected.endsWith('==') && selected.length >= 4) {
-      replacement = selected.slice(2, -2);
-    } else {
-      replacement = `==${selected}==`;
-    }
-  } else if (formatType === 'color') {
-    if (customColor) {
-      replacement = `<span style="color:${customColor}">${selected.replace(/<\/?span[^>]*>/gi, '')}</span>`;
-    } else {
-      replacement = selected.replace(/<\/?span[^>]*>/gi, '');
+  } else {
+    // 텍스트가 선택되어 있을 때: 감싸거나 토글
+    if (formatType === 'bold') {
+      if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
+        replacement = selected.slice(2, -2);
+      } else {
+        replacement = `**${selected}**`;
+      }
+    } else if (formatType === 'italic') {
+      if (selected.startsWith('*') && selected.endsWith('*') && selected.length >= 2) {
+        replacement = selected.slice(1, -1);
+      } else {
+        replacement = `*${selected}*`;
+      }
+    } else if (formatType === 'strike') {
+      if (selected.startsWith('~~') && selected.endsWith('~~') && selected.length >= 4) {
+        replacement = selected.slice(2, -2);
+      } else {
+        replacement = `~~${selected}~~`;
+      }
+    } else if (formatType === 'mark') {
+      if (selected.startsWith('==') && selected.endsWith('==') && selected.length >= 4) {
+        replacement = selected.slice(2, -2);
+      } else {
+        replacement = `==${selected}==`;
+      }
+    } else if (formatType === 'color') {
+      if (customColor) {
+        replacement = `<span style="color:${customColor}">${selected.replace(/<\/?span[^>]*>/gi, '')}</span>`;
+      } else {
+        replacement = selected.replace(/<\/?span[^>]*>/gi, '');
+      }
     }
   }
 
@@ -1416,9 +1503,15 @@ function applyFormattingToActiveSelection(formatType, targetTa = null, customCol
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   ta.focus();
   try {
-    ta.setSelectionRange(start, start + replacement.length);
+    if (start === end && cursorOffset > 0) {
+      ta.setSelectionRange(start + cursorOffset, start + cursorOffset);
+    } else {
+      ta.setSelectionRange(start, start + replacement.length);
+    }
   } catch (_) {}
+
   hideFloatingFormatToolbar();
+  document.getElementById('mobile-format-color-palette')?.classList.add('hidden');
 }
 
 function renderBlocksList(note, blocks) {
@@ -5299,8 +5392,71 @@ function bindEvents() {
     dot.addEventListener('touchend', runColor);
   });
 
+  // Mobile Format Accessory Bar Listeners
+  const mobileBar = document.getElementById('mobile-format-accessory-bar');
+  mobileBar?.addEventListener('mousedown', (e) => e.preventDefault());
+  mobileBar?.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
+  mobileBar?.querySelectorAll('[data-format]').forEach((btn) => {
+    const runMobileFormat = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyFormattingToActiveSelection(btn.dataset.format);
+    };
+    btn.addEventListener('click', runMobileFormat);
+    btn.addEventListener('touchend', runMobileFormat);
+  });
+
+  const btnMobileColor = document.getElementById('btn-mobile-color');
+  const mobilePalette = document.getElementById('mobile-format-color-palette');
+  const toggleMobileColor = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    mobilePalette?.classList.toggle('hidden');
+  };
+  btnMobileColor?.addEventListener('click', toggleMobileColor);
+  btnMobileColor?.addEventListener('touchend', toggleMobileColor);
+
+  mobilePalette?.querySelectorAll('.color-dot').forEach((dot) => {
+    const runMobileColor = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyFormattingToActiveSelection('color', null, dot.dataset.color || '');
+    };
+    dot.addEventListener('click', runMobileColor);
+    dot.addEventListener('touchend', runMobileColor);
+  });
+
+  const btnMobileIndent = document.getElementById('btn-mobile-indent');
+  const btnMobileOutdent = document.getElementById('btn-mobile-outdent');
+  const handleIndent = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    indentActiveBlock(1);
+  };
+  const handleOutdent = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    indentActiveBlock(-1);
+  };
+  btnMobileIndent?.addEventListener('click', handleIndent);
+  btnMobileIndent?.addEventListener('touchend', handleIndent);
+  btnMobileOutdent?.addEventListener('click', handleOutdent);
+  btnMobileOutdent?.addEventListener('touchend', handleOutdent);
+
+  document.getElementById('btn-mobile-hide-bar')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideMobileAccessoryBar();
+  });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateMobileAccessoryBarPosition);
+    window.visualViewport.addEventListener('scroll', updateMobileAccessoryBarPosition);
+  }
+
   const hideToolbarIfOutside = (e) => {
-    if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('.block-editable')) {
+    if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('#mobile-format-accessory-bar') && !e.target.closest('.block-editable')) {
       hideFloatingFormatToolbar();
     }
   };

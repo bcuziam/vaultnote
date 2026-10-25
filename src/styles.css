@@ -2122,7 +2122,54 @@ mark.search-highlight {
   }
 }
 
-/* Floating Formatting Mini Toolbar */
+/* Minimal Typography Format Symbols (Clean Notion Style) */
+.typo-b {
+  font-weight: 850;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1;
+}
+.typo-i {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+}
+.typo-s {
+  font-weight: 700;
+  font-size: 13.5px;
+  text-decoration: line-through;
+  line-height: 1;
+}
+.typo-h {
+  display: inline-block;
+  background: rgba(234, 179, 8, 0.35);
+  color: #facc15;
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.2;
+}
+.typo-a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-weight: 800;
+  font-size: 13.5px;
+  line-height: 1;
+}
+.typo-a-bar {
+  display: block;
+  width: 12px;
+  height: 2.5px;
+  background: #ef4444;
+  margin-top: 1px;
+  border-radius: 1px;
+}
+
+/* PC Floating Formatting Mini Toolbar */
 .floating-format-toolbar {
   position: fixed;
   z-index: 99999;
@@ -2138,7 +2185,6 @@ mark.search-highlight {
   transition: opacity 0.12s ease;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
 }
 
 .floating-format-toolbar.hidden {
@@ -2158,21 +2204,6 @@ mark.search-highlight {
   align-items: center;
   justify-content: center;
   transition: background 0.12s, color 0.12s;
-  touch-action: manipulation;
-}
-
-@media (max-width: 768px) {
-  .floating-format-toolbar {
-    padding: 6px 10px;
-    gap: 6px;
-    border-radius: 10px;
-    background: #191b22;
-  }
-  .floating-format-toolbar button {
-    width: 36px !important;
-    height: 36px !important;
-    font-size: 16px !important;
-  }
 }
 
 .floating-format-toolbar button:hover {
@@ -2210,6 +2241,98 @@ mark.search-highlight {
 .format-color-palette .color-dot:hover {
   transform: scale(1.25);
   outline: 2px solid #ffffff;
+}
+
+/* Mobile Sticky Formatting Accessory Bar (Above Keyboard / Screen Bottom) */
+.mobile-format-accessory-bar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99999;
+  background: #181a20;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
+  padding: 4px 8px;
+  transition: bottom 0.08s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+@media (max-width: 768px) {
+  .mobile-format-accessory-bar:not(.hidden) {
+    display: block;
+  }
+  .floating-format-toolbar {
+    display: none !important; /* 모바일에서는 키보드 상단 고정 툴바 사용 */
+  }
+}
+
+.mobile-format-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 4px;
+}
+
+.mobile-format-accessory-bar button {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  height: 38px;
+  min-width: 38px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mobile-format-accessory-bar button:active {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--accent);
+}
+
+.mobile-bar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 2px;
+}
+
+.btn-mobile-close-bar {
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+}
+
+.mobile-format-color-palette {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 0 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.mobile-format-color-palette.hidden {
+  display: none !important;
+}
+
+.mobile-format-color-palette .color-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mobile-format-color-palette .color-dot:active {
+  transform: scale(1.25);
 }
 
 /* Inline rendered formatting */
