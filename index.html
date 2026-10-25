@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#ffffff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="manifest" href="./manifest.webmanifest?v=42" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=41" />
+  <link rel="stylesheet" href="./src/styles.css?v=42" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -137,6 +137,7 @@
           </div>
           <button type="button" id="btn-toggle-width" class="icon-btn" title="에디터 본문 폭 넓게/기본 전환">↔ 폭</button>
           <button type="button" id="btn-Quick-Scratchpad" class="icon-btn" title="빠른 메모 패드 (Alt+Q)">메모패드</button>
+          <button type="button" id="btn-toggle-fullscreen" class="icon-btn" title="전체화면 전환 (F11)"><span class="fs-icon">⛶</span><span class="fs-text"> 전체화면</span></button>
           <button type="button" id="btn-theme-toggle" class="icon-btn" title="라이트/다크 테마 전환">테마</button>
         </div>
       </header>
@@ -706,6 +707,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=41"></script>
+  <script type="module" src="./src/app.js?v=42"></script>
 </body>
 </html>

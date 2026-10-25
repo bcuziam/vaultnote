@@ -4873,6 +4873,64 @@ function bindEvents() {
     state.scratchpad = e.target.value;
     scheduleSave(false);
   });
+
+  // Fullscreen Toggle (스마트폰 & 노트북 공용)
+  const btnFullscreen = document.getElementById('btn-toggle-fullscreen');
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  }
+
+  function updateFullscreenUI() {
+    if (!btnFullscreen) return;
+    const active = isFullscreen();
+    const icon = btnFullscreen.querySelector('.fs-icon');
+    const text = btnFullscreen.querySelector('.fs-text');
+    if (active) {
+      if (icon) icon.textContent = '🗗';
+      if (text) text.textContent = ' 창 모드';
+      btnFullscreen.title = '전체화면 해제 (Esc / F11)';
+      btnFullscreen.classList.add('active');
+    } else {
+      if (icon) icon.textContent = '⛶';
+      if (text) text.textContent = ' 전체화면';
+      btnFullscreen.title = '전체화면 전환 (F11)';
+      btnFullscreen.classList.remove('active');
+    }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (!isFullscreen()) {
+        const el = document.documentElement;
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+        } else if (el.msRequestFullscreen) {
+          await el.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('전체화면 전환 오류:', err);
+      showToast('전체화면 모드를 전환할 수 없습니다: ' + (err.message || '브라우저 권한 제한'));
+    }
+  }
+
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach((ev) => {
+      document.addEventListener(ev, updateFullscreenUI);
+    });
+    updateFullscreenUI();
+  }
   document.getElementById('btn-promote-scratchpad').addEventListener('click', () => {
     const text = (state.scratchpad || '').trim();
     if (!text) return;

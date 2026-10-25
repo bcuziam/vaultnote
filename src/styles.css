@@ -159,6 +159,21 @@ select:focus {
   text-align: center;
   transition: opacity 0.12s ease;
 }
+#btn-toggle-fullscreen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#btn-toggle-fullscreen.active {
+  background: var(--bg-active);
+  color: var(--text-main);
+  font-weight: 600;
+}
+@media (max-width: 680px) {
+  #btn-toggle-fullscreen .fs-text {
+    display: none;
+  }
+}
 
 .text-btn {
   background: none;

@@ -3,7 +3,7 @@
   "short_name": "VaultNote",
   "description": "노션 블록 에디터 + 옵시디언 양방향 링크 + AES-256 보안 금고 + 원드라이브/구글드라이브 동기화",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#0f1117",
   "theme_color": "#6366f1",
   "orientation": "any",
