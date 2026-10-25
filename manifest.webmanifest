@@ -1,18 +1,38 @@
 {
+  "id": "/vaultnote/",
   "name": "VaultNote — 초경량 보안 & 지식관리 노트",
   "short_name": "VaultNote",
   "description": "노션 블록 에디터 + 옵시디언 양방향 링크 + AES-256 보안 금고 + 원드라이브/구글드라이브 동기화",
   "start_url": "./index.html",
-  "display": "fullscreen",
+  "scope": "./",
+  "display": "standalone",
   "background_color": "#0f1117",
-  "theme_color": "#6366f1",
+  "theme_color": "#0f1117",
   "orientation": "any",
   "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
     {
       "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "share_target": {

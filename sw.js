@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v45';
+const CACHE_NAME = 'vaultnote-v46';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,9 @@ const ASSETS = [
   './src/storage.js',
   './src/app.js',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
   './manifest.webmanifest'
 ];
 
