@@ -1317,6 +1317,7 @@ function renderMarkdownInlineHtml(text = '') {
 }
 
 let activeFormattedTextarea = null;
+let selectionCheckTimer = null;
 
 function handleBlockTextSelection(ta) {
   if (!ta) return hideFloatingFormatToolbar();
@@ -1332,13 +1333,34 @@ function handleBlockTextSelection(ta) {
   if (!toolbar) return;
 
   const rect = ta.getBoundingClientRect();
-  const top = Math.max(10, rect.top - 44);
-  const left = Math.min(window.innerWidth - 120, Math.max(120, rect.left + rect.width / 2));
+  const tbWidth = toolbar.offsetWidth || 230;
+
+  // Safe vertical positioning (accounting for mobile topbar and soft keyboard)
+  let top = rect.top - 50;
+  if (top < 56) {
+    // If underneath topbar, position comfortably below the block
+    top = Math.min(window.innerHeight - 60, rect.bottom + 8);
+  }
+
+  // Safe horizontal positioning (within screen bounds)
+  let left = rect.left + rect.width / 2;
+  left = Math.max(tbWidth / 2 + 10, Math.min(window.innerWidth - tbWidth / 2 - 10, left));
 
   toolbar.style.top = `${top}px`;
   toolbar.style.left = `${left}px`;
   toolbar.classList.remove('hidden');
 }
+
+// Global selectionchange listener for mobile Android/Samsung Internet drag-handles
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selectionCheckTimer);
+  selectionCheckTimer = setTimeout(() => {
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.classList?.contains('block-editable')) {
+      handleBlockTextSelection(activeEl);
+    }
+  }, 100);
+});
 
 function hideFloatingFormatToolbar() {
   const toolbar = document.getElementById('floating-format-toolbar');
@@ -1994,7 +2016,9 @@ function renderBlocksList(note, blocks) {
       };
       ta.addEventListener('mouseup', updateSelectionToolbar);
       ta.addEventListener('keyup', updateSelectionToolbar);
-      ta.addEventListener('touchend', updateSelectionToolbar);
+      ta.addEventListener('touchend', () => {
+        setTimeout(updateSelectionToolbar, 100);
+      });
       ta.addEventListener('select', updateSelectionToolbar);
 
       innerWrap.appendChild(previewDiv);
@@ -5239,40 +5263,49 @@ function bindEvents() {
     }
   });
 
-  // Floating Formatting Toolbar Listeners
+  // Floating Formatting Toolbar Listeners (Touch & Mouse Support)
   const formatToolbar = document.getElementById('floating-format-toolbar');
+  // Crucial: prevent touchstart/mousedown from blurring the textarea on mobile!
+  formatToolbar?.addEventListener('mousedown', (e) => e.preventDefault());
+  formatToolbar?.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
   formatToolbar?.querySelectorAll('[data-format]').forEach((btn) => {
-    btn.addEventListener('mousedown', (e) => e.preventDefault()); // preserve textarea selection!
-    btn.addEventListener('click', (e) => {
+    const runFormat = (e) => {
       e.preventDefault();
       e.stopPropagation();
       applyFormattingToActiveSelection(btn.dataset.format);
-    });
+    };
+    btn.addEventListener('click', runFormat);
+    btn.addEventListener('touchend', runFormat);
   });
 
   const btnToggleColor = document.getElementById('btn-toggle-color-picker');
   const palette = document.getElementById('format-color-palette');
-  btnToggleColor?.addEventListener('mousedown', (e) => e.preventDefault());
-  btnToggleColor?.addEventListener('click', (e) => {
+  const runToggleColor = (e) => {
     e.preventDefault();
     e.stopPropagation();
     palette?.classList.toggle('hidden');
-  });
+  };
+  btnToggleColor?.addEventListener('click', runToggleColor);
+  btnToggleColor?.addEventListener('touchend', runToggleColor);
 
   palette?.querySelectorAll('.color-dot').forEach((dot) => {
-    dot.addEventListener('mousedown', (e) => e.preventDefault());
-    dot.addEventListener('click', (e) => {
+    const runColor = (e) => {
       e.preventDefault();
       e.stopPropagation();
       applyFormattingToActiveSelection('color', null, dot.dataset.color || '');
-    });
+    };
+    dot.addEventListener('click', runColor);
+    dot.addEventListener('touchend', runColor);
   });
 
-  document.addEventListener('mousedown', (e) => {
+  const hideToolbarIfOutside = (e) => {
     if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('.block-editable')) {
       hideFloatingFormatToolbar();
     }
-  });
+  };
+  document.addEventListener('mousedown', hideToolbarIfOutside);
+  document.addEventListener('touchstart', hideToolbarIfOutside);
 
   document.getElementById('sort-select').addEventListener('change', () => {
     renderMainNoteListView();

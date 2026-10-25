@@ -2125,17 +2125,20 @@ mark.search-highlight {
 /* Floating Formatting Mini Toolbar */
 .floating-format-toolbar {
   position: fixed;
-  z-index: 1000;
+  z-index: 99999;
   display: flex;
   align-items: center;
   gap: 3px;
   background: #1e2029;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.65);
   border-radius: 8px;
   padding: 4px 6px;
   transform: translateX(-50%);
   transition: opacity 0.12s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .floating-format-toolbar.hidden {
@@ -2147,14 +2150,29 @@ mark.search-highlight {
   border: none;
   color: var(--text-main);
   font-size: 13px;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 5px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.12s, color 0.12s;
+  touch-action: manipulation;
+}
+
+@media (max-width: 768px) {
+  .floating-format-toolbar {
+    padding: 6px 10px;
+    gap: 6px;
+    border-radius: 10px;
+    background: #191b22;
+  }
+  .floating-format-toolbar button {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 16px !important;
+  }
 }
 
 .floating-format-toolbar button:hover {
