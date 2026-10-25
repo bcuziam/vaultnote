@@ -2243,30 +2243,38 @@ mark.search-highlight {
   outline: 2px solid #ffffff;
 }
 
-/* Mobile Sticky Formatting Accessory Bar (Above Keyboard / Screen Bottom) */
+.format-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 3px;
+}
+
+/* Mobile Sticky Formatting Accessory Bar (Disabled in favor of direct sub-text floating toolbar) */
 .mobile-format-accessory-bar {
-  display: none;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 99999;
-  background: #181a20;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
-  padding: 4px 8px;
-  transition: bottom 0.08s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
+  display: none !important;
 }
 
 @media (max-width: 768px) {
-  .mobile-format-accessory-bar:not(.hidden) {
-    display: block;
-  }
   .floating-format-toolbar {
-    display: none !important; /* 모바일에서는 키보드 상단 고정 툴바 사용 */
+    padding: 6px 8px;
+    gap: 4px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8);
+    background: #181a20;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+  }
+  .floating-format-toolbar button {
+    width: 35px;
+    height: 35px;
+    font-size: 14px;
+  }
+  .format-color-palette {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .format-color-palette .color-dot {
+    width: 22px;
+    height: 22px;
   }
 }
 

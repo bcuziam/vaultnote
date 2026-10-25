@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=52" />
+  <link rel="manifest" href="./manifest.webmanifest?v=53" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=52" />
+  <link rel="stylesheet" href="./src/styles.css?v=53" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -741,7 +741,7 @@
     <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">취소</button>
   </div>
 
-  <!-- PC용 텍스트 선택 시 플로팅 서식 미니 툴바 (미니멀 타이포그래피) -->
+  <!-- 텍스트 선택 시 플로팅 서식 미니 툴바 (선택 글자 바로 아래 표시) -->
   <div id="floating-format-toolbar" class="floating-format-toolbar hidden">
     <button type="button" data-format="bold" title="굵게 (Ctrl+B)"><strong class="typo-b">B</strong></button>
     <button type="button" data-format="italic" title="기울임 (Ctrl+I)"><em class="typo-i">I</em></button>
@@ -758,6 +758,9 @@
         <span class="color-dot" data-color="" style="background:var(--text-main);" title="기본색 복원"></span>
       </div>
     </div>
+    <div class="format-toolbar-divider"></div>
+    <button type="button" id="btn-floating-indent" title="들여쓰기 (Tab)">⇥</button>
+    <button type="button" id="btn-floating-outdent" title="내어쓰기 (Shift+Tab)">⇤</button>
   </div>
 
   <!-- 스마트폰 전용 키보드 위 고정 서식 액세서리 바 -->
@@ -786,6 +789,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=52"></script>
+  <script type="module" src="./src/app.js?v=53"></script>
 </body>
 </html>

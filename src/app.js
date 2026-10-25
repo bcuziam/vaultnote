@@ -1321,51 +1321,70 @@ function renderMarkdownInlineHtml(text = '') {
 let activeFormattedTextarea = null;
 let selectionCheckTimer = null;
 
+function repositionFloatingFormatToolbar() {
+  const toolbar = document.getElementById('floating-format-toolbar');
+  if (!toolbar) return;
+  const ta = activeFormattedTextarea;
+  if (!ta || !document.body.contains(ta)) {
+    hideFloatingFormatToolbar();
+    return;
+  }
+
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  if (typeof start !== 'number' || typeof end !== 'number' || start === end) {
+    hideFloatingFormatToolbar();
+    return;
+  }
+
+  const rect = ta.getBoundingClientRect();
+  // If the block is scrolled completely off-screen, hide temporarily
+  if (rect.bottom < 50 || rect.top > window.innerHeight - 20) {
+    toolbar.classList.add('hidden');
+    return;
+  }
+
+  toolbar.classList.remove('hidden');
+
+  const tbWidth = toolbar.offsetWidth || 260;
+  const tbHeight = toolbar.offsetHeight || 38;
+
+  // Position directly BELOW the selected block (스마트폰 기본 메뉴인 복사/붙여넣기와 겹치지 않도록 글자 바로 아래에 표시):
+  let top = rect.bottom + 8;
+
+  // Viewport bounds handling (accounting for mobile soft keyboard & bottom screen):
+  const vpHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  if (top + tbHeight > vpHeight - 8) {
+    // If overflowing below screen / soft keyboard, place above if space permits
+    if (rect.top - tbHeight - 8 > 56) {
+      top = rect.top - tbHeight - 8;
+    } else {
+      top = Math.max(56, vpHeight - tbHeight - 12);
+    }
+  }
+
+  // Safe horizontal positioning (centered on block, within screen bounds)
+  let left = rect.left + rect.width / 2;
+  left = Math.max(tbWidth / 2 + 10, Math.min(window.innerWidth - tbWidth / 2 - 10, left));
+
+  toolbar.style.top = `${Math.round(top)}px`;
+  toolbar.style.left = `${Math.round(left)}px`;
+}
+
 function handleBlockTextSelection(ta) {
   if (!ta) {
     hideFloatingFormatToolbar();
-    hideMobileAccessoryBar();
     return;
   }
   const start = ta.selectionStart;
   const end = ta.selectionEnd;
   if (typeof start !== 'number' || typeof end !== 'number' || start === end) {
     hideFloatingFormatToolbar();
-    hideMobileAccessoryBar();
     return;
   }
 
   activeFormattedTextarea = ta;
-
-  // On Mobile: show the sticky accessory bar ONLY when range is selected!
-  if (window.innerWidth <= 768) {
-    hideFloatingFormatToolbar();
-    showMobileAccessoryBar();
-    return;
-  }
-
-  // On PC: show the floating toolbar
-  hideMobileAccessoryBar();
-  const toolbar = document.getElementById('floating-format-toolbar');
-  if (!toolbar) return;
-
-  const rect = ta.getBoundingClientRect();
-  const tbWidth = toolbar.offsetWidth || 230;
-
-  // Safe vertical positioning (accounting for mobile topbar and soft keyboard)
-  let top = rect.top - 50;
-  if (top < 56) {
-    // If underneath topbar, position comfortably below the block
-    top = Math.min(window.innerHeight - 60, rect.bottom + 8);
-  }
-
-  // Safe horizontal positioning (within screen bounds)
-  let left = rect.left + rect.width / 2;
-  left = Math.max(tbWidth / 2 + 10, Math.min(window.innerWidth - tbWidth / 2 - 10, left));
-
-  toolbar.style.top = `${top}px`;
-  toolbar.style.left = `${left}px`;
-  toolbar.classList.remove('hidden');
+  repositionFloatingFormatToolbar();
 }
 
 // Global selectionchange listener: triggers formatting bar ONLY when a text range is actively selected
@@ -1375,38 +1394,26 @@ document.addEventListener('selectionchange', () => {
     const activeEl = document.activeElement;
     if (activeEl && activeEl.classList?.contains('block-editable')) {
       handleBlockTextSelection(activeEl);
-    } else if (!activeEl || (!activeEl.closest?.('#floating-format-toolbar') && !activeEl.closest?.('#mobile-format-accessory-bar'))) {
+    } else if (activeFormattedTextarea && document.body.contains(activeFormattedTextarea)) {
+      // Check if the previous textarea still has an active text range selection (e.g. during scroll or touch)
+      const start = activeFormattedTextarea.selectionStart;
+      const end = activeFormattedTextarea.selectionEnd;
+      if (typeof start === 'number' && typeof end === 'number' && start !== end) {
+        repositionFloatingFormatToolbar();
+        return;
+      }
       hideFloatingFormatToolbar();
-      hideMobileAccessoryBar();
+    } else if (!activeEl || !activeEl.closest?.('#floating-format-toolbar')) {
+      hideFloatingFormatToolbar();
     }
-  }, 100);
+  }, 60);
 });
 
-function updateMobileAccessoryBarPosition() {
-  const bar = document.getElementById('mobile-format-accessory-bar');
-  if (!bar || window.innerWidth > 768) return;
-  if (window.visualViewport) {
-    const vv = window.visualViewport;
-    const bottomOffset = window.innerHeight - (vv.offsetTop + vv.height);
-    bar.style.bottom = `${Math.max(0, Math.round(bottomOffset))}px`;
-  } else {
-    bar.style.bottom = '0px';
-  }
-}
-
-function showMobileAccessoryBar() {
-  if (window.innerWidth > 768 || activeViewMode !== 'editor') return;
-  const bar = document.getElementById('mobile-format-accessory-bar');
-  if (bar) {
-    bar.classList.remove('hidden');
-    updateMobileAccessoryBarPosition();
-  }
-}
-
+function updateMobileAccessoryBarPosition() {}
+function showMobileAccessoryBar() {}
 function hideMobileAccessoryBar() {
   const bar = document.getElementById('mobile-format-accessory-bar');
   if (bar) bar.classList.add('hidden');
-  document.getElementById('mobile-format-color-palette')?.classList.add('hidden');
 }
 
 function indentActiveBlock(delta) {
@@ -5446,22 +5453,29 @@ function bindEvents() {
     dot.addEventListener('touchend', runMobileColor);
   });
 
-  const btnMobileIndent = document.getElementById('btn-mobile-indent');
-  const btnMobileOutdent = document.getElementById('btn-mobile-outdent');
-  const handleIndent = (e) => {
+  const btnFloatingIndent = document.getElementById('btn-floating-indent');
+  const btnFloatingOutdent = document.getElementById('btn-floating-outdent');
+  const handleFloatingIndent = (e) => {
     e.preventDefault();
     e.stopPropagation();
     indentActiveBlock(1);
   };
-  const handleOutdent = (e) => {
+  const handleFloatingOutdent = (e) => {
     e.preventDefault();
     e.stopPropagation();
     indentActiveBlock(-1);
   };
-  btnMobileIndent?.addEventListener('click', handleIndent);
-  btnMobileIndent?.addEventListener('touchend', handleIndent);
-  btnMobileOutdent?.addEventListener('click', handleOutdent);
-  btnMobileOutdent?.addEventListener('touchend', handleOutdent);
+  btnFloatingIndent?.addEventListener('click', handleFloatingIndent);
+  btnFloatingIndent?.addEventListener('touchend', handleFloatingIndent);
+  btnFloatingOutdent?.addEventListener('click', handleFloatingOutdent);
+  btnFloatingOutdent?.addEventListener('touchend', handleFloatingOutdent);
+
+  const btnMobileIndent = document.getElementById('btn-mobile-indent');
+  const btnMobileOutdent = document.getElementById('btn-mobile-outdent');
+  btnMobileIndent?.addEventListener('click', handleFloatingIndent);
+  btnMobileIndent?.addEventListener('touchend', handleFloatingIndent);
+  btnMobileOutdent?.addEventListener('click', handleFloatingOutdent);
+  btnMobileOutdent?.addEventListener('touchend', handleFloatingOutdent);
 
   document.getElementById('btn-mobile-hide-bar')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -5469,19 +5483,31 @@ function bindEvents() {
     hideMobileAccessoryBar();
   });
 
+  // Reposition floating toolbar on scroll and on virtual keyboard resize/scroll
+  window.addEventListener('scroll', () => {
+    if (activeFormattedTextarea) repositionFloatingFormatToolbar();
+  }, { passive: true, capture: true });
+
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', updateMobileAccessoryBarPosition);
-    window.visualViewport.addEventListener('scroll', updateMobileAccessoryBarPosition);
+    window.visualViewport.addEventListener('resize', () => {
+      if (activeFormattedTextarea) repositionFloatingFormatToolbar();
+    });
+    window.visualViewport.addEventListener('scroll', () => {
+      if (activeFormattedTextarea) repositionFloatingFormatToolbar();
+    });
   }
 
   const hideToolbarIfOutside = (e) => {
-    if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('#mobile-format-accessory-bar') && !e.target.closest('.block-editable')) {
-      hideFloatingFormatToolbar();
-      hideMobileAccessoryBar();
-    }
+    if (e.target.closest('#floating-format-toolbar')) return;
+    if (e.target.closest('.block-editable')) return;
+    setTimeout(() => {
+      if (!activeFormattedTextarea || activeFormattedTextarea.selectionStart === activeFormattedTextarea.selectionEnd) {
+        hideFloatingFormatToolbar();
+      }
+    }, 120);
   };
   document.addEventListener('mousedown', hideToolbarIfOutside);
-  document.addEventListener('touchstart', hideToolbarIfOutside);
+  document.addEventListener('touchend', hideToolbarIfOutside);
 
   document.getElementById('sort-select').addEventListener('change', () => {
     renderMainNoteListView();
