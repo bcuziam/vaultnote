@@ -912,66 +912,55 @@ function applyEditorSearchHighlight(query) {
   // 기존 하이라이트 클래스 정리
   document.querySelectorAll('.search-match-block').forEach((el) => el.classList.remove('search-match-block'));
 
-  // 1. 제목 일치 확인
+  let firstMatchEl = null;
+
+  // 1. 제목 일치 확인 (단독 반전 포커스 없이 외곽선 하이라이트만 적용)
   if ((note.title || '').toLowerCase().includes(qLower)) {
     const titleInput = document.getElementById('note-title-input');
     if (titleInput) {
       titleInput.classList.add('search-match-block');
-      titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const idx = titleInput.value.toLowerCase().indexOf(qLower);
-      if (idx !== -1) {
-        titleInput.setSelectionRange(idx, idx + query.length);
-        titleInput.focus({ preventScroll: true });
-      }
-      return;
+      if (!firstMatchEl) firstMatchEl = titleInput;
     }
   }
 
-  // 2. 본문 블록 일치 확인
-  let matchedBlock = null;
+  // 2. 본문 블록 전체 일치 확인 (모든 일치 위치에 하이라이트 적용!)
   for (const b of blocks) {
-    if ((b.text || '').toLowerCase().includes(qLower) || (b.details || '').toLowerCase().includes(qLower)) {
-      matchedBlock = b;
-      break;
-    }
-    if (b.type === 'image' && b.ocrText && b.ocrText.toLowerCase().includes(qLower)) {
-      matchedBlock = b;
-      break;
+    const isTextMatch = (b.text || '').toLowerCase().includes(qLower) || (b.details || '').toLowerCase().includes(qLower);
+    const isOcrMatch = b.type === 'image' && b.ocrText && b.ocrText.toLowerCase().includes(qLower);
+    if (isTextMatch || isOcrMatch) {
+      const row = document.querySelector(`.block-row[data-block-id="${b.id}"]`);
+      if (row) {
+        row.classList.add('search-match-block');
+        if (!firstMatchEl) firstMatchEl = row;
+      }
     }
   }
 
-  if (matchedBlock) {
-    const row = document.querySelector(`.block-row[data-block-id="${matchedBlock.id}"]`);
-    if (row) {
-      row.classList.add('search-match-block');
-      setTimeout(() => {
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 80);
-
-      if (matchedBlock.type === 'image') {
-        showToast(`🔍 이미지 내 일치 단어: "${query}"`, 3500);
-      } else {
-        const inputEl = row.querySelector('textarea.block-editable, input.block-editable');
-        if (inputEl) {
-          const val = inputEl.value;
-          const idx = val.toLowerCase().indexOf(qLower);
-          if (idx !== -1) {
-            inputEl.setSelectionRange(idx, idx + query.length);
-            inputEl.focus({ preventScroll: true });
-          }
-        }
-      }
-    }
+  // 첫 번째 일치 위치로 부드럽게 스크롤
+  if (firstMatchEl) {
+    setTimeout(() => {
+      firstMatchEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
   }
 }
 
 function openNoteInEditor(noteId) {
   clearBlockSelection();
+  clearSearchHighlights();
   activeNoteId = noteId;
   if (['vault', 'graph', 'clipper'].includes(activeNav)) {
     activeNav = 'all';
   }
   activeViewMode = 'editor';
+
+  // 잔류 포커스 및 텍스트 선택 영역 완벽 리셋
+  const titleInput = document.getElementById('note-title-input');
+  if (titleInput) {
+    if (document.activeElement === titleInput) titleInput.blur();
+    if (titleInput.setSelectionRange) {
+      try { titleInput.setSelectionRange(0, 0); } catch (_) {}
+    }
+  }
 
   // 검색창에 검색어가 있었다면 기억해 두었다가 본문 진입 시 강조 및 자동 스크롤
   const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
@@ -1306,6 +1295,110 @@ function deleteSelectedBlocks() {
   showToast(`${count}개 줄이 삭제되었습니다. (되돌리기: ↩ 또는 Ctrl+Z)`);
 }
 
+/**
+ * 인라인 마크다운 서식 렌더러 (볼드, 기울임, 취소선, 형광펜, 글자색)
+ */
+function renderMarkdownInlineHtml(text = '') {
+  if (!text) return '';
+  let html = escapeHtml(text);
+  // 글자 색상 태그 복원 (안전한 inline style 속성만 허용)
+  html = html.replace(/&lt;span style=&quot;color:\s*([^&;"]+)&quot;&gt;(.*?)&lt;\/span&gt;/gi, '<span style="color:$1">$2</span>');
+  // 형광펜: ==text==
+  html = html.replace(/==([^=]+)==/g, '<mark class="inline-highlight">$1</mark>');
+  // 굵게: **text**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // 취소선: ~~text~~
+  html = html.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  // 기울임: *text*
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  // 코드: `code`
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  return html;
+}
+
+let activeFormattedTextarea = null;
+
+function handleBlockTextSelection(ta) {
+  if (!ta) return hideFloatingFormatToolbar();
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  if (typeof start !== 'number' || typeof end !== 'number' || start === end) {
+    hideFloatingFormatToolbar();
+    return;
+  }
+
+  activeFormattedTextarea = ta;
+  const toolbar = document.getElementById('floating-format-toolbar');
+  if (!toolbar) return;
+
+  const rect = ta.getBoundingClientRect();
+  const top = Math.max(10, rect.top - 44);
+  const left = Math.min(window.innerWidth - 120, Math.max(120, rect.left + rect.width / 2));
+
+  toolbar.style.top = `${top}px`;
+  toolbar.style.left = `${left}px`;
+  toolbar.classList.remove('hidden');
+}
+
+function hideFloatingFormatToolbar() {
+  const toolbar = document.getElementById('floating-format-toolbar');
+  if (toolbar) toolbar.classList.add('hidden');
+  document.getElementById('format-color-palette')?.classList.add('hidden');
+}
+
+function applyFormattingToActiveSelection(formatType, targetTa = null, customColor = '') {
+  const ta = targetTa || activeFormattedTextarea;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  if (typeof start !== 'number' || typeof end !== 'number' || start === end) return;
+
+  const val = ta.value;
+  const selected = val.slice(start, end);
+  let replacement = selected;
+
+  if (formatType === 'bold') {
+    if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
+      replacement = selected.slice(2, -2);
+    } else {
+      replacement = `**${selected}**`;
+    }
+  } else if (formatType === 'italic') {
+    if (selected.startsWith('*') && selected.endsWith('*') && selected.length >= 2) {
+      replacement = selected.slice(1, -1);
+    } else {
+      replacement = `*${selected}*`;
+    }
+  } else if (formatType === 'strike') {
+    if (selected.startsWith('~~') && selected.endsWith('~~') && selected.length >= 4) {
+      replacement = selected.slice(2, -2);
+    } else {
+      replacement = `~~${selected}~~`;
+    }
+  } else if (formatType === 'mark') {
+    if (selected.startsWith('==') && selected.endsWith('==') && selected.length >= 4) {
+      replacement = selected.slice(2, -2);
+    } else {
+      replacement = `==${selected}==`;
+    }
+  } else if (formatType === 'color') {
+    if (customColor) {
+      replacement = `<span style="color:${customColor}">${selected.replace(/<\/?span[^>]*>/gi, '')}</span>`;
+    } else {
+      replacement = selected.replace(/<\/?span[^>]*>/gi, '');
+    }
+  }
+
+  recordPreActionSnapshot();
+  ta.value = val.slice(0, start) + replacement + val.slice(end);
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  ta.focus();
+  try {
+    ta.setSelectionRange(start, start + replacement.length);
+  } catch (_) {}
+  hideFloatingFormatToolbar();
+}
+
 function renderBlocksList(note, blocks) {
   const container = document.getElementById('blocks-container');
   container.innerHTML = '';
@@ -1416,6 +1509,9 @@ function renderBlocksList(note, blocks) {
 
     const body = document.createElement('div');
     body.className = 'block-body';
+    if (block.indent) {
+      body.style.marginLeft = `${block.indent * 24}px`;
+    }
     body.addEventListener('focusin', () => {
       if (selectedBlockIds.size > 0 && !selectedBlockIds.has(block.id)) {
         clearBlockSelection();
@@ -1673,7 +1769,8 @@ function renderBlocksList(note, blocks) {
         innerWrap.appendChild(chk);
       } else if (block.type === 'bullet') {
         innerWrap.className = 'block-todo-wrap';
-        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);">•</span>`;
+        const bulletChar = block.indent === 1 ? '◦' : (block.indent >= 2 ? '▪' : '•');
+        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;">${bulletChar}</span>`;
       } else if (block.type === 'number') {
         innerWrap.className = 'block-todo-wrap';
         innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;">${idx + 1}.</span>`;
@@ -1760,11 +1857,50 @@ function renderBlocksList(note, blocks) {
       });
 
       ta.addEventListener('keydown', (e) => {
+        // Tab / Shift+Tab: Indent / Outdent list or block
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          recordPreActionSnapshot();
+          if (e.shiftKey) {
+            block.indent = Math.max((block.indent || 0) - 1, 0);
+          } else {
+            block.indent = Math.min((block.indent || 0) + 1, 4);
+          }
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+          focusBlock(block.id);
+          return;
+        }
+
+        // Inline formatting shortcuts
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          applyFormattingToActiveSelection('bold', ta);
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          applyFormattingToActiveSelection('italic', ta);
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          applyFormattingToActiveSelection('strike', ta);
+          return;
+        }
+
         if (e.key === 'Enter' && !e.shiftKey && block.type !== 'code') {
           e.preventDefault();
           closeSlashMenu();
           recordPreActionSnapshot();
           if (['todo', 'bullet', 'number'].includes(block.type) && !block.text.trim()) {
+            if ((block.indent || 0) > 0) {
+              block.indent = (block.indent || 0) - 1;
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(block.id);
+              return;
+            }
             block.type = 'p';
             touchNote(note, blocks);
             renderActiveNoteEditor();
@@ -1772,7 +1908,7 @@ function renderBlocksList(note, blocks) {
             return;
           }
           const nextType = ['todo', 'bullet', 'number'].includes(block.type) ? block.type : 'p';
-          const newBlock = { id: uid('b'), type: nextType, text: '', checked: false };
+          const newBlock = { id: uid('b'), type: nextType, text: '', checked: false, indent: block.indent || 0 };
           blocks.splice(idx + 1, 0, newBlock);
           touchNote(note, blocks);
           renderActiveNoteEditor();
@@ -1781,6 +1917,13 @@ function renderBlocksList(note, blocks) {
           e.preventDefault();
           closeSlashMenu();
           recordPreActionSnapshot();
+          if ((block.indent || 0) > 0) {
+            block.indent = (block.indent || 0) - 1;
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          }
           if (block.type !== 'p') {
             block.type = 'p';
             touchNote(note, blocks);
@@ -1814,6 +1957,47 @@ function renderBlocksList(note, blocks) {
         }
       });
 
+      const hasFormatting = /(\*\*|\*|~~|==|<span\s+style=)/.test(block.text || '');
+      const previewDiv = document.createElement('div');
+      previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
+      previewDiv.innerHTML = renderMarkdownInlineHtml(block.text || '');
+
+      previewDiv.addEventListener('click', () => {
+        previewDiv.classList.add('hidden');
+        ta.classList.remove('hidden');
+        ta.focus();
+      });
+
+      ta.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (document.activeElement !== ta) {
+            const stillHasFormatting = /(\*\*|\*|~~|==|<span\s+style=)/.test(ta.value || '');
+            if (stillHasFormatting) {
+              previewDiv.innerHTML = renderMarkdownInlineHtml(ta.value || '');
+              previewDiv.classList.remove('hidden');
+              ta.classList.add('hidden');
+            } else {
+              previewDiv.classList.add('hidden');
+              ta.classList.remove('hidden');
+            }
+          }
+        }, 120);
+      });
+
+      if (hasFormatting) {
+        ta.classList.add('hidden');
+      }
+
+      // Track text selection for floating formatting toolbar
+      const updateSelectionToolbar = () => {
+        handleBlockTextSelection(ta);
+      };
+      ta.addEventListener('mouseup', updateSelectionToolbar);
+      ta.addEventListener('keyup', updateSelectionToolbar);
+      ta.addEventListener('touchend', updateSelectionToolbar);
+      ta.addEventListener('select', updateSelectionToolbar);
+
+      innerWrap.appendChild(previewDiv);
       innerWrap.appendChild(ta);
       body.appendChild(innerWrap);
       renderWikiLinkChipsForBlock(body, block.text);
@@ -2896,6 +3080,113 @@ function findBestArticleContainer(doc) {
   });
 
   return bestNode || doc.body;
+}
+
+/**
+ * AI 답변(Gemini, ChatGPT 등) 및 서식 있는 텍스트를 노션 스타일 블록으로 변환하는 스마트 파서
+ */
+function parseStructuredTextToBlocks(rawText, rawHtml = '') {
+  let sourceText = rawText || '';
+
+  // HTML 클립보드에 볼드/기울임/코드 태그가 있다면 마크다운 기호로 보존
+  if (rawHtml && typeof document !== 'undefined' && !sourceText.includes('**')) {
+    try {
+      const temp = document.createElement('div');
+      temp.innerHTML = rawHtml;
+      temp.querySelectorAll('strong, b').forEach((el) => {
+        el.textContent = `**${el.textContent.trim()}**`;
+      });
+      temp.querySelectorAll('em, i').forEach((el) => {
+        el.textContent = `*${el.textContent.trim()}*`;
+      });
+      temp.querySelectorAll('code').forEach((el) => {
+        el.textContent = `\`${el.textContent.trim()}\``;
+      });
+      const extracted = temp.innerText || '';
+      if (extracted.includes('\n')) {
+        sourceText = extracted;
+      }
+    } catch (_) {}
+  }
+
+  const blocks = [];
+  const lines = sourceText.split(/\r?\n/);
+
+  for (let rawLine of lines) {
+    if (!rawLine.trim()) continue; // 빈 줄 건너뛰기
+
+    // 1. 공백 기반 들여쓰기 감지 (2스페이스 또는 1탭 당 1단계, 최대 4단계)
+    const indentMatch = rawLine.match(/^([ \t]+)/);
+    let indent = 0;
+    if (indentMatch) {
+      const sp = indentMatch[1].replace(/\t/g, '  ').length;
+      indent = Math.min(Math.floor(sp / 2), 4);
+    }
+
+    let line = rawLine.trim();
+
+    // 2. 제목 (Heading): 동그라미 번호(①, ②) 또는 마크다운 #
+    if (/^[①-⑳]/.test(line)) {
+      blocks.push({ id: uid('b'), type: 'h2', text: line, indent: 0 });
+      continue;
+    }
+    if (/^#\s+(.+)$/.test(line)) {
+      blocks.push({ id: uid('b'), type: 'h1', text: line.replace(/^#\s+/, ''), indent: 0 });
+      continue;
+    }
+    if (/^##\s+(.+)$/.test(line)) {
+      blocks.push({ id: uid('b'), type: 'h2', text: line.replace(/^##\s+/, ''), indent: 0 });
+      continue;
+    }
+    if (/^###\s+(.+)$/.test(line)) {
+      blocks.push({ id: uid('b'), type: 'h3', text: line.replace(/^###\s+/, ''), indent: 0 });
+      continue;
+    }
+
+    // 3. 글머리 기호(Bullet) 목록: ◦, •, *, -, ·, ▪
+    const bulletMatch = line.match(/^[◦•*·▪\-]\s+(.*)$/) || line.match(/^[◦•]\s*(.*)$/);
+    if (bulletMatch) {
+      blocks.push({ id: uid('b'), type: 'bullet', text: bulletMatch[1].trim(), indent });
+      continue;
+    }
+
+    // 4. 할 일 체크박스 (Todo)
+    const todoMatch = line.match(/^[-*]?\s*\[([ xX])\]\s+(.*)$/);
+    if (todoMatch) {
+      blocks.push({
+        id: uid('b'),
+        type: 'todo',
+        text: todoMatch[2].trim(),
+        checked: todoMatch[1].toLowerCase() === 'x',
+        indent
+      });
+      continue;
+    }
+
+    // 5. 번호 매기기 목록 (Numbered list)
+    const numMatch = line.match(/^(\d+)[.)]\s+(.*)$/);
+    if (numMatch) {
+      blocks.push({ id: uid('b'), type: 'number', text: numMatch[2].trim(), indent });
+      continue;
+    }
+
+    // 6. 인용구 / 콜아웃 (Quote / Callout)
+    if (line.startsWith('> ')) {
+      blocks.push({ id: uid('b'), type: 'callout', text: line.slice(2).trim(), indent });
+      continue;
+    }
+
+    // 7. 가로 구분선 (Divider)
+    if (/^---+$/.test(line) || /^___+$/.test(line)) {
+      blocks.push({ id: uid('b'), type: 'divider', text: '', indent: 0 });
+      continue;
+    }
+
+    // 8. 일반 본문 문단 (Paragraph)
+    blocks.push({ id: uid('b'), type: 'p', text: line, indent });
+  }
+
+  return blocks;
 }
 
 function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
@@ -4745,13 +5036,42 @@ function bindEvents() {
       }
     }
 
-    // 4. OneNote-style Web Text Copy & Paste in Editor View:
-    // When copying a part of a webpage and pasting into a note block, automatically attach the source URL link!
+    // 4. Smart Structured Text Paste & OneNote-style Source Link in Editor View:
     const htmlClip = e.clipboardData?.getData('text/html') || '';
     const plainClip = (e.clipboardData?.getData('text/plain') || '').trim();
-    if (htmlClip && plainClip && !/^https?:\/\/\S+$/i.test(plainClip)) {
+    if (plainClip && !/^https?:\/\/\S+$/i.test(plainClip)) {
       const focusedRow = activeEl?.closest?.('.block-row');
       const targetBlockId = focusedRow?.dataset?.blockId || null;
+      const isInsideBlockEditable = activeEl && (activeEl.classList?.contains('block-editable') || activeEl.closest?.('.block-row'));
+
+      if (isInsideBlockEditable && targetBlockId) {
+        const parsedBlocks = parseStructuredTextToBlocks(plainClip, htmlClip);
+        // If parsed into multiple blocks or a structured block (bullets, headings, indents, todos, etc.)
+        if (parsedBlocks.length > 1 || (parsedBlocks.length === 1 && (parsedBlocks[0].type !== 'p' || parsedBlocks[0].indent > 0))) {
+          e.preventDefault();
+          recordPreActionSnapshot();
+
+          const note = getActiveNote();
+          const blocks = getEditableBlocksForNote(note);
+          if (note && blocks) {
+            const targetIdx = blocks.findIndex((b) => b.id === targetBlockId);
+            if (targetIdx !== -1) {
+              const targetBlock = blocks[targetIdx];
+              // If target block is currently empty, replace it; otherwise insert after it
+              if (!targetBlock.text || !targetBlock.text.trim()) {
+                blocks.splice(targetIdx, 1, ...parsedBlocks);
+              } else {
+                blocks.splice(targetIdx + 1, 0, ...parsedBlocks);
+              }
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(parsedBlocks[parsedBlocks.length - 1].id);
+              showToast(`AI 답변/서식을 스마트 블록으로 붙여넣었습니다. (${parsedBlocks.length}개 블록)`, 2500);
+            }
+          }
+        }
+      }
+
       const srcUrl = await detectClipboardSourceUrl(e.clipboardData);
       if (srcUrl) {
         appendOneNoteSourceLinkToActiveNote(srcUrl, targetBlockId);
@@ -4855,17 +5175,105 @@ function bindEvents() {
     renderSecondarySplitPane();
   });
 
-  // Sidebar & List View Search Inputs
-  document.getElementById('inline-filter-input').addEventListener('input', (e) => {
-    const listSearch = document.getElementById('list-view-search');
-    if (listSearch && listSearch.value !== e.target.value) listSearch.value = e.target.value;
+  // Sidebar & List View Search Inputs + Instant Clear Buttons ('✕')
+  const sidebarInp = document.getElementById('inline-filter-input');
+  const listSearchInp = document.getElementById('list-view-search');
+  const btnClearSidebar = document.getElementById('btn-clear-inline-filter');
+  const btnClearList = document.getElementById('btn-clear-list-search');
+
+  function updateSearchClearButtons() {
+    const sVal = (sidebarInp?.value || '').trim();
+    const lVal = (listSearchInp?.value || '').trim();
+    if (btnClearSidebar) btnClearSidebar.classList.toggle('hidden', !sVal);
+    if (btnClearList) btnClearList.classList.toggle('hidden', !lVal);
+  }
+
+  sidebarInp?.addEventListener('input', (e) => {
+    if (listSearchInp && listSearchInp.value !== e.target.value) listSearchInp.value = e.target.value;
+    updateSearchClearButtons();
     if (activeViewMode !== 'list') activeViewMode = 'list';
     renderAll();
   });
-  document.getElementById('list-view-search').addEventListener('input', () => {
+
+  listSearchInp?.addEventListener('input', (e) => {
+    if (sidebarInp && sidebarInp.value !== e.target.value) sidebarInp.value = e.target.value;
+    updateSearchClearButtons();
     renderMainNoteListView();
     renderSidebar();
   });
+
+  const clearAllSearchInputs = () => {
+    if (sidebarInp) sidebarInp.value = '';
+    if (listSearchInp) listSearchInp.value = '';
+    updateSearchClearButtons();
+    clearSearchHighlights();
+    renderMainNoteListView();
+    renderSidebar();
+  };
+
+  btnClearSidebar?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearAllSearchInputs();
+    sidebarInp?.focus();
+  });
+
+  btnClearList?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearAllSearchInputs();
+    listSearchInp?.focus();
+  });
+
+  // Global Search in Modal + Clear Button
+  const globalInp = document.getElementById('global-search-input');
+  const btnClearGlobal = document.getElementById('btn-clear-global-search');
+  globalInp?.addEventListener('input', () => {
+    if (btnClearGlobal) btnClearGlobal.classList.toggle('hidden', !globalInp.value.trim());
+  });
+  btnClearGlobal?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (globalInp) {
+      globalInp.value = '';
+      btnClearGlobal.classList.add('hidden');
+      renderGlobalSearchResults('');
+      globalInp.focus();
+    }
+  });
+
+  // Floating Formatting Toolbar Listeners
+  const formatToolbar = document.getElementById('floating-format-toolbar');
+  formatToolbar?.querySelectorAll('[data-format]').forEach((btn) => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault()); // preserve textarea selection!
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyFormattingToActiveSelection(btn.dataset.format);
+    });
+  });
+
+  const btnToggleColor = document.getElementById('btn-toggle-color-picker');
+  const palette = document.getElementById('format-color-palette');
+  btnToggleColor?.addEventListener('mousedown', (e) => e.preventDefault());
+  btnToggleColor?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    palette?.classList.toggle('hidden');
+  });
+
+  palette?.querySelectorAll('.color-dot').forEach((dot) => {
+    dot.addEventListener('mousedown', (e) => e.preventDefault());
+    dot.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyFormattingToActiveSelection('color', null, dot.dataset.color || '');
+    });
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('.block-editable')) {
+      hideFloatingFormatToolbar();
+    }
+  });
+
   document.getElementById('sort-select').addEventListener('change', () => {
     renderMainNoteListView();
     renderSidebar();
@@ -6369,6 +6777,7 @@ function openSearchModal() {
   modal.classList.remove('hidden');
   const inp = document.getElementById('global-search-input');
   inp.value = '';
+  document.getElementById('btn-clear-global-search')?.classList.add('hidden');
   renderGlobalSearchResults();
   setTimeout(() => inp.focus(), 10);
 }

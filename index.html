@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=46" />
+  <link rel="manifest" href="./manifest.webmanifest?v=48" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=46" />
+  <link rel="stylesheet" href="./src/styles.css?v=48" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -48,6 +48,7 @@
       <!-- 빠른 검색창 -->
       <div class="sidebar-search">
         <input type="text" id="inline-filter-input" placeholder="전체 검색 (Ctrl+K)..." />
+        <button type="button" id="btn-clear-inline-filter" class="search-clear-btn hidden" title="검색어 지우기">✕</button>
       </div>
 
       <!-- 좌측 네비게이션 스크롤 영역 -->
@@ -181,7 +182,10 @@
               <p id="current-filter-subtitle" class="text-muted">마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.</p>
             </div>
             <div class="list-view-controls">
-              <input type="text" id="list-view-search" placeholder="현재 목록 내 검색..." class="list-search-input" />
+              <div class="list-search-wrap">
+                <input type="text" id="list-view-search" placeholder="현재 목록 내 검색..." class="list-search-input" />
+                <button type="button" id="btn-clear-list-search" class="search-clear-btn hidden" title="검색어 지우기">✕</button>
+              </div>
               <select id="sort-select" class="select-sm" title="정렬 기준">
                 <option value="custom" selected>사용자 지정 순서 (드래그 이동)</option>
                 <option value="updated_desc">최근 수정순</option>
@@ -493,6 +497,7 @@
     <div class="modal-card search-modal-card">
       <div class="search-input-wrap">
         <input type="text" id="global-search-input" placeholder="노트 제목, 본문, #태그 검색..." autocomplete="off" />
+        <button type="button" id="btn-clear-global-search" class="search-clear-btn hidden" title="검색어 지우기" style="right:42px;">✕</button>
         <button type="button" id="btn-close-search" class="icon-btn">✕</button>
       </div>
       <div id="search-results-list" class="search-results-list"></div>
@@ -736,8 +741,27 @@
     <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">취소</button>
   </div>
 
+  <!-- 본문 텍스트 블록 선택 시 플로팅 서식 미니 툴바 -->
+  <div id="floating-format-toolbar" class="floating-format-toolbar hidden">
+    <button type="button" data-format="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
+    <button type="button" data-format="italic" title="기울임 (Ctrl+I)"><i>I</i></button>
+    <button type="button" data-format="strike" title="취소선 (Ctrl+Shift+S)"><s>S</s></button>
+    <button type="button" data-format="mark" title="형광펜 강조">🖍️</button>
+    <div class="color-picker-dropdown-wrap" style="position:relative;">
+      <button type="button" id="btn-toggle-color-picker" title="글자 색상 선택">🎨</button>
+      <div id="format-color-palette" class="format-color-palette hidden">
+        <span class="color-dot" data-color="#ef4444" style="background:#ef4444;" title="빨간색"></span>
+        <span class="color-dot" data-color="#3b82f6" style="background:#3b82f6;" title="파란색"></span>
+        <span class="color-dot" data-color="#10b981" style="background:#10b981;" title="초록색"></span>
+        <span class="color-dot" data-color="#f59e0b" style="background:#f59e0b;" title="주황색"></span>
+        <span class="color-dot" data-color="#a855f7" style="background:#a855f7;" title="보라색"></span>
+        <span class="color-dot" data-color="" style="background:var(--text-main);" title="기본색 복원"></span>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=46"></script>
+  <script type="module" src="./src/app.js?v=48"></script>
 </body>
 </html>
