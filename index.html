@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=50" />
+  <link rel="manifest" href="./manifest.webmanifest?v=52" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=50" />
+  <link rel="stylesheet" href="./src/styles.css?v=52" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -254,11 +254,11 @@
                 <select id="note-folder-select" class="meta-select" title="폴더 변경"></select>
                 <span class="meta-sep">·</span>
                 <select id="note-status-select" class="meta-select" title="진행 상태">
-                  <option value="">상태 없음(-)</option>
                   <option value="todo">대기</option>
                   <option value="in_progress">진행중</option>
                   <option value="done">완료</option>
                   <option value="archived">보관</option>
+                  <option value="">상태 없음(-)</option>
                 </select>
                 <span class="meta-sep">·</span>
                 <span id="note-dates-display" class="note-dates-display" style="color:var(--text-muted);font-size:11.5px;white-space:nowrap;"></span>
@@ -786,6 +786,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=50"></script>
+  <script type="module" src="./src/app.js?v=52"></script>
 </body>
 </html>

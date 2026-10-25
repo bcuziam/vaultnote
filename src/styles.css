@@ -1524,7 +1524,7 @@ mark.search-highlight {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
 .kanban-col {

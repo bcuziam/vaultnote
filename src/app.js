@@ -1194,7 +1194,7 @@ function renderActiveNoteEditor() {
   }
 
   renderBlocksList(note, blocks);
-  showMobileAccessoryBar();
+  hideMobileAccessoryBar();
   renderBacklinksPanel(note, blocks);
 }
 
@@ -1322,15 +1322,30 @@ let activeFormattedTextarea = null;
 let selectionCheckTimer = null;
 
 function handleBlockTextSelection(ta) {
-  if (!ta) return hideFloatingFormatToolbar();
+  if (!ta) {
+    hideFloatingFormatToolbar();
+    hideMobileAccessoryBar();
+    return;
+  }
   const start = ta.selectionStart;
   const end = ta.selectionEnd;
   if (typeof start !== 'number' || typeof end !== 'number' || start === end) {
     hideFloatingFormatToolbar();
+    hideMobileAccessoryBar();
     return;
   }
 
   activeFormattedTextarea = ta;
+
+  // On Mobile: show the sticky accessory bar ONLY when range is selected!
+  if (window.innerWidth <= 768) {
+    hideFloatingFormatToolbar();
+    showMobileAccessoryBar();
+    return;
+  }
+
+  // On PC: show the floating toolbar
+  hideMobileAccessoryBar();
   const toolbar = document.getElementById('floating-format-toolbar');
   if (!toolbar) return;
 
@@ -1353,13 +1368,16 @@ function handleBlockTextSelection(ta) {
   toolbar.classList.remove('hidden');
 }
 
-// Global selectionchange listener for mobile Android/Samsung Internet drag-handles
+// Global selectionchange listener: triggers formatting bar ONLY when a text range is actively selected
 document.addEventListener('selectionchange', () => {
   clearTimeout(selectionCheckTimer);
   selectionCheckTimer = setTimeout(() => {
     const activeEl = document.activeElement;
     if (activeEl && activeEl.classList?.contains('block-editable')) {
       handleBlockTextSelection(activeEl);
+    } else if (!activeEl || (!activeEl.closest?.('#floating-format-toolbar') && !activeEl.closest?.('#mobile-format-accessory-bar'))) {
+      hideFloatingFormatToolbar();
+      hideMobileAccessoryBar();
     }
   }, 100);
 });
@@ -1511,6 +1529,7 @@ function applyFormattingToActiveSelection(formatType, targetTa = null, customCol
   } catch (_) {}
 
   hideFloatingFormatToolbar();
+  hideMobileAccessoryBar();
   document.getElementById('mobile-format-color-palette')?.classList.add('hidden');
 }
 
@@ -2612,11 +2631,11 @@ function renderKanbanView() {
   const board = document.getElementById('kanban-board');
   board.innerHTML = '';
   const columns = [
-    { key: '', title: '상태 없음 (-)' },
     { key: 'todo', title: '대기' },
     { key: 'in_progress', title: '진행중' },
     { key: 'done', title: '완료' },
-    { key: 'archived', title: '보관' }
+    { key: 'archived', title: '보관' },
+    { key: '', title: '상태 없음 (-)' }
   ];
   const notes = getFilteredNotes();
 
@@ -5458,6 +5477,7 @@ function bindEvents() {
   const hideToolbarIfOutside = (e) => {
     if (!e.target.closest('#floating-format-toolbar') && !e.target.closest('#mobile-format-accessory-bar') && !e.target.closest('.block-editable')) {
       hideFloatingFormatToolbar();
+      hideMobileAccessoryBar();
     }
   };
   document.addEventListener('mousedown', hideToolbarIfOutside);
