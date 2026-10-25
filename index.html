@@ -8,7 +8,7 @@
   <title>VaultNote</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=40" />
+  <link rel="stylesheet" href="./src/styles.css?v=41" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -224,6 +224,8 @@
                   <option value="done">완료</option>
                   <option value="archived">보관</option>
                 </select>
+                <span class="meta-sep">·</span>
+                <span id="note-dates-display" class="note-dates-display" style="color:var(--text-muted);font-size:11.5px;white-space:nowrap;"></span>
                 <span class="meta-sep">·</span>
                 <div id="note-tags-container" class="note-tags-container"></div>
                 <input type="text" id="note-tag-input" class="tag-inline-input" placeholder="+ 태그 추가 (Enter)" />
@@ -704,6 +706,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=40"></script>
+  <script type="module" src="./src/app.js?v=41"></script>
 </body>
 </html>

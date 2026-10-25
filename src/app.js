@@ -1033,6 +1033,22 @@ function renderActiveNoteEditor() {
   document.getElementById('note-folder-select').value = note.folderId || (state.folders[0]?.id || '');
   document.getElementById('note-status-select').value = note.status || 'todo';
 
+  // Created & Updated timestamps display
+  const datesEl = document.getElementById('note-dates-display');
+  if (datesEl) {
+    const createdStr = formatDate(note.createdAt);
+    const updatedStr = formatDate(note.updatedAt);
+    if (createdStr && updatedStr && createdStr !== updatedStr) {
+      datesEl.textContent = `저장 ${createdStr} · 수정 ${updatedStr}`;
+      datesEl.title = `최초 저장: ${createdStr}\n최종 수정: ${updatedStr}`;
+    } else if (createdStr || updatedStr) {
+      datesEl.textContent = `저장 ${createdStr || updatedStr}`;
+      datesEl.title = `저장 시각: ${createdStr || updatedStr}`;
+    } else {
+      datesEl.textContent = '';
+    }
+  }
+
   // Tags
   const tagsWrap = document.getElementById('note-tags-container');
   tagsWrap.innerHTML = '';
@@ -2709,18 +2725,24 @@ function findBestArticleContainer(doc) {
 
 function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
   const blocks = [];
-  if (sourceUrl) {
-    blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}` });
-  }
-
   const lines = mdText.split(/\r?\n/);
   let extractedTitle = '';
+  let publishedDate = '';
+  let naverInputDate = '';
+  let naverModDate = '';
 
   for (const rawLine of lines) {
     const l = rawLine.trim();
     if (l.startsWith('Title: ')) {
       extractedTitle = l.slice(7).trim();
-      break;
+    } else if (l.startsWith('Published Time: ')) {
+      const rawIso = l.slice(16).trim();
+      try {
+        const d = new Date(rawIso);
+        if (!isNaN(d.getTime())) {
+          publishedDate = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+      } catch {}
     }
   }
 
@@ -2731,6 +2753,18 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
     const line = lines[i].trim();
     if (!line) continue;
     if (line.startsWith('Title: ') || line.startsWith('URL Source: ') || line.startsWith('Markdown Content:')) continue;
+
+    // Extract Naver publish and modification timestamps before filtering boilerplate
+    const mInput = line.match(/^(_입력_|입력)\s*(20\d\d[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2}.*)/i);
+    if (mInput) {
+      naverInputDate = mInput[2].replace(/^_+|_+$/g, '').trim();
+      continue;
+    }
+    const mMod = line.match(/^(_수정_|수정)\s*(20\d\d[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2}.*)/i);
+    if (mMod) {
+      naverModDate = mMod[2].replace(/^_+|_+$/g, '').trim();
+      continue;
+    }
 
     // Filter out portal noise, profile links, and notification headers
     if (/(사용자\s*링크|프로필\s*사진|내정보\s*보기|로그아웃|로그인|네이버ID|보안설정|내인증서|페이포인트|알림\s*새\s*창|전체\s*알림|알림을\s*모두\s*삭제|읽은\s*알림|레이어\s*닫기|언론사\s*구독|구독해지)/i.test(line)) continue;
@@ -2809,7 +2843,17 @@ function parseMarkdownToBlocks(mdText = '', sourceUrl = '') {
     }
   }
 
-  return { title: extractedTitle, blocks: blocks.slice(0, 200) };
+  if (naverInputDate) {
+    publishedDate = naverInputDate + (naverModDate ? ` (수정: ${naverModDate})` : '');
+  }
+
+  // Prepend source and published date callout if sourceUrl is provided
+  if (sourceUrl) {
+    const dateSuffix = publishedDate ? ` · 원문 게시: ${publishedDate}` : '';
+    blocks.unshift({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}${dateSuffix}` });
+  }
+
+  return { title: extractedTitle, publishedDate, blocks: blocks.slice(0, 200) };
 }
 
 function extractBestArticleTitle(doc) {
@@ -2875,9 +2919,29 @@ function parseHtmlToBlocks(htmlString, sourceUrl = '', readerMarkdown = '') {
     br.replaceWith('\n');
   });
 
+  let publishedDate = '';
+  const pubMeta =
+    doc.querySelector('meta[property="article:published_time"]')?.getAttribute('content') ||
+    doc.querySelector('meta[name="pubdate"]')?.getAttribute('content') ||
+    doc.querySelector('.media_end_head_info_datestamp_time')?.textContent ||
+    '';
+  if (pubMeta) {
+    try {
+      const d = new Date(pubMeta);
+      if (!isNaN(d.getTime())) {
+        publishedDate = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      } else {
+        publishedDate = pubMeta.trim();
+      }
+    } catch {
+      publishedDate = pubMeta.trim();
+    }
+  }
+
   const blocks = [];
   if (sourceUrl) {
-    blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}` });
+    const dateSuffix = publishedDate ? ` · 원문 게시: ${publishedDate}` : '';
+    blocks.push({ id: uid('b'), type: 'callout', text: `출처: ${sourceUrl}${dateSuffix}` });
   }
 
   const seenTexts = new Set();
@@ -3004,7 +3068,7 @@ function parseHtmlToBlocks(htmlString, sourceUrl = '', readerMarkdown = '') {
     pushCleanParagraphs(root.textContent || doc.body?.textContent || '', 'p');
   }
 
-  return { title: extractedTitle, blocks: blocks.slice(0, 200) };
+  return { title: extractedTitle, publishedDate, blocks: blocks.slice(0, 200) };
 }
 
 /**
@@ -3319,12 +3383,15 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
     summaryBullets.push(`주요 할 일: ${todoTxt}`);
   }
 
+  const existingSourceBlock = rawBlocks.find((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+  const sourceCalloutText = existingSourceBlock ? existingSourceBlock.text : (sourceUrl ? `출처: ${sourceUrl}` : '');
+
   const structuredBlocks = [];
-  if (sourceUrl) {
+  if (sourceCalloutText) {
     structuredBlocks.push({
       id: uid('b'),
       type: 'callout',
-      text: `출처: ${sourceUrl}`
+      text: sourceCalloutText
     });
   }
 
@@ -3579,12 +3646,15 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
         .slice(0, 4)
     : [];
 
+  const existingSourceBlock = rawBlocks.find((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+  const sourceCalloutText = existingSourceBlock ? existingSourceBlock.text : (sourceUrl ? `출처: ${sourceUrl}` : '');
+
   const structuredBlocks = [];
-  if (sourceUrl) {
+  if (sourceCalloutText) {
     structuredBlocks.push({
       id: uid('b'),
       type: 'callout',
-      text: `출처: ${sourceUrl}`
+      text: sourceCalloutText
     });
   }
 
@@ -3697,10 +3767,15 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
 
 async function clipAndSummarizeUrl(rawUrl, options = {}) {
   const { summarize = true, openEditor = false, targetFolderId = null } = options;
-  const url = String(rawUrl || '').trim();
+  let url = String(rawUrl || '').trim();
   if (!/^https?:\/\/\S+/i.test(url)) {
     showToast('유효한 웹 주소(http:// 또는 https://)를 입력해주세요.');
     return null;
+  }
+
+  // Automatically normalize CNN edition domain to www to avoid Jina's domain-level rate block
+  if (/^https?:\/\/edition\.cnn\.com\//i.test(url)) {
+    url = url.replace(/^https?:\/\/edition\.cnn\.com\//i, 'https://www.cnn.com/');
   }
 
   showToast(summarize ? '웹페이지 핵심 내용을 요약 정리 중...' : '웹페이지 본문 추출 중...');
