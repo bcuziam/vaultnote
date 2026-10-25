@@ -1031,7 +1031,7 @@ function renderActiveNoteEditor() {
   delBtn.textContent = note.trashed ? '영구 삭제' : '삭제';
 
   document.getElementById('note-folder-select').value = note.folderId || (state.folders[0]?.id || '');
-  document.getElementById('note-status-select').value = note.status || 'todo';
+  document.getElementById('note-status-select').value = note.status || '';
 
   // Created & Updated timestamps display
   const datesEl = document.getElementById('note-dates-display');
@@ -1708,7 +1708,7 @@ function openOrCreateWikiLink(title) {
       title,
       folderId: getActiveNote()?.folderId || state.folders[0]?.id || 'f_work',
       docType: 'note',
-      status: 'todo',
+      status: '',
       priority: 'normal',
       favorite: false,
       trashed: false,
@@ -2116,14 +2116,14 @@ function renderTableView() {
   tbody.innerHTML = '';
   const notes = getFilteredNotes();
   const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
-  const statusLabels = { todo: '대기', in_progress: '진행중', done: '완료', archived: '보관' };
+  const statusLabels = { '': '-', todo: '대기', in_progress: '진행중', done: '완료', archived: '보관' };
 
   for (const n of notes) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${escapeHtml(n.title || '제목 없음')}</strong></td>
       <td>${escapeHtml(folderMap.get(n.folderId) || '-')}</td>
-      <td>${statusLabels[n.status] || '대기'}</td>
+      <td>${statusLabels[n.status] || '-'}</td>
       <td>${(n.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ')}</td>
       <td>${n.isEncrypted ? '암호화됨' : '-'}</td>
       <td>${formatDate(n.updatedAt)}</td>
@@ -2137,6 +2137,7 @@ function renderKanbanView() {
   const board = document.getElementById('kanban-board');
   board.innerHTML = '';
   const columns = [
+    { key: '', title: '상태 없음 (-)' },
     { key: 'todo', title: '대기' },
     { key: 'in_progress', title: '진행중' },
     { key: 'done', title: '완료' },
@@ -2145,7 +2146,7 @@ function renderKanbanView() {
   const notes = getFilteredNotes();
 
   for (const col of columns) {
-    const colNotes = notes.filter((n) => (n.status || 'todo') === col.key);
+    const colNotes = notes.filter((n) => (n.status || '') === col.key);
     const colEl = document.createElement('div');
     colEl.className = 'kanban-col';
     colEl.innerHTML = `
@@ -3867,7 +3868,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
         title: fallbackTitle,
         folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
         docType: 'clip',
-        status: 'todo',
+        status: '',
         priority: 'normal',
         favorite: activeNav === 'favorites',
         trashed: false,
@@ -3918,7 +3919,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       title: noteTitle,
       folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
       docType: 'clip',
-      status: 'todo',
+      status: '',
       priority: 'normal',
       favorite: activeNav === 'favorites',
       trashed: false,
@@ -4051,7 +4052,7 @@ async function checkIncomingWebClipParams() {
       title: clipTitle || '웹 클리핑',
       folderId: 'f_clip',
       docType: 'clip',
-      status: 'todo',
+      status: '',
       priority: 'normal',
       favorite: false,
       trashed: false,
@@ -4090,6 +4091,14 @@ function renderWorkspaceView() {
     const isSpecialNav = ['vault', 'graph', 'clipper'].includes(activeNav);
     btn.classList.toggle('active', !isSpecialNav && btn.dataset.viewmode === activeViewMode);
   });
+  document.querySelectorAll('#topbar-more-dropdown button[data-more-view]').forEach((btn) => {
+    const isSpecialNav = ['vault', 'graph', 'clipper'].includes(activeNav);
+    btn.classList.toggle('active', !isSpecialNav && btn.dataset.moreView === activeViewMode);
+  });
+  const themeDesc = document.getElementById('more-theme-current');
+  if (themeDesc) {
+    themeDesc.textContent = state.settings.theme === 'dark' ? '현재: 다크' : '현재: 라이트';
+  }
 
   if (activeNav === 'vault') {
     document.getElementById('active-note-breadcrumb').textContent = '보안 금고';
@@ -4289,6 +4298,26 @@ function bindEvents() {
   ['mousemove', 'keydown', 'click', 'touchstart'].forEach((ev) => {
     window.addEventListener(ev, resetIdleTimer, { passive: true });
   });
+
+  // Touch swipe from left edge to open sidebar on mobile (Galaxy Z Fold & smartphones)
+  let edgeTouchStartX = 0;
+  let edgeTouchStartY = 0;
+  window.addEventListener('touchstart', (e) => {
+    if (window.innerWidth <= 820 && e.touches.length === 1) {
+      edgeTouchStartX = e.touches[0].clientX;
+      edgeTouchStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', (e) => {
+    if (window.innerWidth <= 820 && edgeTouchStartX < 35 && e.changedTouches.length === 1) {
+      const deltaX = e.changedTouches[0].clientX - edgeTouchStartX;
+      const deltaY = Math.abs(e.changedTouches[0].clientY - edgeTouchStartY);
+      if (deltaX > 60 && deltaY < 50) {
+        updateSidebarUI(false);
+      }
+    }
+  }, { passive: true });
 
   // Global Shortcuts
   window.addEventListener('keydown', (e) => {
@@ -4931,6 +4960,55 @@ function bindEvents() {
     });
     updateFullscreenUI();
   }
+
+  // Topbar More Dropdown Menu (방안 2: 모바일 / 스마트폰 외부화면)
+  const btnMore = document.getElementById('btn-topbar-more');
+  const dropdownMore = document.getElementById('topbar-more-dropdown');
+
+  if (btnMore && dropdownMore) {
+    btnMore.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdownMore.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!dropdownMore.contains(e.target) && e.target !== btnMore) {
+        dropdownMore.classList.add('hidden');
+      }
+    });
+
+    document.getElementById('more-item-scratchpad')?.addEventListener('click', () => {
+      dropdownMore.classList.add('hidden');
+      document.getElementById('scratchpad-drawer')?.classList.toggle('hidden');
+    });
+
+    document.getElementById('more-item-theme')?.addEventListener('click', () => {
+      dropdownMore.classList.add('hidden');
+      state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
+      scheduleSave(false);
+      renderAll();
+    });
+
+    document.getElementById('more-item-width')?.addEventListener('click', () => {
+      dropdownMore.classList.add('hidden');
+      state.settings.fullWidth = !state.settings.fullWidth;
+      scheduleSave(false);
+      renderAll();
+    });
+
+    dropdownMore.querySelectorAll('button[data-more-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        dropdownMore.classList.add('hidden');
+        activeViewMode = btn.dataset.moreView;
+        if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
+        if (activeViewMode === 'editor' && !activeNoteId) {
+          const first = getFilteredNotes()[0];
+          if (first) activeNoteId = first.id;
+        }
+        renderAll();
+      });
+    });
+  }
   document.getElementById('btn-promote-scratchpad').addEventListener('click', () => {
     const text = (state.scratchpad || '').trim();
     if (!text) return;
@@ -4942,7 +5020,7 @@ function bindEvents() {
       title,
       folderId: state.folders[0]?.id || 'f_work',
       docType: 'note',
-      status: 'todo',
+      status: '',
       priority: 'normal',
       favorite: false,
       trashed: false,
@@ -5105,7 +5183,7 @@ function bindEvents() {
       title: noteTitle,
       folderId: document.getElementById('clipper-target-folder').value || 'f_clip',
       docType: 'clip',
-      status: 'todo',
+      status: '',
       priority: 'normal',
       favorite: false,
       trashed: false,
@@ -5598,7 +5676,7 @@ function createNewNote() {
     title: '',
     folderId: defaultFolderId,
     docType: 'note',
-    status: 'todo',
+    status: '',
     priority: 'normal',
     favorite: activeNav === 'favorites',
     trashed: false,

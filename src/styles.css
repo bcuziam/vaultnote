@@ -169,6 +169,71 @@ select:focus {
   color: var(--text-main);
   font-weight: 600;
 }
+
+/* 상단 더보기 버튼 기본 상태 (PC에서는 숨김) */
+.topbar-more-btn {
+  display: none !important;
+}
+
+/* 상단 더보기 팝업 드롭다운 메뉴 (방안 2) */
+.topbar-more-dropdown {
+  position: fixed;
+  top: 48px;
+  right: 8px;
+  width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.topbar-more-dropdown.hidden {
+  display: none !important;
+}
+.more-menu-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 8px 3px;
+  user-select: none;
+}
+.more-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.more-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-main);
+  text-align: left;
+  transition: background 0.12s ease;
+}
+.more-menu-item:hover,
+.more-menu-item:active {
+  background: var(--bg-hover);
+}
+.more-menu-item.active {
+  background: var(--bg-active);
+  font-weight: 600;
+}
+.more-item-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 @media (max-width: 680px) {
   #btn-toggle-fullscreen .fs-text {
     display: none;
@@ -1886,5 +1951,79 @@ select:focus {
     justify-content: space-between;
     padding: 8px 14px;
     box-sizing: border-box;
+  }
+}
+
+/* 스마트폰 세로 및 갤럭시 Z 폴드 외부화면 (<= 680px) 반응형 상단 바 최적화 (방안 2) */
+@media (max-width: 680px) {
+  .workspace-topbar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .topbar-left {
+    gap: 4px;
+    min-width: 0;
+  }
+  #btn-toggle-sidebar {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    padding: 4px 6px;
+    font-weight: 600;
+  }
+  #btn-show-list-view {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    padding: 4px 6px;
+  }
+  #btn-editor-undo, #btn-editor-redo {
+    flex-shrink: 0;
+    padding: 3px 4px;
+    min-width: 22px;
+  }
+  #btn-nav-back, #btn-nav-forward, .topbar-left .meta-sep {
+    display: none !important;
+  }
+  .breadcrumb {
+    max-width: 70px;
+    font-size: 12px;
+  }
+  .save-indicator {
+    display: none !important;
+  }
+
+  .topbar-right {
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  /* 모바일에서 불필요한 뷰는 숨겨 공간 확보 (목록 / 글쓰기만 노출) */
+  .view-Segment button[data-viewmode="split"],
+  .view-Segment button[data-viewmode="table"],
+  .view-Segment button[data-viewmode="kanban"] {
+    display: none !important;
+  }
+  .seg-btn {
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+  /* PC 전용 버튼들은 더보기(⋮)로 흡수 */
+  #btn-toggle-width,
+  #btn-Quick-Scratchpad,
+  #btn-theme-toggle {
+    display: none !important;
+  }
+  #btn-toggle-fullscreen {
+    padding: 4px 6px;
+  }
+  #btn-toggle-fullscreen .fs-text {
+    display: none;
+  }
+  .topbar-more-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    font-size: 16px;
+    font-weight: 700;
+    min-width: 28px;
   }
 }

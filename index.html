@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#ffffff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=42" />
+  <link rel="manifest" href="./manifest.webmanifest?v=43" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=42" />
+  <link rel="stylesheet" href="./src/styles.css?v=43" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -139,8 +139,35 @@
           <button type="button" id="btn-Quick-Scratchpad" class="icon-btn" title="빠른 메모 패드 (Alt+Q)">메모패드</button>
           <button type="button" id="btn-toggle-fullscreen" class="icon-btn" title="전체화면 전환 (F11)"><span class="fs-icon">⛶</span><span class="fs-text"> 전체화면</span></button>
           <button type="button" id="btn-theme-toggle" class="icon-btn" title="라이트/다크 테마 전환">테마</button>
+          <button type="button" id="btn-topbar-more" class="icon-btn topbar-more-btn" title="추가 메뉴 (더보기)">⋮</button>
         </div>
       </header>
+
+      <!-- 모바일/스마트폰용 상단 더보기 드롭다운 메뉴 (방안 2) -->
+      <div id="topbar-more-dropdown" class="topbar-more-dropdown hidden">
+        <div class="more-menu-header">도구 & 기능</div>
+        <button type="button" class="more-menu-item" id="more-item-scratchpad">
+          <span>빠른 메모패드</span>
+          <span class="more-item-desc">Alt+Q</span>
+        </button>
+        <button type="button" class="more-menu-item" id="more-item-theme">
+          <span>테마 전환 (다크/라이트)</span>
+        </button>
+        <button type="button" class="more-menu-item" id="more-item-width">
+          <span>에디터 본문 폭 전환</span>
+        </button>
+        <div class="more-menu-divider"></div>
+        <div class="more-menu-header">화면 보기 방식</div>
+        <button type="button" class="more-menu-item" data-more-view="table">
+          <span>표 형태로 보기</span>
+        </button>
+        <button type="button" class="more-menu-item" data-more-view="kanban">
+          <span>상태별 보드 (칸반)</span>
+        </button>
+        <button type="button" class="more-menu-item" data-more-view="split">
+          <span>두 노트 나란히 보기 (분할)</span>
+        </button>
+      </div>
 
       <!-- 0. 노트 목록 리스트 화면 (좌측에서 전체노트 / 중요노트 / 폴더 / 태그 / 휴지통 클릭 시 표시) -->
       <div id="workspace-list-view" class="special-view hidden">
@@ -220,6 +247,7 @@
                 <select id="note-folder-select" class="meta-select" title="폴더 변경"></select>
                 <span class="meta-sep">·</span>
                 <select id="note-status-select" class="meta-select" title="진행 상태">
+                  <option value="">상태 없음(-)</option>
                   <option value="todo">대기</option>
                   <option value="in_progress">진행중</option>
                   <option value="done">완료</option>
@@ -707,6 +735,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=42"></script>
+  <script type="module" src="./src/app.js?v=43"></script>
 </body>
 </html>
