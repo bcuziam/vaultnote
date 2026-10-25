@@ -1462,32 +1462,34 @@ function renderBlocksList(note, blocks) {
         <input type="text" class="block-editable" style="font-size:13px;color:var(--text-muted);margin-top:4px;" placeholder="이미지 설명 입력 (비워두고 Backspace로 삭제)..." value="${escapeHtml(block.text || '')}" />
       `;
 
-      // OCR Copy & Run buttons
-      body.querySelector('[data-imgocr="copy"]')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (block.ocrText) {
-          navigator.clipboard.writeText(block.ocrText);
-          showToast('이미지에서 인식된 글자를 복사했습니다.');
-        }
-      });
-
-      body.querySelector('[data-imgocr="run"]')?.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const btn = e.currentTarget;
-        btn.textContent = '⏳ 인식 중...';
-        btn.disabled = true;
-        await runBackgroundOcrForBlock(note, block);
-        if (block.ocrText) {
-          btn.textContent = '📋 글자 복사';
-          btn.title = '인식된 글자 클립보드 복사';
-          btn.dataset.imgocr = 'copy';
-          btn.disabled = false;
-        } else {
-          btn.textContent = '🔍 글자인식';
-          btn.disabled = false;
-          showToast('글자를 인식하지 못했거나 API 키 및 네트워크를 확인해 주세요.');
-        }
-      });
+      // OCR Copy & Run buttons (Unified click handler)
+      const ocrBtn = body.querySelector('[data-imgocr]');
+      if (ocrBtn) {
+        ocrBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const action = ocrBtn.dataset.imgocr;
+          if (action === 'copy') {
+            if (block.ocrText) {
+              navigator.clipboard.writeText(block.ocrText);
+              showToast('이미지에서 인식된 글자를 복사했습니다.');
+            }
+          } else if (action === 'run') {
+            ocrBtn.textContent = '⏳ 인식 중...';
+            ocrBtn.disabled = true;
+            await runBackgroundOcrForBlock(note, block);
+            if (block.ocrText) {
+              ocrBtn.textContent = '📋 글자 복사';
+              ocrBtn.title = '인식된 글자 클립보드 복사';
+              ocrBtn.dataset.imgocr = 'copy';
+              ocrBtn.disabled = false;
+            } else {
+              ocrBtn.textContent = '🔍 글자인식';
+              ocrBtn.disabled = false;
+              showToast('글자를 인식하지 못했거나 API 키 및 네트워크를 확인해 주세요.');
+            }
+          }
+        });
+      }
 
       const resizerBox = body.querySelector('.image-resizer-box');
       const sizeBadge = body.querySelector('.img-size-badge');
@@ -5937,11 +5939,87 @@ async function optimizeImageFile(file, maxWidth = 1600, maxHeight = 1600, qualit
 }
 
 /**
+ * 1-1. 웹 URL 이미지를 Base64 Data URL로 변환 (CORS 우회 프록시 지원)
+ */
+async function convertImageUrlToBase64(url) {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+
+  // 1. Direct fetch attempt with CORS
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (res.ok) {
+      const blob = await res.blob();
+      const b64 = await new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => resolve(null);
+        r.readAsDataURL(blob);
+      });
+      if (b64 && b64.startsWith('data:image')) return b64;
+    }
+  } catch (_) {
+    // CORS restricted, fallback to proxy
+  }
+
+  // 2. High-speed CORS proxy fallback (weserv.nl, strips CORS restrictions and converts to webp)
+  try {
+    const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(url)}&output=webp&q=85`;
+    const res = await fetch(proxyUrl);
+    if (res.ok) {
+      const blob = await res.blob();
+      const b64 = await new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => resolve(null);
+        r.readAsDataURL(blob);
+      });
+      if (b64 && b64.startsWith('data:image')) return b64;
+    }
+  } catch (err) {
+    console.warn('[VaultNote OCR] proxy fetch error:', err);
+  }
+
+  // 3. Fallback Image element with crossOrigin
+  try {
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          let resUrl = canvas.toDataURL('image/webp', 0.85);
+          if (!resUrl.startsWith('data:image/webp')) {
+            resUrl = canvas.toDataURL('image/jpeg', 0.85);
+          }
+          resolve(resUrl);
+        } catch (_) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * 2. Google Gemini Vision API를 이용한 이미지 텍스트 인식 (OCR)
  */
-async function recognizeTextFromImageWithGemini(dataUrl) {
+async function recognizeTextFromImageWithGemini(dataUrlOrHttpUrl) {
   const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
   if (!apiKey || !navigator.onLine) return null;
+
+  let dataUrl = dataUrlOrHttpUrl;
+  if (dataUrl && (dataUrl.startsWith('http://') || dataUrl.startsWith('https://'))) {
+    dataUrl = await convertImageUrlToBase64(dataUrl);
+  }
 
   const match = (dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -5997,12 +6075,24 @@ async function recognizeTextFromImageWithGemini(dataUrl) {
  */
 async function runBackgroundOcrForBlock(note, imgBlock) {
   const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
-  if (!apiKey || !navigator.onLine) {
-    return;
+  if (!apiKey) {
+    showToast('Gemini API 키를 먼저 설정(우측 상단 ⚙)에 등록해 주세요.', 3000);
+    return null;
+  }
+  if (!navigator.onLine) {
+    showToast('오프라인 상태입니다. 인터넷 연결 후 다시 시도해 주세요.', 2500);
+    return null;
   }
 
   try {
-    const text = await recognizeTextFromImageWithGemini(imgBlock.dataUrl);
+    let sourceUrl = imgBlock.dataUrl;
+    if (!sourceUrl && imgBlock.imageId) {
+      try {
+        sourceUrl = await VaultStorage.getImage(imgBlock.imageId);
+      } catch (_) {}
+    }
+
+    const text = await recognizeTextFromImageWithGemini(sourceUrl);
     if (text) {
       imgBlock.ocrText = text;
       touchNote(note);
@@ -6013,19 +6103,22 @@ async function runBackgroundOcrForBlock(note, imgBlock) {
       if (imgRow) {
         const toolbar = imgRow.querySelector('.img-quick-toolbar');
         if (toolbar) {
-          let runBtn = toolbar.querySelector('[data-imgocr="run"]');
-          if (runBtn) {
-            runBtn.textContent = '📋 글자 복사';
-            runBtn.title = '인식된 글자 클립보드 복사';
-            runBtn.dataset.imgocr = 'copy';
+          let ocrBtn = toolbar.querySelector('[data-imgocr]');
+          if (ocrBtn) {
+            ocrBtn.textContent = '📋 글자 복사';
+            ocrBtn.title = '인식된 글자 클립보드 복사';
+            ocrBtn.dataset.imgocr = 'copy';
+            ocrBtn.disabled = false;
           }
         }
       }
       showToast('이미지 글자인식(OCR) 완료! 검색에 자동 반영됩니다.', 2500);
+      return text;
     }
   } catch (err) {
-    console.warn('[VaultNote OCR] 백그라운드 글자인식 오류:', err);
+    console.warn('[VaultNote OCR] 글자인식 오류:', err);
   }
+  return null;
 }
 
 async function insertImageFileIntoNote(file) {
