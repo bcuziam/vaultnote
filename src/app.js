@@ -138,7 +138,7 @@ function createInitialState() {
     vaultItems: [],
     scratchpad: '',
     settings: {
-      theme: 'light',
+      theme: 'dark',
       fullWidth: false,
       sidebarCollapsed: false,
       appLockVerifier: null,
@@ -408,11 +408,13 @@ async function pushLiveSyncState() {
 async function applyRemoteSyncedState(remoteState, label = '실시간 동기화됨') {
   if (!remoteState || !Array.isArray(remoteState.notes)) return false;
   const prevActiveId = activeNoteId;
-  // Preserve local tokens/keys if remote doesn't have them yet
+  const localTheme = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
+  // Preserve local tokens/keys and device-specific theme if remote doesn't have them or differs
   const mergedSettings = {
     ...createInitialState().settings,
     ...(state.settings || {}),
     ...(remoteState.settings || {}),
+    theme: localTheme, // 기기별 독립 테마 설정 보존 (클라우드가 로컬 테마를 덮어쓰지 않음)
     onedriveToken: remoteState.settings?.onedriveToken || state.settings?.onedriveToken || '',
     gdriveToken: remoteState.settings?.gdriveToken || state.settings?.gdriveToken || '',
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
@@ -4816,7 +4818,9 @@ function syncNavigationHistory(fromPopState = false) {
 }
 
 function renderAll(fromPopState = false) {
-  document.documentElement.setAttribute('data-theme', state.settings.theme || 'light');
+  const currentTheme = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
+  document.documentElement.setAttribute('data-theme', currentTheme);
+  state.settings.theme = currentTheme;
   document.getElementById('editor-inner-wrap')?.classList.toggle('full-width', Boolean(state.settings.fullWidth));
   document.getElementById('sidebar')?.classList.toggle('collapsed', Boolean(state.settings.sidebarCollapsed));
   syncNavigationHistory(fromPopState);
@@ -4829,11 +4833,12 @@ function renderAll(fromPopState = false) {
 // ============================================================================
 async function initApp() {
   const saved = await VaultStorage.loadState();
+  const localTheme = localStorage.getItem('vaultnote_theme') || 'dark';
   if (saved && Array.isArray(saved.notes)) {
     state = {
       ...createInitialState(),
       ...saved,
-      settings: { ...createInitialState().settings, ...(saved.settings || {}) }
+      settings: { ...createInitialState().settings, ...(saved.settings || {}), theme: localTheme }
     };
     state.folders.forEach((f) => {
       delete f.icon;
@@ -5831,7 +5836,11 @@ function bindEvents() {
 
     document.getElementById('more-item-theme')?.addEventListener('click', () => {
       dropdownMore.classList.add('hidden');
-      state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
+      const current = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
+      const nextTheme = current === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('vaultnote_theme', nextTheme); } catch (_) {}
+      state.settings.theme = nextTheme;
+      document.documentElement.setAttribute('data-theme', nextTheme);
       scheduleSave(false);
       renderAll();
     });
@@ -6488,7 +6497,11 @@ function bindEvents() {
   });
 
   document.getElementById('btn-theme-toggle').addEventListener('click', () => {
-    state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
+    const current = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
+    const nextTheme = current === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('vaultnote_theme', nextTheme); } catch (_) {}
+    state.settings.theme = nextTheme;
+    document.documentElement.setAttribute('data-theme', nextTheme);
     scheduleSave(false);
     renderAll();
   });
