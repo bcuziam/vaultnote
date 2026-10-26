@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=57" />
+  <link rel="manifest" href="./manifest.webmanifest?v=58" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=57" />
+  <link rel="stylesheet" href="./src/styles.css?v=58" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -121,7 +121,7 @@
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
       </div>
     </aside>
-    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
 
     <!-- 우측 넓은 메인 영역 -->
     <main id="main-workspace" class="main-workspace">
@@ -141,15 +141,15 @@
 
         <div class="topbar-right">
           <div class="view-Segment">
+            <button type="button" id="btn-topbar-new-note" class="seg-btn seg-btn-new" title="새 노트 작성 (Alt+N)">＋ 새노트</button>
             <button type="button" class="seg-btn" data-viewmode="list">목록</button>
-            <button type="button" class="seg-btn active" data-viewmode="editor">글쓰기</button>
             <button type="button" class="seg-btn" data-viewmode="split" title="두 노트 나란히 보기">분할</button>
             <button type="button" class="seg-btn" data-viewmode="table" title="표 형태로 보기">표</button>
             <button type="button" class="seg-btn" data-viewmode="kanban" title="상태별 보드">보드</button>
           </div>
           <button type="button" id="btn-toggle-width" class="icon-btn" title="에디터 본문 폭 넓게/기본 전환">↔ 폭</button>
           <button type="button" id="btn-Quick-Scratchpad" class="icon-btn" title="빠른 메모 패드 (Alt+Q)">메모패드</button>
-          <button type="button" id="btn-toggle-fullscreen" class="icon-btn" title="전체화면 전환 (F11)"><span class="fs-icon">⛶</span><span class="fs-text"> 전체화면</span></button>
+          <button type="button" id="btn-toggle-fullscreen" class="icon-btn" title="전체화면 전환 (F11)"><span class="fs-icon">⛶</span><span class="fs-text"> 전체</span></button>
           <button type="button" id="btn-theme-toggle" class="icon-btn" title="라이트/다크 테마 전환">테마</button>
           <button type="button" id="btn-topbar-more" class="icon-btn topbar-more-btn" title="추가 메뉴 (더보기)">⋮</button>
         </div>
@@ -201,7 +201,6 @@
                 <option value="title_asc">제목 가나다순</option>
                 <option value="fav_first">중요 표시 우선</option>
               </select>
-              <button type="button" id="btn-new-note-in-list" class="btn btn-primary btn-sm">＋ 새 노트 작성</button>
               <button type="button" id="btn-empty-trash" class="btn btn-danger btn-sm hidden">휴지통 비우기</button>
             </div>
           </div>
@@ -814,6 +813,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=57"></script>
+  <script type="module" src="./src/app.js?v=58"></script>
 </body>
 </html>

@@ -4890,7 +4890,9 @@ function renderAll(fromPopState = false) {
   document.documentElement.setAttribute('data-theme', currentTheme);
   state.settings.theme = currentTheme;
   document.getElementById('editor-inner-wrap')?.classList.toggle('full-width', Boolean(state.settings.fullWidth));
+  const isMobile = window.innerWidth <= 820;
   document.getElementById('sidebar')?.classList.toggle('collapsed', Boolean(state.settings.sidebarCollapsed));
+  document.getElementById('sidebar-backdrop')?.classList.toggle('hidden', Boolean(state.settings.sidebarCollapsed) || !isMobile);
   syncNavigationHistory(fromPopState);
   renderSidebar();
   renderWorkspaceView();
@@ -4941,7 +4943,8 @@ async function initApp() {
   initNavigationHistory();
   bindEvents();
   if (window.innerWidth <= 820) {
-    updateSidebarUI(true);
+    // 모바일 초기 실행 시: 메뉴바(사이드바) 펼침 + 우측 배경 흐림(backdrop) 활성화
+    updateSidebarUI(false);
   } else {
     updateSidebarUI(Boolean(state.settings.sidebarCollapsed));
   }
@@ -5208,7 +5211,25 @@ function bindEvents() {
   // Toggle Sidebar, List View, Editor Width
   document.getElementById('btn-toggle-sidebar').addEventListener('click', toggleSidebar);
   document.getElementById('btn-close-sidebar')?.addEventListener('click', closeSidebar);
-  document.getElementById('sidebar-backdrop')?.addEventListener('click', closeSidebar);
+  const backdropEl = document.getElementById('sidebar-backdrop');
+  if (backdropEl) {
+    backdropEl.addEventListener('click', closeSidebar);
+    backdropEl.addEventListener('pointerdown', closeSidebar);
+  }
+
+  // 모바일에서 사이드바가 열려있을 때 우측 메인 영역(노트 본문 등) 터치/클릭 시 사이드바 즉시 닫기
+  const workspaceEl = document.getElementById('main-workspace');
+  const handleWorkspaceCloseSidebar = (e) => {
+    if (window.innerWidth <= 820) {
+      const sidebar = document.getElementById('sidebar');
+      const isSidebarOpen = sidebar && !sidebar.classList.contains('collapsed');
+      if (isSidebarOpen && !e.target.closest('#btn-toggle-sidebar') && !e.target.closest('#sidebar')) {
+        closeSidebar();
+      }
+    }
+  };
+  workspaceEl?.addEventListener('click', handleWorkspaceCloseSidebar);
+  workspaceEl?.addEventListener('pointerdown', handleWorkspaceCloseSidebar);
   document.getElementById('btn-show-list-view').addEventListener('click', () => {
     if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
     activeViewMode = 'list';
@@ -5422,9 +5443,10 @@ function bindEvents() {
     selectCategoryNav(`folder:${newFolder.id}`);
   });
 
-  document.getElementById('btn-new-note').addEventListener('click', () => createNewNote());
-  document.getElementById('btn-new-note-in-list').addEventListener('click', () => createNewNote());
-  document.getElementById('btn-empty-create-note').addEventListener('click', () => createNewNote());
+  document.getElementById('btn-topbar-new-note')?.addEventListener('click', () => createNewNote());
+  document.getElementById('btn-new-note')?.addEventListener('click', () => createNewNote());
+  document.getElementById('btn-new-note-in-list')?.addEventListener('click', () => createNewNote());
+  document.getElementById('btn-empty-create-note')?.addEventListener('click', () => createNewNote());
 
   document.getElementById('btn-empty-trash').addEventListener('click', () => {
     if (!confirm('휴지통의 모든 노트를 영구 삭제하시겠습니까?')) return;
@@ -5878,12 +5900,12 @@ function bindEvents() {
     const text = btnFullscreen.querySelector('.fs-text');
     if (active) {
       if (icon) icon.textContent = '🗗';
-      if (text) text.textContent = ' 창 모드';
+      if (text) text.textContent = ' 복귀';
       btnFullscreen.title = '전체화면 해제 (Esc / F11)';
       btnFullscreen.classList.add('active');
     } else {
       if (icon) icon.textContent = '⛶';
-      if (text) text.textContent = ' 전체화면';
+      if (text) text.textContent = ' 전체';
       btnFullscreen.title = '전체화면 전환 (F11)';
       btnFullscreen.classList.remove('active');
     }
@@ -6668,6 +6690,11 @@ function createNewNote() {
   activeViewMode = 'editor';
   scheduleSave();
   renderAll();
+
+  // 모바일 환경에서 새 노트 생성 시 사이드바 자동 닫기
+  if (window.innerWidth <= 820) {
+    updateSidebarUI(true);
+  }
 
   setTimeout(() => {
     document.getElementById('note-title-input')?.focus();
