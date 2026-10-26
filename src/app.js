@@ -1413,23 +1413,31 @@ function deleteSelectedBlocks() {
 }
 
 /**
- * 인라인 마크다운 서식 렌더러 (볼드, 기울임, 취소선, 형광펜, 글자색)
+ * 인라인 마크다운 서식 렌더러 (볼드, 기울임, 취소선, 형광펜, 글자색, 링크 등)
  */
 function renderMarkdownInlineHtml(text = '') {
   if (!text) return '';
   let html = escapeHtml(text);
-  // 글자 색상 태그 복원 (안전한 inline style 속성만 허용)
-  html = html.replace(/&lt;span style=&quot;color:\s*([^&;"]+)&quot;&gt;(.*?)&lt;\/span&gt;/gi, '<span style="color:$1">$2</span>');
+  // 글자 색상 태그 복원 (안전한 inline style 속성 허용)
+  html = html.replace(/&lt;span style=&quot;color:\s*([^&"]+?);?&quot;&gt;([\s\S]*?)&lt;\/span&gt;/gi, '<span style="color:$1">$2</span>');
+  // 글자 배경/형광펜 태그 (background-color)
+  html = html.replace(/&lt;span style=&quot;background(?:-color)?:\s*([^&"]+?);?&quot;&gt;([\s\S]*?)&lt;\/span&gt;/gi, '<span style="background-color:$1">$2</span>');
   // 형광펜: ==text==
-  html = html.replace(/==([^=]+)==/g, '<mark class="inline-highlight">$1</mark>');
+  html = html.replace(/==([^=\n]+)==/g, '<mark class="inline-highlight">$1</mark>');
   // 굵게: **text**
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   // 취소선: ~~text~~
-  html = html.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  html = html.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
   // 기울임: *text*
-  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   // 코드: `code`
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+  // 위키링크: [[노트제목]]
+  html = html.replace(/\[\[([^\]\n]+)\]\]/g, '<span class="wikilink-pill" data-wikitarget="$1">🔗 $1</span>');
+  // 마크다운 링크: [표시텍스트](URL)
+  html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="external-link">$1 ↗</a>');
+  // 일반 URL 자동 링크
+  html = html.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer" class="external-link">$2 ↗</a>');
   return html;
 }
 
@@ -2716,8 +2724,111 @@ function executeBlockAction(blockId, action) {
 }
 
 // ============================================================================
-// Split View
+// Split View (보조 분할 화면 - 참조 문서 리치 뷰어 및 실시간 검색)
 // ============================================================================
+function renderSplitPickerDropdown(query = '') {
+  const dropdown = document.getElementById('split-picker-dropdown');
+  if (!dropdown) return;
+
+  const activeNotes = state.notes.filter((n) => !n.trashed);
+  const q = (query || '').toLowerCase().trim();
+
+  let matchedNotes = [];
+  const currentNote = activeNotes.find((n) => n.id === secondaryNoteId);
+  const isQueryCurrentTitle = currentNote && (currentNote.title || '').toLowerCase().trim() === q;
+
+  if (!q || isQueryCurrentTitle) {
+    matchedNotes = [...activeNotes].sort((a, b) => {
+      const ta = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const tb = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+  } else {
+    const exactTitle = [];
+    const startsTitle = [];
+    const containsTitle = [];
+    const tagMatch = [];
+    const bodyMatch = [];
+
+    for (const n of activeNotes) {
+      const titleLower = (n.title || '').toLowerCase();
+      const tags = Array.isArray(n.tags) ? n.tags : [];
+      const hasTagMatch = tags.some((t) => (t || '').toLowerCase().includes(q));
+
+      if (titleLower === q) {
+        exactTitle.push(n);
+      } else if (titleLower.startsWith(q)) {
+        startsTitle.push(n);
+      } else if (titleLower.includes(q)) {
+        containsTitle.push(n);
+      } else if (hasTagMatch) {
+        tagMatch.push(n);
+      } else {
+        const blocks = getEditableBlocksForNote(n) || [];
+        const hasBodyMatch = blocks.some((b) => (b.text || '').toLowerCase().includes(q));
+        if (hasBodyMatch) {
+          bodyMatch.push(n);
+        }
+      }
+    }
+
+    matchedNotes = [
+      ...exactTitle,
+      ...startsTitle,
+      ...containsTitle,
+      ...tagMatch,
+      ...bodyMatch
+    ];
+  }
+
+  if (matchedNotes.length === 0) {
+    dropdown.innerHTML = `
+      <div class="split-picker-empty">
+        <span>'${escapeHtml(query)}' 검색 결과가 없습니다.</span>
+      </div>`;
+    return;
+  }
+
+  const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
+  const countLabel = q && !isQueryCurrentTitle ? `검색 결과 ${matchedNotes.length}개` : `전체 노트 (${matchedNotes.length}개)`;
+
+  dropdown.innerHTML = `
+    <div class="split-picker-header">${countLabel}</div>
+    ${matchedNotes.slice(0, 40).map((n) => {
+      const folderName = folderMap.get(n.folderId) || '';
+      const icon = n.isPinned ? '📌' : (n.isEncrypted ? '🔒' : '📄');
+      const isSelected = n.id === secondaryNoteId;
+      const dateStr = formatDate(n.updatedAt || n.createdAt);
+
+      return `
+        <div class="split-picker-item ${isSelected ? 'active' : ''}" data-note-id="${n.id}">
+          <span class="split-picker-item-icon">${icon}</span>
+          <div class="split-picker-item-info">
+            <div class="split-picker-item-title">${escapeHtml(n.title || '제목 없음')}</div>
+            <div class="split-picker-item-sub">
+              ${folderName ? `<span class="picker-folder">📁 ${escapeHtml(folderName)}</span>` : ''}
+              ${dateStr ? `<span class="picker-time">🕒 ${dateStr}</span>` : ''}
+            </div>
+          </div>
+          ${isSelected ? '<span class="split-picker-check">✓</span>' : ''}
+        </div>
+      `;
+    }).join('')}
+  `;
+
+  dropdown.querySelectorAll('.split-picker-item').forEach((item) => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nId = item.dataset.noteId;
+      if (!nId) return;
+      secondaryNoteId = nId;
+      dropdown.classList.add('hidden');
+      syncNavigationHistory();
+      renderSecondarySplitPane();
+    });
+  });
+}
+
 function renderSecondarySplitPane() {
   const pane = document.getElementById('secondary-split-pane');
   const isSplit = activeViewMode === 'split';
@@ -2730,40 +2841,179 @@ function renderSecondarySplitPane() {
     secondaryNoteId = other?.id || null;
   }
 
-  const sel = document.getElementById('split-note-select');
-  sel.innerHTML = activeNotes
-    .map((n) => `<option value="${n.id}" ${n.id === secondaryNoteId ? 'selected' : ''}>${escapeHtml(n.title || '제목 없음')}</option>`)
-    .join('');
+  const secNote = activeNotes.find((n) => n.id === secondaryNoteId);
+  const searchInput = document.getElementById('split-note-search-input');
+  const clearBtn = document.getElementById('btn-clear-split-search');
+  if (searchInput && document.activeElement !== searchInput) {
+    searchInput.value = secNote ? (secNote.title || '제목 없음') : '';
+    if (clearBtn) clearBtn.classList.toggle('hidden', !searchInput.value);
+  }
 
   const viewer = document.getElementById('secondary-note-viewer');
-  const secNote = activeNotes.find((n) => n.id === secondaryNoteId);
   if (!secNote) {
-    viewer.innerHTML = `<p class="text-muted">표시할 노트가 없습니다.</p>`;
+    viewer.innerHTML = `
+      <div class="split-view-empty">
+        <p class="text-muted">참조할 노트를 상단 검색창에서 선택해 주세요.</p>
+      </div>`;
     return;
   }
 
   if (secNote.isEncrypted && !decryptedNotesSessionMap.has(secNote.id)) {
-    viewer.innerHTML = `<p class="text-muted">암호화된 노트입니다.</p>`;
+    viewer.innerHTML = `
+      <div class="split-view-locked">
+        <div class="locked-icon">🔒</div>
+        <h3>암호화된 보안 노트입니다</h3>
+        <p class="text-muted" style="margin-top:6px;max-width:320px;">내용을 참조하려면 메인 편집기에서 비밀번호를 입력해 잠금을 해제해 주세요.</p>
+      </div>`;
     return;
   }
 
   const secBlocks = getEditableBlocksForNote(secNote) || [];
+  const folder = state.folders.find((f) => f.id === secNote.folderId);
+  const updatedDateStr = formatDate(secNote.updatedAt || secNote.createdAt);
+
+  let listNumberCounter = 0;
+
+  const blocksHtml = secBlocks.map((b) => {
+    if (b.type !== 'number') {
+      listNumberCounter = 0;
+    }
+
+    switch (b.type) {
+      case 'h1':
+        return `<h1 class="split-doc-h1">${renderMarkdownInlineHtml(b.text || '')}</h1>`;
+      case 'h2':
+        return `<h2 class="split-doc-h2">${renderMarkdownInlineHtml(b.text || '')}</h2>`;
+      case 'h3':
+        return `<h3 class="split-doc-h3">${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      case 'callout':
+        return `
+          <div class="split-doc-callout">
+            <span class="callout-icon">💡</span>
+            <div class="callout-content">${renderMarkdownInlineHtml(b.text || '')}</div>
+          </div>`;
+      case 'quote':
+        return `<blockquote class="split-doc-quote">${renderMarkdownInlineHtml(b.text || '')}</blockquote>`;
+      case 'todo':
+        return `
+          <div class="split-doc-todo ${b.checked ? 'is-done' : ''}">
+            <input type="checkbox" class="split-todo-checkbox" ${b.checked ? 'checked' : ''} disabled />
+            <span class="todo-text">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      case 'bullet': {
+        const indent = b.indent || 0;
+        const bulletChar = indent === 1 ? '◦' : (indent >= 2 ? '▪' : '•');
+        return `
+          <div class="split-doc-bullet" style="margin-left:${indent * 20}px;">
+            <span class="bullet-dot">${bulletChar}</span>
+            <span class="bullet-text">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      }
+      case 'number': {
+        listNumberCounter += 1;
+        const indent = b.indent || 0;
+        return `
+          <div class="split-doc-number" style="margin-left:${indent * 20}px;">
+            <span class="number-label">${listNumberCounter}.</span>
+            <span class="number-text">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      }
+      case 'code':
+        return `
+          <div class="split-doc-code-wrap">
+            <pre class="split-doc-code"><code>${escapeHtml(b.text || '')}</code></pre>
+          </div>`;
+      case 'toggle':
+        return `
+          <details class="split-doc-toggle" ${b.open ? 'open' : ''}>
+            <summary class="split-toggle-summary">${renderMarkdownInlineHtml(b.text || '상세 보기')}</summary>
+            <div class="split-toggle-details">${renderMarkdownInlineHtml(b.details || '')}</div>
+          </details>`;
+      case 'divider':
+        return `<hr class="split-doc-divider" />`;
+      case 'image':
+        return `
+          <div class="split-doc-image-wrap" style="${b.width ? `width:${b.width};max-width:100%;` : ''}">
+            <img src="${b.dataUrl || ''}" alt="${escapeHtml(b.text || '참조 이미지')}" loading="lazy" />
+            ${b.text ? `<figcaption class="split-image-caption">${renderMarkdownInlineHtml(b.text)}</figcaption>` : ''}
+          </div>`;
+      case 'table': {
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        if (rows.length === 0) return '';
+        return `
+          <div class="split-doc-table-wrap">
+            <table class="split-doc-table">
+              <tbody>
+                ${rows.map((row, rIdx) => `
+                  <tr>
+                    ${row.map((cell) => rIdx === 0
+                      ? `<th>${renderMarkdownInlineHtml(cell || '')}</th>`
+                      : `<td>${renderMarkdownInlineHtml(cell || '')}</td>`
+                    ).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }
+      case 'secret':
+        return `
+          <div class="split-doc-secret" title="클릭하여 비밀 내용 보기/숨기기">
+            <span class="secret-badge">🔒 보안 내용</span>
+            <span class="secret-text masked">${escapeHtml(b.text || '')}</span>
+          </div>`;
+      case 'p':
+      default:
+        if (!b.text) return '<p class="split-doc-empty-p">&nbsp;</p>';
+        return `<p class="split-doc-p">${renderMarkdownInlineHtml(b.text)}</p>`;
+    }
+  }).join('');
+
   viewer.innerHTML = `
-    <h2 style="font-size:22px;margin-bottom:14px;">${escapeHtml(secNote.title || '제목 없음')}</h2>
-    <div style="display:flex;flex-direction:column;gap:8px;font-size:15px;">
-      ${secBlocks
-        .map((b) => {
-          if (b.type === 'h1') return `<h3 style="margin-top:10px;">${escapeHtml(b.text)}</h3>`;
-          if (b.type === 'h2') return `<h4 style="margin-top:8px;">${escapeHtml(b.text)}</h4>`;
-          if (b.type === 'callout') return `<div class="block-callout">${escapeHtml(b.text)}</div>`;
-          if (b.type === 'todo') return `<div>${b.checked ? '[x]' : '[ ]'} ${escapeHtml(b.text)}</div>`;
-          if (b.type === 'bullet') return `<div>• ${escapeHtml(b.text)}</div>`;
-          if (b.type === 'code') return `<pre class="block-code">${escapeHtml(b.text)}</pre>`;
-          return `<p>${escapeHtml(b.text || '')}</p>`;
-        })
-        .join('')}
+    <div class="split-doc-header">
+      <div class="split-doc-meta">
+        ${folder ? `<span class="split-meta-folder">📁 ${escapeHtml(folder.name)}</span>` : ''}
+        ${secNote.isPinned ? `<span class="split-meta-pin">📌 고정됨</span>` : ''}
+        ${updatedDateStr ? `<span class="split-meta-date">🕒 ${updatedDateStr}</span>` : ''}
+      </div>
+      <h1 class="split-doc-title">${escapeHtml(secNote.title || '제목 없음')}</h1>
+      ${Array.isArray(secNote.tags) && secNote.tags.length > 0 ? `
+        <div class="split-doc-tags">
+          ${secNote.tags.map((t) => `<span class="split-tag-pill">#${escapeHtml(t)}</span>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+    <div class="split-doc-body">
+      ${blocksHtml || '<p class="text-muted">내용이 비어 있는 노트입니다.</p>'}
     </div>
   `;
+
+  // Secret toggles in secondary viewer
+  viewer.querySelectorAll('.split-doc-secret').forEach((secretEl) => {
+    secretEl.addEventListener('click', () => {
+      const txt = secretEl.querySelector('.secret-text');
+      if (txt) {
+        txt.classList.toggle('masked');
+      }
+    });
+  });
+
+  // Wikilink click handlers inside secondary viewer
+  viewer.querySelectorAll('.wikilink-pill').forEach((pill) => {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetTitle = pill.dataset.wikitarget;
+      if (!targetTitle) return;
+      const targetNote = state.notes.find((n) => !n.trashed && n.title === targetTitle);
+      if (targetNote) {
+        secondaryNoteId = targetNote.id;
+        syncNavigationHistory();
+        renderSecondarySplitPane();
+      } else {
+        showToast(`'${targetTitle}' 노트를 찾을 수 없습니다.`);
+      }
+    });
+  });
 }
 
 // ============================================================================
@@ -5533,10 +5783,66 @@ function bindEvents() {
     activeViewMode = 'editor';
     renderAll();
   });
-  document.getElementById('split-note-select').addEventListener('change', (e) => {
-    secondaryNoteId = e.target.value;
-    renderSecondarySplitPane();
-  });
+
+  // Split View Searchable Note Picker events
+  const splitSearchInp = document.getElementById('split-note-search-input');
+  const btnClearSplitSearch = document.getElementById('btn-clear-split-search');
+  const splitDropdown = document.getElementById('split-picker-dropdown');
+
+  if (splitSearchInp && splitDropdown) {
+    splitSearchInp.addEventListener('focus', () => {
+      renderSplitPickerDropdown(splitSearchInp.value.trim());
+      splitDropdown.classList.remove('hidden');
+      setTimeout(() => splitSearchInp.select(), 10);
+    });
+
+    splitSearchInp.addEventListener('input', () => {
+      const val = splitSearchInp.value.trim();
+      if (btnClearSplitSearch) btnClearSplitSearch.classList.toggle('hidden', !val);
+      renderSplitPickerDropdown(val);
+      splitDropdown.classList.remove('hidden');
+    });
+
+    splitSearchInp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        splitDropdown.classList.add('hidden');
+        splitSearchInp.blur();
+        const secNote = state.notes.find((n) => n.id === secondaryNoteId);
+        splitSearchInp.value = secNote ? (secNote.title || '제목 없음') : '';
+        if (btnClearSplitSearch) btnClearSplitSearch.classList.toggle('hidden', !splitSearchInp.value);
+      } else if (e.key === 'Enter') {
+        const firstItem = splitDropdown.querySelector('.split-picker-item');
+        if (firstItem) {
+          firstItem.click();
+          splitSearchInp.blur();
+        }
+      }
+    });
+
+    if (btnClearSplitSearch) {
+      btnClearSplitSearch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        splitSearchInp.value = '';
+        btnClearSplitSearch.classList.add('hidden');
+        splitSearchInp.focus();
+        renderSplitPickerDropdown('');
+        splitDropdown.classList.remove('hidden');
+      });
+    }
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      if (!splitDropdown.classList.contains('hidden')) {
+        const wrap = document.getElementById('split-picker-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+          splitDropdown.classList.add('hidden');
+          const secNote = state.notes.find((n) => n.id === secondaryNoteId);
+          splitSearchInp.value = secNote ? (secNote.title || '제목 없음') : '';
+          if (btnClearSplitSearch) btnClearSplitSearch.classList.toggle('hidden', !splitSearchInp.value);
+        }
+      }
+    });
+  }
 
   // Sidebar & List View Search Inputs + Instant Clear Buttons ('✕')
   const sidebarInp = document.getElementById('inline-filter-input');

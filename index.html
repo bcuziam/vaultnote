@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=62" />
+  <link rel="manifest" href="./manifest.webmanifest?v=63" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=62" />
+  <link rel="stylesheet" href="./src/styles.css?v=63" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -313,7 +313,20 @@
         <!-- 보조 분할 화면 (듀얼 뷰) -->
         <div id="secondary-split-pane" class="editor-pane secondary-pane hidden">
           <div class="split-pane-header">
-            <select id="split-note-select" class="meta-select"></select>
+            <div class="split-picker-wrap" id="split-picker-wrap">
+              <div class="split-picker-input-box">
+                <span class="split-picker-icon">🔍</span>
+                <input
+                  type="text"
+                  id="split-note-search-input"
+                  class="split-picker-input"
+                  placeholder="참조할 노트 검색 / 선택..."
+                  autocomplete="off"
+                />
+                <button type="button" id="btn-clear-split-search" class="split-picker-clear hidden" title="검색어 지우기">✕</button>
+              </div>
+              <div id="split-picker-dropdown" class="split-picker-dropdown hidden"></div>
+            </div>
             <button type="button" id="btn-close-split" class="icon-btn" title="분할 화면 닫기">✕</button>
           </div>
           <div id="secondary-note-viewer" class="secondary-note-viewer"></div>
@@ -811,6 +824,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=62"></script>
+  <script type="module" src="./src/app.js?v=63"></script>
 </body>
 </html>
