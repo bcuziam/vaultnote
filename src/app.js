@@ -985,7 +985,6 @@ function renderMainNoteListView() {
   const titleEl = document.getElementById('current-filter-title');
   const subtitleEl = document.getElementById('current-filter-subtitle');
   const emptyTrashBtn = document.getElementById('btn-empty-trash');
-  const newNoteBtn = document.getElementById('btn-new-note-in-list');
   const quickUrlBar = document.getElementById('list-quick-url-bar');
   const container = document.getElementById('note-items-container');
 
@@ -993,17 +992,20 @@ function renderMainNoteListView() {
   const navTitle = getCurrentNavTitle();
   const notes = getFilteredNotes();
 
-  titleEl.textContent = `${navTitle} (${notes.length})`;
-  document.getElementById('active-note-breadcrumb').textContent = `${navTitle} 목록`;
+  if (titleEl) titleEl.textContent = `${navTitle} (${notes.length})`;
+  const breadcrumbEl = document.getElementById('active-note-breadcrumb');
+  if (breadcrumbEl) breadcrumbEl.textContent = `${navTitle} 목록`;
 
   const isTrash = activeNav === 'trash';
-  emptyTrashBtn.classList.toggle('hidden', !isTrash || notes.length === 0);
-  newNoteBtn.classList.toggle('hidden', isTrash);
+  if (emptyTrashBtn) emptyTrashBtn.classList.toggle('hidden', !isTrash || notes.length === 0);
   if (quickUrlBar) quickUrlBar.classList.toggle('hidden', isTrash);
-  subtitleEl.textContent = isTrash
-    ? '휴지통의 노트를 복원하거나 영구 삭제할 수 있습니다.'
-    : '마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.';
+  if (subtitleEl) {
+    subtitleEl.textContent = isTrash
+      ? '휴지통의 노트를 복원하거나 영구 삭제할 수 있습니다.'
+      : '마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.';
+  }
 
+  if (!container) return;
   container.innerHTML = '';
 
   if (notes.length === 0) {
@@ -5445,7 +5447,6 @@ function bindEvents() {
 
   document.getElementById('btn-topbar-new-note')?.addEventListener('click', () => createNewNote());
   document.getElementById('btn-new-note')?.addEventListener('click', () => createNewNote());
-  document.getElementById('btn-new-note-in-list')?.addEventListener('click', () => createNewNote());
   document.getElementById('btn-empty-create-note')?.addEventListener('click', () => createNewNote());
 
   document.getElementById('btn-empty-trash').addEventListener('click', () => {
