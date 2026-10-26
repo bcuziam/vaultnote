@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=63" />
+  <link rel="manifest" href="./manifest.webmanifest?v=64" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=63" />
+  <link rel="stylesheet" href="./src/styles.css?v=64" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -252,6 +252,7 @@
             <div id="note-editor-content" class="note-editor-content">
               <div class="note-header-row">
                 <textarea id="note-title-input" class="note-title-input" rows="1" placeholder="제목을 입력하세요"></textarea>
+                <div id="note-title-preview" class="note-title-preview hidden" title="클릭하여 제목 수정"></div>
               </div>
 
               <!-- 간결한 한 줄 메타데이터 & 도구 바 -->
@@ -824,6 +825,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=63"></script>
+  <script type="module" src="./src/app.js?v=64"></script>
 </body>
 </html>

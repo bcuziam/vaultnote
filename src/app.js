@@ -293,19 +293,36 @@ function stripLeadingEmojis(str = '') {
   return String(str).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\s]+/gu, '').trim() || str;
 }
 
+function escapeRegExp(str = '') {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function highlightSearchTerm(text, query) {
   if (!query || !text) return escapeHtml(text || '');
   const rawText = String(text);
   const q = query.trim();
   if (!q) return escapeHtml(rawText);
 
-  const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const regex = new RegExp(`(${escapeRegExp(q)})`, 'gi');
   const parts = rawText.split(regex);
   return parts.map((part) => {
     if (part.toLowerCase() === q.toLowerCase()) {
       return `<mark class="search-highlight">${escapeHtml(part)}</mark>`;
     }
     return escapeHtml(part);
+  }).join('');
+}
+
+function highlightHtmlText(html, query) {
+  if (!query || !html) return html || '';
+  const q = query.trim();
+  if (!q) return html;
+  const escaped = escapeRegExp(q);
+  const re = new RegExp(`(${escaped})`, 'gi');
+  const parts = String(html).split(/(<[^>]+>)/g);
+  return parts.map((part) => {
+    if (part.startsWith('<') && part.endsWith('>')) return part;
+    return part.replace(re, '<mark class="search-highlight">$1</mark>');
   }).join('');
 }
 
@@ -958,42 +975,83 @@ function selectCategoryNav(navKey) {
 let pendingEditorSearchHighlight = '';
 
 function clearSearchHighlights() {
-  document.querySelectorAll('.search-match-block').forEach((el) => {
-    el.classList.remove('search-match-block');
-  });
   pendingEditorSearchHighlight = '';
+
+  // Title preview -> input
+  const titlePreview = document.getElementById('note-title-preview');
+  const titleInput = document.getElementById('note-title-input');
+  if (titlePreview && !titlePreview.classList.contains('hidden')) {
+    titlePreview.classList.add('hidden');
+    if (titleInput) {
+      titleInput.classList.remove('hidden');
+    }
+  }
+
+  // Body blocks
+  document.querySelectorAll('.block-row').forEach((row) => {
+    row.classList.remove('search-match-block');
+    const preview = row.querySelector('.block-preview-overlay');
+    const ta = row.querySelector('textarea.block-editable');
+    if (preview && ta) {
+      const stillHasFormatting = /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(ta.value || '');
+      if (stillHasFormatting) {
+        preview.innerHTML = renderMarkdownInlineHtml(ta.value || '');
+      } else if (document.activeElement !== ta) {
+        preview.classList.add('hidden');
+        ta.classList.remove('hidden');
+      }
+    }
+  });
 }
 
 function applyEditorSearchHighlight(query) {
   if (!query) return;
-  const qLower = query.toLowerCase();
-  const note = getActiveNote();
-  const blocks = getEditableBlocksForNote(note);
-  if (!note || !blocks) return;
+  const q = query.trim();
+  const qLower = q.toLowerCase();
+  if (!qLower) return;
+  pendingEditorSearchHighlight = q;
 
-  // 기존 하이라이트 클래스 정리
-  document.querySelectorAll('.search-match-block').forEach((el) => el.classList.remove('search-match-block'));
+  const note = getActiveNote();
+  if (!note) return;
 
   let firstMatchEl = null;
 
-  // 1. 제목 일치 확인 (단독 반전 포커스 없이 외곽선 하이라이트만 적용)
+  // 1. 제목 일치 확인 및 인라인 검색어 음영 적용
+  const titlePreview = document.getElementById('note-title-preview');
+  const titleInput = document.getElementById('note-title-input');
   if ((note.title || '').toLowerCase().includes(qLower)) {
-    const titleInput = document.getElementById('note-title-input');
-    if (titleInput) {
-      titleInput.classList.add('search-match-block');
-      if (!firstMatchEl) firstMatchEl = titleInput;
+    if (titlePreview && titleInput) {
+      titlePreview.innerHTML = highlightSearchTerm(note.title || '제목 없음', q);
+      titlePreview.classList.remove('hidden');
+      titleInput.classList.add('hidden');
+      if (!firstMatchEl) firstMatchEl = titlePreview;
     }
+  } else if (titlePreview && titleInput) {
+    titlePreview.classList.add('hidden');
+    titleInput.classList.remove('hidden');
   }
 
-  // 2. 본문 블록 전체 일치 확인 (모든 일치 위치에 하이라이트 적용!)
+  // 2. 본문 블록 전체 일치 확인 및 인라인 검색어 음영 적용
+  const blocks = getEditableBlocksForNote(note) || [];
   for (const b of blocks) {
     const isTextMatch = (b.text || '').toLowerCase().includes(qLower) || (b.details || '').toLowerCase().includes(qLower);
     const isOcrMatch = b.type === 'image' && b.ocrText && b.ocrText.toLowerCase().includes(qLower);
     if (isTextMatch || isOcrMatch) {
       const row = document.querySelector(`.block-row[data-block-id="${b.id}"]`);
       if (row) {
-        row.classList.add('search-match-block');
-        if (!firstMatchEl) firstMatchEl = row;
+        const preview = row.querySelector('.block-preview-overlay');
+        const ta = row.querySelector('textarea.block-editable');
+        if (preview && ta) {
+          let renderedHtml = renderMarkdownInlineHtml(ta.value || b.text || '');
+          preview.innerHTML = highlightHtmlText(renderedHtml, q);
+          preview.classList.remove('hidden');
+          ta.classList.add('hidden');
+          if (!firstMatchEl) {
+            firstMatchEl = preview.querySelector('mark.search-highlight') || row;
+          }
+        } else if (!firstMatchEl) {
+          firstMatchEl = row;
+        }
       }
     }
   }
@@ -1002,7 +1060,7 @@ function applyEditorSearchHighlight(query) {
   if (firstMatchEl) {
     setTimeout(() => {
       firstMatchEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 80);
+    }, 90);
   }
 }
 
@@ -1200,9 +1258,14 @@ function renderActiveNoteEditor() {
   editorContent.classList.remove('hidden');
   initNoteUndoHistory(note);
 
+  const titlePreview = document.getElementById('note-title-preview');
   const titleInput = document.getElementById('note-title-input');
   if (document.activeElement !== titleInput) {
     titleInput.value = note.title || '';
+  }
+  if (!pendingEditorSearchHighlight || !(note.title || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase())) {
+    if (titlePreview) titlePreview.classList.add('hidden');
+    if (titleInput) titleInput.classList.remove('hidden');
   }
   setTimeout(() => autoResizeTextarea(titleInput), 0);
 
@@ -2221,10 +2284,15 @@ function renderBlocksList(note, blocks) {
         }
       });
 
-      const hasFormatting = /(\*\*|\*|~~|==|<span\s+style=)/.test(block.text || '');
+      const hasSearchMatch = Boolean(pendingEditorSearchHighlight && (block.text || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
+      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(block.text || '');
       const previewDiv = document.createElement('div');
       previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
-      previewDiv.innerHTML = renderMarkdownInlineHtml(block.text || '');
+      let renderedHtml = renderMarkdownInlineHtml(block.text || '');
+      if (pendingEditorSearchHighlight) {
+        renderedHtml = highlightHtmlText(renderedHtml, pendingEditorSearchHighlight);
+      }
+      previewDiv.innerHTML = renderedHtml;
 
       const activateBlockEditor = () => {
         previewDiv.classList.add('hidden');
@@ -2248,9 +2316,14 @@ function renderBlocksList(note, blocks) {
       ta.addEventListener('blur', () => {
         setTimeout(() => {
           if (document.activeElement !== ta) {
-            const stillHasFormatting = /(\*\*|\*|~~|==|<span\s+style=)/.test(ta.value || '');
+            const hasQuery = Boolean(pendingEditorSearchHighlight && (ta.value || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
+            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(ta.value || '');
             if (stillHasFormatting) {
-              previewDiv.innerHTML = renderMarkdownInlineHtml(ta.value || '');
+              let updatedHtml = renderMarkdownInlineHtml(ta.value || '');
+              if (pendingEditorSearchHighlight) {
+                updatedHtml = highlightHtmlText(updatedHtml, pendingEditorSearchHighlight);
+              }
+              previewDiv.innerHTML = updatedHtml;
               previewDiv.classList.remove('hidden');
               ta.classList.add('hidden');
             } else {
@@ -6040,8 +6113,16 @@ function bindEvents() {
     renderSidebar();
   });
 
-  // Title Input
-  document.getElementById('note-title-input').addEventListener('input', (e) => {
+  // Title Input & Preview
+  const titlePreviewEl = document.getElementById('note-title-preview');
+  const titleInputEl = document.getElementById('note-title-input');
+  titlePreviewEl?.addEventListener('click', () => {
+    titlePreviewEl.classList.add('hidden');
+    titleInputEl?.classList.remove('hidden');
+    titleInputEl?.focus();
+  });
+
+  titleInputEl?.addEventListener('input', (e) => {
     clearSearchHighlights();
     const note = getActiveNote();
     if (!note) return;
@@ -6050,7 +6131,7 @@ function bindEvents() {
     autoResizeTextarea(e.target);
     touchNote(note);
   });
-  document.getElementById('note-title-input').addEventListener('keydown', (e) => {
+  titleInputEl?.addEventListener('keydown', (e) => {
     clearSearchHighlights();
     if (e.key === 'Enter') {
       e.preventDefault();

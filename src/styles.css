@@ -1405,6 +1405,23 @@ select:focus {
   color: var(--border-strong);
 }
 
+.note-title-preview {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text-main);
+  line-height: 1.35;
+  width: 100%;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+  margin-bottom: 0;
+  padding: 0;
+}
+.note-title-preview.hidden {
+  display: none !important;
+}
+
 .note-meta-bar {
   display: flex;
   align-items: center;
@@ -2010,39 +2027,29 @@ select:focus {
   background: rgba(99, 102, 241, 0.75);
 }
 
-/* 검색어 노란 바탕 형광펜 강조 (1단계: 목록 스니펫 & 제목) */
+/* 검색어 노란 바탕 형광펜 음영 강조 (웹브라우저 페이지 검색 스타일) */
 mark.search-highlight {
   background-color: #ffd43b;
-  color: #1a1a1a;
-  border-radius: 2px;
-  padding: 0 2px;
+  color: #111827;
+  border-radius: 3px;
+  padding: 1px 3px;
   font-weight: 700;
-  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.15);
+  display: inline;
 }
 [data-theme="dark"] mark.search-highlight {
-  background-color: rgba(255, 212, 59, 0.42);
+  background-color: rgba(255, 212, 59, 0.48);
   color: #fff9db;
   border-bottom: 2px solid #ffd43b;
+  box-shadow: 0 0 0 1px rgba(255, 212, 59, 0.25);
 }
 
-/* 본문 검색어 일치 문단 자동 스크롤 & 강조 (2단계: 본문 에디터) */
+/* 블록 전체 음영은 제거하여 검색 단어 자체만 브라우저 검색처럼 강조되도록 처리 */
 .search-match-block {
-  background: rgba(255, 212, 59, 0.22) !important;
-  border-left: 3.5px solid #f59f00 !important;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px rgba(245, 159, 0, 0.25);
-  animation: pulseSearchMatch 1.8s ease-out;
-  transition: background 0.3s ease, border-color 0.3s ease;
-}
-[data-theme="dark"] .search-match-block {
-  background: rgba(255, 212, 59, 0.16) !important;
-  border-left: 3.5px solid #ffd43b !important;
-  box-shadow: 0 0 0 1px rgba(255, 212, 59, 0.2);
-}
-
-@keyframes pulseSearchMatch {
-  0% { background: rgba(255, 212, 59, 0.5); }
-  100% { background: rgba(255, 212, 59, 0.22); }
+  background: transparent !important;
+  border-left: none !important;
+  box-shadow: none !important;
+  animation: none !important;
 }
 
 .editor-bottom-pad {
