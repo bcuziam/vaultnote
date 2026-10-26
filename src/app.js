@@ -1206,9 +1206,59 @@ function renderActiveNoteEditor() {
 function clearBlockSelection() {
   selectedBlockIds.clear();
   lastSelectedBlockId = null;
+  document.getElementById('multi-turninto-menu')?.classList.add('hidden');
   document.querySelectorAll('#blocks-container .block-row.selected-block-row').forEach((el) => {
     el.classList.remove('selected-block-row');
   });
+  updateMultiBlockActionBar();
+}
+
+function getBlockTypeLabel(type) {
+  const map = {
+    p: '본문',
+    h1: '제목 1',
+    h2: '제목 2',
+    h3: '제목 3',
+    todo: '할 일 체크리스트',
+    bullet: '글머리 목록',
+    number: '번호 목록',
+    toggle: '토글 목록',
+    callout: '인용/콜아웃',
+    code: '코드 블록',
+    table: '표'
+  };
+  return map[type] || type;
+}
+
+function applyBlockTypeToSelectedBlocks(newType) {
+  if (selectedBlockIds.size === 0) return;
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  recordPreActionSnapshot();
+
+  let count = 0;
+  for (const block of blocks) {
+    if (selectedBlockIds.has(block.id)) {
+      block.type = newType;
+      if (newType === 'todo' && block.checked === undefined) {
+        block.checked = false;
+      }
+      if (newType === 'table' && !block.rows) {
+        block.rows = [
+          ['항목', '내용', '비고'],
+          ['', '', '']
+        ];
+      }
+      count++;
+    }
+  }
+
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  showToast(`${count}개 블록이 '${getBlockTypeLabel(newType)}'(으)로 일괄 변환되었습니다.`);
+  document.getElementById('multi-turninto-menu')?.classList.add('hidden');
   updateMultiBlockActionBar();
 }
 
@@ -2529,20 +2579,38 @@ function applyBlockType(blockId, newType) {
   const blocks = getEditableBlocksForNote(note);
   if (!note || !blocks) return;
 
-  const target = blocks.find((b) => b.id === blockId);
-  if (target) {
-    recordPreActionSnapshot();
-    target.type = newType;
-    if (target.text === '/') target.text = '';
-    if (newType === 'table') {
-      target.rows = [
-        ['항목', '내용', '비고'],
-        ['', '', '']
-      ];
+  recordPreActionSnapshot();
+
+  // If multiple blocks are selected and this block is among them, convert ALL selected blocks!
+  const targetIds = (selectedBlockIds.size > 1 && selectedBlockIds.has(blockId))
+    ? Array.from(selectedBlockIds)
+    : [blockId];
+
+  let convertedCount = 0;
+  for (const id of targetIds) {
+    const target = blocks.find((b) => b.id === id);
+    if (target) {
+      target.type = newType;
+      if (target.text === '/') target.text = '';
+      if (newType === 'todo' && target.checked === undefined) {
+        target.checked = false;
+      }
+      if (newType === 'table' && !target.rows) {
+        target.rows = [
+          ['항목', '내용', '비고'],
+          ['', '', '']
+        ];
+      }
+      convertedCount++;
     }
-    touchNote(note, blocks);
-    renderActiveNoteEditor();
-    focusBlock(target.id);
+  }
+
+  touchNote(note, blocks);
+  renderActiveNoteEditor();
+  if (targetIds.length > 1) {
+    showToast(`${convertedCount}개 블록이 '${getBlockTypeLabel(newType)}'(으)로 일괄 변환되었습니다.`);
+  } else {
+    focusBlock(blockId);
   }
   closeSlashMenu();
 }
@@ -5009,6 +5077,26 @@ function bindEvents() {
       document.getElementById('search-modal').classList.add('hidden');
     }
 
+    // Notion-style shortcuts for multi-block conversion (Ctrl+Shift+0..8 or Cmd+Shift+0..8)
+    if (selectedBlockIds.size > 0 && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      const keyMap = {
+        '0': 'p',
+        '1': 'h1',
+        '2': 'h2',
+        '3': 'h3',
+        '4': 'todo',
+        '5': 'bullet',
+        '6': 'number',
+        '7': 'callout',
+        '8': 'toggle'
+      };
+      if (keyMap[e.key]) {
+        e.preventDefault();
+        applyBlockTypeToSelectedBlocks(keyMap[e.key]);
+        return;
+      }
+    }
+
     // Delete or Backspace key when multiple blocks are selected
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBlockIds.size > 0) {
       const activeEl = document.activeElement;
@@ -5082,6 +5170,28 @@ function bindEvents() {
   });
 
   // Multi-block batch action bar listeners
+  const btnMultiTurninto = document.getElementById('btn-multi-turninto');
+  const turnintoMenu = document.getElementById('multi-turninto-menu');
+  btnMultiTurninto?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    turnintoMenu?.classList.toggle('hidden');
+  });
+
+  turnintoMenu?.querySelectorAll('[data-turn-type]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyBlockTypeToSelectedBlocks(btn.dataset.turnType);
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#multi-turninto-menu') && !e.target.closest('#btn-multi-turninto')) {
+      turnintoMenu?.classList.add('hidden');
+    }
+  });
+
   document.getElementById('btn-delete-selected-blocks')?.addEventListener('click', (e) => {
     e.preventDefault();
     deleteSelectedBlocks();

@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=56" />
+  <link rel="manifest" href="./manifest.webmanifest?v=57" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=56" />
+  <link rel="stylesheet" href="./src/styles.css?v=57" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -739,14 +739,31 @@
     </div>
   </div>
 
-  <!-- 여러 줄 일괄 선택 및 삭제 액션바 (Notion 스타일) -->
+  <!-- 여러 줄 일괄 선택, 일괄 형태 변환 및 삭제 액션바 (Notion 스타일) -->
   <div id="multi-block-action-bar" class="multi-block-action-bar hidden">
     <span id="multi-block-count" class="multi-block-count">0개 줄 선택됨</span>
+    <div class="multi-block-turninto-wrap">
+      <button type="button" id="btn-multi-turninto" class="btn-multi-turninto" title="선택한 블록 형태 일괄 변환">
+        <span>🔄 일괄 전환 ▾</span>
+      </button>
+      <div id="multi-turninto-menu" class="multi-turninto-menu hidden">
+        <button type="button" data-turn-type="p"><strong>본문</strong> <span>일반 텍스트</span></button>
+        <button type="button" data-turn-type="h1"><strong>제목 1</strong> <span>대제목</span></button>
+        <button type="button" data-turn-type="h2"><strong>제목 2</strong> <span>중제목</span></button>
+        <button type="button" data-turn-type="h3"><strong>제목 3</strong> <span>소제목</span></button>
+        <button type="button" data-turn-type="todo"><strong>할 일 체크리스트</strong> <span>체크박스</span></button>
+        <button type="button" data-turn-type="bullet"><strong>글머리 목록</strong> <span>불릿 (- )</span></button>
+        <button type="button" data-turn-type="number"><strong>번호 목록</strong> <span>1. 2. 3.</span></button>
+        <button type="button" data-turn-type="callout"><strong>인용 / 콜아웃</strong> <span>강조 박스</span></button>
+        <button type="button" data-turn-type="toggle"><strong>토글 목록</strong> <span>접기/펼치기</span></button>
+        <button type="button" data-turn-type="code"><strong>코드 블록</strong> <span>코드</span></button>
+      </div>
+    </div>
     <button type="button" id="btn-select-all-blocks" class="btn-multi-select-all" title="문서 전체 줄 선택">전체선택</button>
     <button type="button" id="btn-delete-selected-blocks" class="btn-multi-del" title="선택한 줄 삭제 (Delete 또는 Backspace)">
-      <span>🗑️ 일괄 삭제</span>
+      <span>🗑️ 삭제</span>
     </button>
-    <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">취소</button>
+    <button type="button" id="btn-cancel-block-selection" class="btn-multi-cancel" title="선택 취소 (Esc)">✕</button>
   </div>
 
   <!-- 텍스트 선택 시 플로팅 서식 미니 툴바 (선택 글자 바로 아래 표시) -->
@@ -797,6 +814,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=56"></script>
+  <script type="module" src="./src/app.js?v=57"></script>
 </body>
 </html>
