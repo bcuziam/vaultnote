@@ -4944,12 +4944,8 @@ async function initApp() {
   setupBookmarklet();
   initNavigationHistory();
   bindEvents();
-  if (window.innerWidth <= 820) {
-    // 모바일 초기 실행 시: 메뉴바(사이드바) 펼침 + 우측 배경 흐림(backdrop) 활성화
-    updateSidebarUI(false);
-  } else {
-    updateSidebarUI(Boolean(state.settings.sidebarCollapsed));
-  }
+  // 컴퓨터와 스마트폰 모두 앱 초기 시작 시 메뉴바(사이드바)가 펼쳐진 상태로 시작
+  updateSidebarUI(false);
   renderAll(true);
   resetIdleTimer();
 
@@ -5215,8 +5211,13 @@ function bindEvents() {
   document.getElementById('btn-close-sidebar')?.addEventListener('click', closeSidebar);
   const backdropEl = document.getElementById('sidebar-backdrop');
   if (backdropEl) {
-    backdropEl.addEventListener('click', closeSidebar);
-    backdropEl.addEventListener('pointerdown', closeSidebar);
+    const handleBackdropClose = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSidebar();
+    };
+    backdropEl.addEventListener('click', handleBackdropClose);
+    backdropEl.addEventListener('pointerdown', handleBackdropClose);
   }
 
   // 모바일에서 사이드바가 열려있을 때 우측 메인 영역(노트 본문 등) 터치/클릭 시 사이드바 즉시 닫기
