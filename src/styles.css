@@ -75,6 +75,31 @@ select {
   width: 100%;
 }
 
+select option {
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+[data-theme="dark"] select,
+[data-theme="dark"] .meta-select {
+  color-scheme: dark !important;
+}
+[data-theme="dark"] select option,
+[data-theme="dark"] .meta-select option {
+  background-color: #242424 !important;
+  color: #ededec !important;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] .meta-select {
+  color-scheme: light !important;
+}
+[data-theme="light"] select option,
+[data-theme="light"] .meta-select option {
+  background-color: #ffffff !important;
+  color: #1d1d1b !important;
+}
+
 input:focus,
 textarea:focus,
 select:focus {
@@ -870,18 +895,31 @@ select:focus {
 
 .meta-select {
   width: auto;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  padding: 2px 4px;
+  padding: 2px 6px;
   font-size: 12.5px;
   color: var(--text-secondary);
   cursor: pointer;
   border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .meta-select:hover {
   background: var(--bg-hover);
+  color: var(--text-main);
+}
+.meta-select:focus,
+.meta-select:active {
+  background: var(--bg-card) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-strong) !important;
+  outline: none;
+}
+.meta-select option {
+  background: var(--bg-card) !important;
+  color: var(--text-main) !important;
 }
 
 .meta-sep {
@@ -2144,13 +2182,17 @@ mark.search-highlight {
 }
 .typo-h {
   display: inline-block;
-  background: rgba(234, 179, 8, 0.35);
-  color: #facc15;
+  background: rgba(234, 179, 8, 0.25);
+  color: #b45309;
   font-weight: 700;
   font-size: 11.5px;
   padding: 1px 4px;
   border-radius: 3px;
   line-height: 1.2;
+}
+[data-theme="dark"] .typo-h {
+  background: rgba(234, 179, 8, 0.35);
+  color: #facc15;
 }
 .typo-a {
   display: inline-flex;
@@ -2169,22 +2211,34 @@ mark.search-highlight {
   border-radius: 1px;
 }
 
-/* PC Floating Formatting Mini Toolbar */
+/* PC & Mobile Floating Formatting Mini Toolbar (Adaptive Theme Colors) */
 .floating-format-toolbar {
   position: fixed;
   z-index: 99999;
   display: flex;
   align-items: center;
   gap: 3px;
-  background: #1e2029;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.65);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   border-radius: 8px;
   padding: 4px 6px;
   transform: translateX(-50%);
   transition: opacity 0.12s ease;
   user-select: none;
   -webkit-user-select: none;
+}
+
+[data-theme="light"] .floating-format-toolbar {
+  background: #ffffff;
+  border-color: #d0d0cc;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+[data-theme="dark"] .floating-format-toolbar {
+  background: #20222b;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65);
 }
 
 .floating-format-toolbar.hidden {
@@ -2207,7 +2261,7 @@ mark.search-highlight {
 }
 
 .floating-format-toolbar button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--bg-hover);
   color: var(--accent);
 }
 
@@ -2216,13 +2270,25 @@ mark.search-highlight {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  background: #181a20;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 6px 8px;
   display: flex;
   gap: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow);
+}
+
+[data-theme="light"] .format-color-palette {
+  background: #ffffff;
+  border-color: #d0d0cc;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] .format-color-palette {
+  background: #20222b;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 .format-color-palette.hidden {
@@ -2235,18 +2301,22 @@ mark.search-highlight {
   border-radius: 50%;
   cursor: pointer;
   transition: transform 0.15s, outline 0.15s;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] .format-color-palette .color-dot {
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .format-color-palette .color-dot:hover {
   transform: scale(1.25);
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--accent);
 }
 
 .format-toolbar-divider {
   width: 1px;
   height: 18px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--border-strong);
   margin: 0 3px;
 }
 
@@ -2259,9 +2329,18 @@ mark.search-highlight {
   .floating-format-toolbar {
     padding: 6px 8px;
     gap: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+  }
+  [data-theme="light"] .floating-format-toolbar {
+    background: #ffffff;
+    border-color: #d0d0cc;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.16);
+  }
+  [data-theme="dark"] .floating-format-toolbar {
+    background: #1c1e26;
+    border-color: rgba(255, 255, 255, 0.22);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8);
-    background: #181a20;
-    border: 1px solid rgba(255, 255, 255, 0.28);
   }
   .floating-format-toolbar button {
     width: 35px;
