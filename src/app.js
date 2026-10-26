@@ -2103,10 +2103,23 @@ function renderBlocksList(note, blocks) {
       previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
       previewDiv.innerHTML = renderMarkdownInlineHtml(block.text || '');
 
-      previewDiv.addEventListener('click', () => {
+      const activateBlockEditor = () => {
         previewDiv.classList.add('hidden');
         ta.classList.remove('hidden');
+        autoResizeTextarea(ta);
+        ta.scrollTop = 0;
         ta.focus();
+      };
+
+      previewDiv.addEventListener('click', activateBlockEditor);
+
+      ta.addEventListener('focus', () => {
+        if (!previewDiv.classList.contains('hidden')) {
+          previewDiv.classList.add('hidden');
+          ta.classList.remove('hidden');
+        }
+        autoResizeTextarea(ta);
+        ta.scrollTop = 0;
       });
 
       ta.addEventListener('blur', () => {
@@ -2277,6 +2290,10 @@ function renderBacklinksPanel(note, blocks) {
 
 function autoResizeTextarea(ta) {
   if (!ta) return;
+  // If element is hidden in DOM, scrollHeight cannot be measured accurately
+  if (ta.offsetParent === null && ta.classList.contains('hidden')) {
+    return;
+  }
   ta.style.height = 'auto';
   ta.style.height = `${Math.max(26, ta.scrollHeight)}px`;
 }
@@ -2302,6 +2319,13 @@ function focusBlock(blockId) {
     const row = document.querySelector(`.block-row[data-block-id="${blockId}"]`);
     const input = row?.querySelector('.block-editable');
     if (input) {
+      const prev = row?.querySelector('.block-preview-overlay');
+      if (prev && !prev.classList.contains('hidden')) {
+        prev.classList.add('hidden');
+        input.classList.remove('hidden');
+      }
+      autoResizeTextarea(input);
+      input.scrollTop = 0;
       input.focus();
       if (input.setSelectionRange) {
         const len = input.value.length;
