@@ -405,6 +405,25 @@ async function pushLiveSyncState() {
   }
 }
 
+function hasNewerRemoteNotes(remoteNotes, localNotes) {
+  if (!Array.isArray(remoteNotes)) return false;
+  if (!Array.isArray(localNotes)) return true;
+  const localMap = new Map(localNotes.map((n) => [n.id, n]));
+  for (const rNote of remoteNotes) {
+    const lNote = localMap.get(rNote.id);
+    if (!lNote) return true; // 원격에서 새로 생성된 노트
+    const rTime = new Date(rNote.updatedAt || 0).getTime();
+    const lTime = new Date(lNote.updatedAt || 0).getTime();
+    if (rTime > lTime + 300) return true; // 원격에서 개별 수정된 노트
+  }
+  for (const lNote of localNotes) {
+    const rNote = remoteNotes.find((n) => n.id === lNote.id);
+    if (!rNote) return true; // 원격에서 삭제/정리된 노트
+    if (Boolean(rNote.trashed) !== Boolean(lNote.trashed)) return true;
+  }
+  return false;
+}
+
 async function applyRemoteSyncedState(remoteState, label = '실시간 동기화됨') {
   if (!remoteState || !Array.isArray(remoteState.notes)) return false;
   const prevActiveId = activeNoteId;
@@ -419,17 +438,51 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     gdriveToken: remoteState.settings?.gdriveToken || state.settings?.gdriveToken || '',
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
   };
+
+  // Smart note-level merge: 개별 노트 단위로 더 최신 updatedAt을 가진 버전을 보존
+  const localMap = new Map((state.notes || []).map((n) => [n.id, n]));
+  const mergedNotes = (remoteState.notes || []).map((rNote) => {
+    const lNote = localMap.get(rNote.id);
+    if (!lNote) return rNote;
+    const rTime = new Date(rNote.updatedAt || 0).getTime();
+    const lTime = new Date(lNote.updatedAt || 0).getTime();
+    return rTime >= lTime ? rNote : lNote;
+  });
+
+  const remoteIdSet = new Set((remoteState.notes || []).map((n) => n.id));
+  for (const lNote of (state.notes || [])) {
+    if (!remoteIdSet.has(lNote.id)) {
+      mergedNotes.push(lNote);
+    }
+  }
+
+  const remoteFolderIds = new Set((remoteState.folders || []).map((f) => f.id));
+  const mergedFolders = [...(remoteState.folders || [])];
+  for (const lFolder of (state.folders || [])) {
+    if (!remoteFolderIds.has(lFolder.id)) {
+      mergedFolders.push(lFolder);
+    }
+  }
+
+  const latestMtime = Math.max(
+    new Date(remoteState.lastSavedAt || 0).getTime(),
+    new Date(state.lastSavedAt || 0).getTime()
+  );
+
   state = {
     ...createInitialState(),
     ...remoteState,
-    settings: mergedSettings
+    notes: mergedNotes,
+    folders: mergedFolders.length > 0 ? mergedFolders : state.folders,
+    settings: mergedSettings,
+    lastSavedAt: new Date(latestMtime).toISOString()
   };
   if (prevActiveId && state.notes.some((n) => n.id === prevActiveId && !n.trashed)) {
     activeNoteId = prevActiveId;
   } else {
     activeNoteId = state.notes.find((n) => !n.trashed)?.id || null;
   }
-  await VaultStorage.saveState(state);
+  await VaultStorage.saveState(state, false);
   renderAll(true);
   const indicator = document.getElementById('save-indicator');
   if (indicator) indicator.textContent = label;
@@ -450,7 +503,8 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         } else if (remoteGD && Array.isArray(remoteGD.notes)) {
           const remoteTime = new Date(remoteGD.lastSavedAt || 0).getTime();
           const localTime = new Date(state.lastSavedAt || 0).getTime();
-          if (isInitial || remoteTime > localTime + 500) {
+          const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes);
+          if (isInitial || remoteTime > localTime + 300 || hasUpdates) {
             await applyRemoteSyncedState(remoteGD, 'Google Drive 자동 동기화됨');
             return true;
           }
@@ -467,7 +521,8 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         } else if (remoteOD && Array.isArray(remoteOD.notes)) {
           const remoteTime = new Date(remoteOD.lastSavedAt || 0).getTime();
           const localTime = new Date(state.lastSavedAt || 0).getTime();
-          if (isInitial || remoteTime > localTime + 500) {
+          const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes);
+          if (isInitial || remoteTime > localTime + 300 || hasUpdates) {
             await applyRemoteSyncedState(remoteOD, 'OneDrive 자동 동기화됨');
             return true;
           }
@@ -481,7 +536,8 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
       if (folderState && Array.isArray(folderState.notes)) {
         const remoteTime = new Date(folderState.lastSavedAt || 0).getTime();
         const localTime = new Date(state.lastSavedAt || 0).getTime();
-        if (remoteTime > localTime + 500) {
+        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes);
+        if (remoteTime > localTime + 300 || hasUpdates) {
           await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
           return true;
         }
@@ -521,13 +577,16 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
 
 function scheduleSave(triggerCloud = true) {
   const indicator = document.getElementById('save-indicator');
-  if (indicator) indicator.textContent = '저장 중...';
+  if (indicator && triggerCloud) indicator.textContent = '저장 중...';
 
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(async () => {
-    const savedPayload = await VaultStorage.saveState(state);
+    if (triggerCloud) {
+      state.lastSavedAt = new Date().toISOString();
+    }
+    const savedPayload = await VaultStorage.saveState(state, triggerCloud);
     state.lastSavedAt = savedPayload.lastSavedAt;
-    if (indicator) indicator.textContent = '저장됨';
+    if (indicator && triggerCloud) indicator.textContent = '저장됨';
 
     if (triggerCloud) {
       await pushLiveSyncState();
@@ -893,6 +952,7 @@ function selectCategoryNav(navKey) {
   if (window.innerWidth <= 820) {
     closeSidebar();
   }
+  pullLiveSyncStateIfNewer(false);
 }
 
 let pendingEditorSearchHighlight = '';
@@ -976,6 +1036,7 @@ function openNoteInEditor(noteId) {
   if (pendingEditorSearchHighlight) {
     applyEditorSearchHighlight(pendingEditorSearchHighlight);
   }
+  pullLiveSyncStateIfNewer(false);
 }
 
 // ============================================================================
@@ -5464,6 +5525,7 @@ function bindEvents() {
         if (first) activeNoteId = first.id;
       }
       renderAll();
+      pullLiveSyncStateIfNewer(false);
     });
   });
 

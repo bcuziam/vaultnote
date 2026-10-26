@@ -139,7 +139,7 @@ export const VaultStorage = {
     }
   },
 
-  async saveState(state) {
+  async saveState(state, bumpTimestamp = true) {
     // 1. Save new or updated images to separate IMAGE_STORE
     if (state && Array.isArray(state.notes)) {
       for (const n of state.notes) {
@@ -157,7 +157,7 @@ export const VaultStorage = {
 
     const payload = {
       ...state,
-      lastSavedAt: new Date().toISOString()
+      lastSavedAt: bumpTimestamp ? new Date().toISOString() : (state.lastSavedAt || new Date().toISOString())
     };
     try {
       const db = await openDB();
