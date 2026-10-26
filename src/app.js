@@ -4945,6 +4945,7 @@ async function initApp() {
   initNavigationHistory();
   bindEvents();
   // 컴퓨터와 스마트폰 모두 앱 초기 시작 시 메뉴바(사이드바)가 펼쳐진 상태로 시작
+  state.settings.sidebarCollapsed = false;
   updateSidebarUI(false);
   renderAll(true);
   resetIdleTimer();
@@ -5233,11 +5234,6 @@ function bindEvents() {
   };
   workspaceEl?.addEventListener('click', handleWorkspaceCloseSidebar);
   workspaceEl?.addEventListener('pointerdown', handleWorkspaceCloseSidebar);
-  document.getElementById('btn-show-list-view').addEventListener('click', () => {
-    if (['vault', 'graph', 'clipper'].includes(activeNav)) activeNav = 'all';
-    activeViewMode = 'list';
-    renderAll();
-  });
   document.getElementById('btn-toggle-width').addEventListener('click', () => {
     state.settings.fullWidth = !state.settings.fullWidth;
     scheduleSave(false);
@@ -5447,7 +5443,6 @@ function bindEvents() {
   });
 
   document.getElementById('btn-topbar-new-note')?.addEventListener('click', () => createNewNote());
-  document.getElementById('btn-new-note')?.addEventListener('click', () => createNewNote());
   document.getElementById('btn-empty-create-note')?.addEventListener('click', () => createNewNote());
 
   document.getElementById('btn-empty-trash').addEventListener('click', () => {

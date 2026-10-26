@@ -2203,11 +2203,6 @@ mark.search-highlight {
     padding: 4px 6px;
     font-weight: 600;
   }
-  #btn-show-list-view {
-    flex-shrink: 0;
-    font-size: 12.5px;
-    padding: 4px 6px;
-  }
   #btn-editor-undo, #btn-editor-redo {
     flex-shrink: 0;
     padding: 3px 4px;
