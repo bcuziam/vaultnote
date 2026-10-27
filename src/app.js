@@ -1726,18 +1726,23 @@ function repositionFloatingFormatToolbar() {
   const tbWidth = toolbar.offsetWidth || 260;
   const tbHeight = toolbar.offsetHeight || 38;
 
-  // Position directly BELOW the selected block (스마트폰 기본 메뉴인 복사/붙여넣기와 겹치지 않도록 글자 바로 아래에 표시):
+  // 스마트폰 기본 시스템 메뉴(복사/붙여넣기 띠)가 글자 '위쪽'에 뜨므로,
+  // 양식띠는 어떤 상황에서도 절대 글자 위로 올라가지 않고 항상 글자 '아래쪽'에 표시:
   let top = rect.bottom + 8;
 
-  // Viewport bounds handling (accounting for mobile soft keyboard & bottom screen):
+  // 가상 키보드 및 화면 하단 뷰포트 경계 처리:
   const vpHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  if (top + tbHeight > vpHeight - 8) {
-    // If overflowing below screen / soft keyboard, place above if space permits
-    if (rect.top - tbHeight - 8 > 56) {
-      top = rect.top - tbHeight - 8;
-    } else {
-      top = Math.max(56, vpHeight - tbHeight - 12);
+  const maxAllowedTop = vpHeight - tbHeight - 8;
+
+  if (top > maxAllowedTop) {
+    // 선택된 글자가 가상 키보드에 붙어 아래 공간이 부족한 경우 화면을 살짝 밀어 공간 확보
+    const neededScroll = Math.ceil(top - maxAllowedTop);
+    if (neededScroll > 0 && neededScroll < 220) {
+      const scrollContainer = document.getElementById('primary-editor-pane') || window;
+      scrollContainer.scrollBy?.({ top: neededScroll + 16, behavior: 'smooth' });
     }
+    // 절대 글자 위(rect.top)로는 올라가지 않도록 하한선 고정
+    top = Math.max(rect.bottom + 4, maxAllowedTop);
   }
 
   // Safe horizontal positioning (centered on block, within screen bounds)
