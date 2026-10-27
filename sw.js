@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v64';
+const CACHE_NAME = 'vaultnote-v65';
 const ASSETS = [
   './',
   './index.html',
@@ -28,15 +28,44 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) return;
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+
+  // 외부 API(구글 드라이브, 원드라이브, Gemini API 등) 및 로컬 동기화 API는 캐시 우회
+  if (url.origin !== self.location.origin || url.pathname.includes('/api/')) {
+    return;
+  }
+
+  // Stale-While-Revalidate (오프라인 우선 캐시 서빙 + 백그라운드 최신본 갱신)
   event.respondWith(
-    fetch(event.request)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return res;
-      })
-      .catch(() => caches.match(event.request))
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          // 네트워크 실패(오프라인): 화면 이동 요청이면 캐시된 index.html 반환
+          if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+            return caches.match('./index.html') || caches.match('./');
+          }
+          return cachedResponse;
+        });
+
+      // 캐시가 있으면 즉시 반환(0.001초 응답), 없으면 네트워크 결과 대기
+      return cachedResponse || fetchPromise;
+    })
   );
 });

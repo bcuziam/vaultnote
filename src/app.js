@@ -5859,7 +5859,59 @@ async function initApp() {
   }, 4000);
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    let isUpdatePromptShown = false;
+    const promptForUpdate = (worker) => {
+      if (isUpdatePromptShown) return;
+      isUpdatePromptShown = true;
+      showToast(
+        '✨ 새 버전이 준비되었습니다.',
+        15000,
+        '지금 적용',
+        () => {
+          if (worker) {
+            worker.postMessage({ action: 'skipWaiting' });
+          } else {
+            window.location.reload();
+          }
+        }
+      );
+    };
+
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      // 1. 이미 백그라운드에 대기 중인 새 워커가 있을 때
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        promptForUpdate(reg.waiting);
+      }
+
+      // 2. 새로운 업데이트 파일 다운로드 완료 감지
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            promptForUpdate(newWorker);
+          }
+        });
+      });
+
+      // 3. 브라우저 창 복귀 또는 온라인 복구 시 새 버전 체크
+      window.addEventListener('focus', () => {
+        reg.update().catch(() => {});
+      });
+      window.addEventListener('online', () => {
+        reg.update().catch(() => {});
+        pullLiveSyncStateIfNewer(false);
+        showToast('네트워크에 다시 연결되었습니다.');
+      });
+    }).catch(() => {});
+
+    // 새 서비스 워커 활성화 시 안전하게 페이지 새로고침
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
   }
 }
 
