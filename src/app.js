@@ -5770,38 +5770,6 @@ function getNavStateKey(snap) {
   return `${snap.activeNav}|${snap.activeViewMode}|${snap.activeNoteId || ''}|${snap.secondaryNoteId || ''}`;
 }
 
-function showAppExitConfirmModal() {
-  const modal = document.getElementById('app-exit-modal');
-  if (modal) {
-    modal.classList.remove('hidden');
-  }
-}
-
-function closeAppExitConfirmModal() {
-  const modal = document.getElementById('app-exit-modal');
-  if (modal) {
-    modal.classList.add('hidden');
-  }
-}
-
-function executeAppExit() {
-  closeAppExitConfirmModal();
-  // 1. PWA 또는 웹 창 닫기 시도
-  try {
-    window.close();
-  } catch (_) {}
-
-  // 2. 브라우저 보안으로 window.close()가 차단된 경우, 스마트폰 홈 화면 또는 이전 사이트로 빠져나가도록 유도
-  setTimeout(() => {
-    if (!window.closed) {
-      window.history.go(-2);
-      setTimeout(() => {
-        showToast('스마트폰 홈 버튼을 누르거나 창을 닫아주세요.');
-      }, 300);
-    }
-  }, 80);
-}
-
 function initNavigationHistory() {
   if (isHistoryInitialized) return;
   isHistoryInitialized = true;
@@ -6178,25 +6146,18 @@ function bindEvents() {
     }
   });
 
-  // 2단계 직관적 네비게이션: 본문에서 뒤로가기 -> 목록 직행, 목록에서 뒤로가기 -> 종료 확인 팝업
+  // 자연스러운 2단계 뒤로가기: 본문에서 뒤로가기 -> 목록 직행, 목록에서 뒤로가기 -> 자연스러운 홈 화면 퇴장(스마트폰 OS 표준)
   window.addEventListener('popstate', (e) => {
     closeSlashMenu();
 
-    // 1. 종료 확인 모달이 열려있을 때 뒤로가기를 또 누르면 모달 닫기
-    const exitModal = document.getElementById('app-exit-modal');
-    if (exitModal && !exitModal.classList.contains('hidden')) {
-      closeAppExitConfirmModal();
-      return;
-    }
-
-    // 2. 다른 열려있는 모달이 있다면 닫기
+    // 1. 열려있는 모달(검색창, 동기화 창 등)이 있다면 모달만 먼저 닫기
     const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
     if (openModals.length > 0) {
       openModals.forEach((m) => m.classList.add('hidden'));
       return;
     }
 
-    // 3. 에디터(노트 본문)에서 뒤로가기를 눌렀을 때:
+    // 2. 에디터(노트 본문)에서 뒤로가기를 눌렀을 때:
     // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면]으로 직행!
     if (activeViewMode === 'editor' || activeViewMode === 'split') {
       activeViewMode = 'list';
@@ -6204,14 +6165,8 @@ function bindEvents() {
       return;
     }
 
-    // 4. 이미 [목록 화면]에서 뒤로가기를 눌렀을 때:
-    // 앱 종료 확인 모달 표시!
-    showAppExitConfirmModal();
-
-    // 사용자가 취소를 눌렀을 때 목록 화면을 그대로 유지할 수 있도록 목록 상태 복구
-    const currentSnap = getNavStateSnapshot();
-    lastHistoryKey = getNavStateKey(currentSnap);
-    window.history.pushState(currentSnap, '');
+    // 3. 이미 [목록 화면]일 때:
+    // 인위적인 가드를 걸지 않고 스마트폰 OS의 표준 흐름(홈 화면 퇴장/백그라운드 전환)에 맡김
   });
 
   // Topbar Back / Forward Buttons
@@ -6219,18 +6174,11 @@ function bindEvents() {
     if (activeViewMode === 'editor' || activeViewMode === 'split') {
       activeViewMode = 'list';
       renderAll(false, true);
-    } else {
-      showAppExitConfirmModal();
     }
   });
   document.getElementById('btn-nav-forward')?.addEventListener('click', () => {
     window.history.forward();
   });
-
-  // App Exit Confirm Modal Buttons
-  document.getElementById('btn-close-exit-modal')?.addEventListener('click', closeAppExitConfirmModal);
-  document.getElementById('btn-cancel-exit-app')?.addEventListener('click', closeAppExitConfirmModal);
-  document.getElementById('btn-confirm-exit-app')?.addEventListener('click', executeAppExit);
 
   // Undo / Redo Buttons
   document.getElementById('btn-editor-undo')?.addEventListener('click', (e) => {
