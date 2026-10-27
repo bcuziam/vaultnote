@@ -2407,7 +2407,7 @@ mark.search-highlight {
 }
 
 /* 모달 */
-.modal-backdrop, .lock-overlay {
+.modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
@@ -2416,6 +2416,29 @@ mark.search-highlight {
   justify-content: center;
   z-index: 200;
   padding: 16px;
+}
+
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  padding: 16px;
+}
+
+/* 앱 잠금 활성화 시 뒷배경 내용 완전 차단 (강력 흐림 & 반투명) */
+#app-lock-overlay:not(.hidden) ~ .app-shell {
+  filter: blur(14px);
+  -webkit-filter: blur(14px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.35;
+  transition: filter 0.25s, opacity 0.25s;
 }
 
 .modal-card, .lock-card {

@@ -449,6 +449,19 @@ function hasNewerRemoteNotes(remoteNotes, localNotes) {
   return false;
 }
 
+function isSidebarCollapsedOnDevice() {
+  const isMobile = window.innerWidth <= 820;
+  if (isMobile) {
+    // 스마트폰은 항상 닫힌 상태가 기본 (화면 확보)
+    const saved = sessionStorage.getItem('vaultnote_sidebar_mobile');
+    return saved === null ? true : saved === '1';
+  } else {
+    // 노트북/PC는 항상 펼쳐진 상태가 기본 (메뉴바 항시 표시)
+    const saved = localStorage.getItem('vaultnote_sidebar_pc');
+    return saved === '1'; // 저장값 없으면 false (펼쳐짐)
+  }
+}
+
 async function applyRemoteSyncedState(remoteState, label = '실시간 동기화됨') {
   if (!remoteState || !Array.isArray(remoteState.notes)) return false;
   const prevActiveId = activeNoteId;
@@ -459,6 +472,7 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     ...(state.settings || {}),
     ...(remoteState.settings || {}),
     theme: localTheme, // 기기별 독립 테마 설정 보존 (클라우드가 로컬 테마를 덮어쓰지 않음)
+    sidebarCollapsed: isSidebarCollapsedOnDevice(), // 기기별 메뉴바 독립 유지 (클라우드가 덮어쓰지 않음)
     onedriveToken: remoteState.settings?.onedriveToken || state.settings?.onedriveToken || '',
     gdriveToken: remoteState.settings?.gdriveToken || state.settings?.gdriveToken || '',
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
@@ -5381,8 +5395,9 @@ function renderAll(fromPopState = false, replaceHistory = false) {
   state.settings.theme = currentTheme;
   document.getElementById('editor-inner-wrap')?.classList.toggle('full-width', Boolean(state.settings.fullWidth));
   const isMobile = window.innerWidth <= 820;
-  document.getElementById('sidebar')?.classList.toggle('collapsed', Boolean(state.settings.sidebarCollapsed));
-  document.getElementById('sidebar-backdrop')?.classList.toggle('hidden', Boolean(state.settings.sidebarCollapsed) || !isMobile);
+  const collapsed = isSidebarCollapsedOnDevice();
+  document.getElementById('sidebar')?.classList.toggle('collapsed', collapsed);
+  document.getElementById('sidebar-backdrop')?.classList.toggle('hidden', collapsed || !isMobile);
   syncNavigationHistory(fromPopState, replaceHistory);
   renderSidebar();
   renderWorkspaceView();
@@ -5415,7 +5430,17 @@ async function initApp() {
     await VaultStorage.saveState(state);
   }
 
-  activeNoteId = state.notes.find((n) => !n.trashed)?.id || null;
+  // 첫 화면: 맨 마지막에 편집하던(가장 최신 updatedAt) 노트로 에디터 자동 열기
+  const validNotes = (state.notes || []).filter((n) => !n.trashed);
+  if (validNotes.length > 0) {
+    validNotes.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    activeNoteId = validNotes[0].id;
+    activeViewMode = 'editor';
+  } else {
+    activeNoteId = null;
+    activeViewMode = 'list';
+  }
+
   document.getElementById('scratchpad-textarea').value = state.scratchpad || '';
   const geminiKeyEl = document.getElementById('gemini-api-key-input');
   if (geminiKeyEl) geminiKeyEl.value = state.settings.geminiApiKey || '';
@@ -5432,9 +5457,10 @@ async function initApp() {
   setupBookmarklet();
   initNavigationHistory();
   bindEvents();
-  // 컴퓨터와 스마트폰 모두 앱 초기 시작 시 메뉴바(사이드바)가 펼쳐진 상태로 시작
-  state.settings.sidebarCollapsed = false;
-  updateSidebarUI(false);
+
+  // 기기별 맞춤 메뉴바 초기화 (노트북/PC는 항상 펼침, 스마트폰은 닫힘)
+  const initialCollapsed = isSidebarCollapsedOnDevice();
+  updateSidebarUI(initialCollapsed);
   renderAll(true);
   resetIdleTimer();
 
@@ -7231,26 +7257,29 @@ function bindEvents() {
 }
 
 function updateSidebarUI(collapsed) {
+  const isMobile = window.innerWidth <= 820;
+  if (isMobile) {
+    try { sessionStorage.setItem('vaultnote_sidebar_mobile', collapsed ? '1' : '0'); } catch (_) {}
+  } else {
+    try { localStorage.setItem('vaultnote_sidebar_pc', collapsed ? '1' : '0'); } catch (_) {}
+  }
   state.settings.sidebarCollapsed = collapsed;
   const sidebar = document.getElementById('sidebar');
   const backdrop = document.getElementById('sidebar-backdrop');
   if (sidebar) sidebar.classList.toggle('collapsed', collapsed);
   if (backdrop) {
-    const isMobile = window.innerWidth <= 820;
     backdrop.classList.toggle('hidden', collapsed || !isMobile);
   }
 }
 
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
-  const isCurrentlyCollapsed = sidebar ? sidebar.classList.contains('collapsed') : state.settings.sidebarCollapsed;
+  const isCurrentlyCollapsed = sidebar ? sidebar.classList.contains('collapsed') : isSidebarCollapsedOnDevice();
   updateSidebarUI(!isCurrentlyCollapsed);
-  scheduleSave(false);
 }
 
 function closeSidebar() {
   updateSidebarUI(true);
-  scheduleSave(false);
 }
 
 function createNewNote() {
