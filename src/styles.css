@@ -584,6 +584,16 @@ select:focus {
   color: var(--text-muted);
 }
 
+.app-version-badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: 0.72;
+  font-family: monospace;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+
 .footer-link {
   background: none;
   border: none;

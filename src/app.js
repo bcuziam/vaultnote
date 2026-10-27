@@ -5948,6 +5948,9 @@ async function initApp() {
     };
 
     navigator.serviceWorker.register('./sw.js').then((reg) => {
+      // 0. 앱 시작 즉시 서버의 최신 sw.js를 명시적으로 체크
+      reg.update().catch(() => {});
+
       // 1. 이미 백그라운드에 대기 중인 새 워커가 있을 때
       if (reg.waiting && navigator.serviceWorker.controller) {
         promptForUpdate(reg.waiting);
@@ -5964,7 +5967,7 @@ async function initApp() {
         });
       });
 
-      // 3. 브라우저 창 복귀 또는 온라인 복구 시 새 버전 체크
+      // 3. 브라우저 창 복귀, 온라인 복구 및 15분 주기 정기 체크
       window.addEventListener('focus', () => {
         reg.update().catch(() => {});
       });
@@ -5978,6 +5981,9 @@ async function initApp() {
           pullLiveSyncStateIfNewer(false);
         }, 800);
       });
+      setInterval(() => {
+        if (navigator.onLine) reg.update().catch(() => {});
+      }, 15 * 60 * 1000);
     }).catch(() => {});
 
     // 새 서비스 워커 활성화 시 안전하게 페이지 새로고침
