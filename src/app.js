@@ -558,8 +558,27 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   return true;
 }
 
+let hasPendingCloudSync = false;
+try {
+  hasPendingCloudSync = localStorage.getItem('vaultnote_pending_cloud_sync') === '1';
+} catch (_) {}
+
+async function flushPendingCloudSyncIfAny() {
+  if (!hasPendingCloudSync) return false;
+  const hasToken = (state.settings.gdriveToken || '').trim() || (state.settings.onedriveToken || '').trim();
+  if (!hasToken) return false;
+  scheduleSave(true, true);
+  return true;
+}
+
 async function pullLiveSyncStateIfNewer(isInitial = false) {
   if (isSyncingLive) return false;
+
+  // 오프라인 동안 작성/수정되어 아직 클라우드에 못 올린 데이터가 있다면 즉시 업로드 시도
+  if (hasPendingCloudSync) {
+    flushPendingCloudSyncIfAny();
+  }
+
   // 로컬에서 삭제/수정이 발생한 직후 2.5초간은 아직 업로드 완료되지 않은 과거 클라우드 데이터 수신 차단
   if (!isInitial && Date.now() - lastLocalMutationTime < 2500) {
     return false;
@@ -688,20 +707,36 @@ function scheduleSave(triggerCloud = true, immediate = false) {
       if ((state.settings.onedriveToken || '').trim()) {
         VaultStorage.syncOneDriveAPI(state.settings.onedriveToken, state, 'save')
           .then(() => {
+            hasPendingCloudSync = false;
+            try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
             if (indicator) indicator.textContent = 'OneDrive 자동 저장됨';
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = 'OneDrive 연동중';
           })
-          .catch(() => {});
+          .catch(() => {
+            hasPendingCloudSync = true;
+            try { localStorage.setItem('vaultnote_pending_cloud_sync', '1'); } catch (_) {}
+            if (indicator) indicator.textContent = '오프라인 저장됨 (온라인 시 자동 동기화)';
+            const badge = document.getElementById('sync-status-badge');
+            if (badge) badge.textContent = '오프라인 (동기화 대기)';
+          });
       }
       if ((state.settings.gdriveToken || '').trim()) {
         VaultStorage.syncGoogleDriveAPI(state.settings.gdriveToken, state, 'save')
           .then(() => {
+            hasPendingCloudSync = false;
+            try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
             if (indicator) indicator.textContent = 'Google Drive 자동 저장됨';
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = 'Google Drive 연동중';
           })
-          .catch(() => {});
+          .catch(() => {
+            hasPendingCloudSync = true;
+            try { localStorage.setItem('vaultnote_pending_cloud_sync', '1'); } catch (_) {}
+            if (indicator) indicator.textContent = '오프라인 저장됨 (온라인 시 자동 동기화)';
+            const badge = document.getElementById('sync-status-badge');
+            if (badge) badge.textContent = '오프라인 (동기화 대기)';
+          });
       }
     }
   };
@@ -5900,8 +5935,13 @@ async function initApp() {
       });
       window.addEventListener('online', () => {
         reg.update().catch(() => {});
-        pullLiveSyncStateIfNewer(false);
         showToast('네트워크에 다시 연결되었습니다.');
+        if (hasPendingCloudSync) {
+          scheduleSave(true, true);
+        }
+        setTimeout(() => {
+          pullLiveSyncStateIfNewer(false);
+        }, 800);
       });
     }).catch(() => {});
 
