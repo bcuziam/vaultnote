@@ -5770,38 +5770,85 @@ function getNavStateKey(snap) {
   return `${snap.activeNav}|${snap.activeViewMode}|${snap.activeNoteId || ''}|${snap.secondaryNoteId || ''}`;
 }
 
+function showAppExitConfirmModal() {
+  const modal = document.getElementById('app-exit-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+}
+
+function closeAppExitConfirmModal() {
+  const modal = document.getElementById('app-exit-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+function executeAppExit() {
+  closeAppExitConfirmModal();
+  // 1. PWA 또는 웹 창 닫기 시도
+  try {
+    window.close();
+  } catch (_) {}
+
+  // 2. 브라우저 보안으로 window.close()가 차단된 경우, 스마트폰 홈 화면 또는 이전 사이트로 빠져나가도록 유도
+  setTimeout(() => {
+    if (!window.closed) {
+      window.history.go(-2);
+      setTimeout(() => {
+        showToast('스마트폰 홈 버튼을 누르거나 창을 닫아주세요.');
+      }, 300);
+    }
+  }, 80);
+}
+
 function initNavigationHistory() {
   if (isHistoryInitialized) return;
   isHistoryInitialized = true;
-  // Base guard state (Note List View) so pressing Back from the initial note goes to the list instead of leaving the app
-  const baseState = {
+
+  // 1단계 기본 상태: 목록 화면(루트)
+  const baseListState = {
     vn: true,
-    vnRootGuard: true,
+    view: 'list',
     activeNav: 'all',
     activeViewMode: 'list',
-    activeNoteId,
-    secondaryNoteId
+    activeNoteId: null,
+    secondaryNoteId: null
   };
-  window.history.replaceState(baseState, '');
-  const currentSnap = getNavStateSnapshot();
-  lastHistoryKey = getNavStateKey(currentSnap);
-  window.history.pushState(currentSnap, '');
+  window.history.replaceState(baseListState, '');
+
+  // 만약 첫 화면이 에디터라면 2단계 에디터 상태를 1개 push
+  if (activeViewMode === 'editor' && activeNoteId) {
+    const editorSnap = getNavStateSnapshot();
+    lastHistoryKey = getNavStateKey(editorSnap);
+    window.history.pushState(editorSnap, '');
+  }
 }
 
 function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
   if (!isHistoryInitialized) return;
   const snap = getNavStateSnapshot();
   const key = getNavStateKey(snap);
+
   if (fromPopState) {
     lastHistoryKey = key;
     return;
   }
-  if (replaceHistory) {
+
+  // 목록 화면일 때는 항상 현재 히스토리 슬롯을 최신 목록 상태로 치환
+  if (snap.activeViewMode === 'list') {
     lastHistoryKey = key;
     window.history.replaceState(snap, '');
     return;
   }
-  if (key !== lastHistoryKey) {
+
+  // 에디터 화면일 때:
+  // 이미 이전 상태가 에디터였으면 replaceState로 교체(노트를 이것저것 봐도 히스토리가 10개 쌓이지 않음)
+  // 목록에서 에디터로 처음 들어왔을 때만 pushState로 1단계 확장
+  if (replaceHistory || lastHistoryKey.includes('|editor|')) {
+    lastHistoryKey = key;
+    window.history.replaceState(snap, '');
+  } else {
     lastHistoryKey = key;
     window.history.pushState(snap, '');
   }
@@ -6131,81 +6178,59 @@ function bindEvents() {
     }
   });
 
-  // Browser Back / Forward Navigation (popstate) — stay inside VaultNote and return to previous view/note
-  let consecutiveSkipBackCount = 0;
+  // 2단계 직관적 네비게이션: 본문에서 뒤로가기 -> 목록 직행, 목록에서 뒤로가기 -> 종료 확인 팝업
   window.addEventListener('popstate', (e) => {
-    // Close any open modal or slash menu first
     closeSlashMenu();
+
+    // 1. 종료 확인 모달이 열려있을 때 뒤로가기를 또 누르면 모달 닫기
+    const exitModal = document.getElementById('app-exit-modal');
+    if (exitModal && !exitModal.classList.contains('hidden')) {
+      closeAppExitConfirmModal();
+      return;
+    }
+
+    // 2. 다른 열려있는 모달이 있다면 닫기
     const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
     if (openModals.length > 0) {
       openModals.forEach((m) => m.classList.add('hidden'));
+      return;
     }
 
-    const st = e.state;
-    if (st && st.vn) {
-      activeNav = st.activeNav || 'all';
-      activeViewMode = st.activeViewMode || 'list';
-
-      const targetNote = st.activeNoteId ? state.notes.find((n) => n.id === st.activeNoteId) : null;
-      const isTargetValid = targetNote && (!targetNote.trashed || activeNav === 'trash');
-
-      if (isTargetValid) {
-        consecutiveSkipBackCount = 0;
-        activeNoteId = targetNote.id;
-      } else {
-        // 뒤로가기한 대상 노드가 삭제된 노트인 경우
-        if (st.activeViewMode === 'editor' && !st.vnRootGuard && consecutiveSkipBackCount < 10) {
-          consecutiveSkipBackCount++;
-          // 현재 유령 엔트리를 안전한 목록 상태로 치환하고 즉시 한 단계 더 뒤로 이동 (화면 멈춤 없이 건너뛰기)
-          const cleanSnap = { vn: true, activeNav: 'all', activeViewMode: 'list', activeNoteId: null, secondaryNoteId: null };
-          window.history.replaceState(cleanSnap, '');
-          window.history.back();
-          return;
-        }
-
-        consecutiveSkipBackCount = 0;
-        activeViewMode = 'list';
-        const remaining = getFilteredNotes();
-        activeNoteId = remaining[0]?.id || null;
-
-        // 히스토리의 현재 위치를 유효한 목록 상태로 치환하여 삭제된 노트 기록 덮어씀
-        const cleanSnap = getNavStateSnapshot();
-        lastHistoryKey = getNavStateKey(cleanSnap);
-        window.history.replaceState(cleanSnap, '');
-      }
-
-      if (st.secondaryNoteId) {
-        const secNote = state.notes.find((n) => n.id === st.secondaryNoteId);
-        secondaryNoteId = secNote && (!secNote.trashed || activeNav === 'trash') ? secNote.id : null;
-      } else {
-        secondaryNoteId = null;
-      }
-
-      // If the user backed all the way to the root guard entry, re-push a guard so another Back press won't exit the app
-      if (st.vnRootGuard) {
-        const snap = getNavStateSnapshot();
-        lastHistoryKey = getNavStateKey(snap);
-        window.history.pushState(snap, '');
-      }
-      renderAll(true);
-    } else {
-      // Fallback: go to list view instead of leaving the app
-      activeNav = 'all';
+    // 3. 에디터(노트 본문)에서 뒤로가기를 눌렀을 때:
+    // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면]으로 직행!
+    if (activeViewMode === 'editor' || activeViewMode === 'split') {
       activeViewMode = 'list';
-      const snap = getNavStateSnapshot();
-      lastHistoryKey = getNavStateKey(snap);
-      window.history.pushState(snap, '');
-      renderAll(true);
+      renderAll(true, true);
+      return;
     }
+
+    // 4. 이미 [목록 화면]에서 뒤로가기를 눌렀을 때:
+    // 앱 종료 확인 모달 표시!
+    showAppExitConfirmModal();
+
+    // 사용자가 취소를 눌렀을 때 목록 화면을 그대로 유지할 수 있도록 목록 상태 복구
+    const currentSnap = getNavStateSnapshot();
+    lastHistoryKey = getNavStateKey(currentSnap);
+    window.history.pushState(currentSnap, '');
   });
 
   // Topbar Back / Forward Buttons
   document.getElementById('btn-nav-back')?.addEventListener('click', () => {
-    window.history.back();
+    if (activeViewMode === 'editor' || activeViewMode === 'split') {
+      activeViewMode = 'list';
+      renderAll(false, true);
+    } else {
+      showAppExitConfirmModal();
+    }
   });
   document.getElementById('btn-nav-forward')?.addEventListener('click', () => {
     window.history.forward();
   });
+
+  // App Exit Confirm Modal Buttons
+  document.getElementById('btn-close-exit-modal')?.addEventListener('click', closeAppExitConfirmModal);
+  document.getElementById('btn-cancel-exit-app')?.addEventListener('click', closeAppExitConfirmModal);
+  document.getElementById('btn-confirm-exit-app')?.addEventListener('click', executeAppExit);
 
   // Undo / Redo Buttons
   document.getElementById('btn-editor-undo')?.addEventListener('click', (e) => {

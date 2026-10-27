@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v66</span>
+        <span class="app-version-badge" id="app-version-display">v67</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -746,6 +746,25 @@
           <button type="button" id="btn-confirm-offline-summarize" class="btn btn-secondary btn-block mt-12">
             오프라인 자체 요약 실행 (100% 기기 내부 처리)
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 앱 종료 확인 모달 -->
+  <div id="app-exit-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width:360px;text-align:center;">
+      <div class="modal-header" style="justify-content:center;position:relative;">
+        <h3 style="font-size:17px;font-weight:700;">VaultNote 종료</h3>
+        <button type="button" id="btn-close-exit-modal" class="icon-btn" style="position:absolute;right:14px;top:14px;">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px 20px 22px;">
+        <p style="font-size:14px;color:var(--text-secondary);margin-bottom:20px;">
+          앱을 종료하시겠습니까?
+        </p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button type="button" id="btn-cancel-exit-app" class="btn btn-secondary" style="flex:1;padding:9px 16px;">취소</button>
+          <button type="button" id="btn-confirm-exit-app" class="btn btn-danger" style="flex:1;padding:9px 16px;">종료</button>
         </div>
       </div>
     </div>
