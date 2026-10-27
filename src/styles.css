@@ -512,6 +512,33 @@ select:focus {
   border-color: var(--border-strong);
 }
 
+.tag-cloud.expanded {
+  max-height: 165px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-hover);
+  padding: 6px 8px;
+}
+
+.tag-expand-btn {
+  background: var(--bg-hover);
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--accent, #6366f1);
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.tag-expand-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-main);
+  border-style: solid;
+}
+
 /* 사이드바 내 빠른 노트 리스트 */
 .note-items-container {
   display: flex;

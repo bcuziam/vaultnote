@@ -174,6 +174,7 @@ let draggedBlockId = null;
 let selectedBlockIds = new Set();
 let lastSelectedBlockId = null;
 let lastTrashedNoteIds = [];
+let isSidebarTagsExpanded = false;
 
 // ============================================================================
 // Utility Functions
@@ -1070,7 +1071,7 @@ function renderSidebar() {
     if (prev && state.folders.some((f) => f.id === prev)) sel.value = prev;
   }
 
-  // Tags
+  // Tags (Smart Tag Management: Popular Top 15 + Lazy On-Demand Rendering)
   const tagCounts = new Map();
   for (const n of activeNotes) {
     for (const t of n.tags || []) {
@@ -1084,7 +1085,21 @@ function renderSidebar() {
     tagsSection.classList.add('hidden');
   } else {
     tagsSection.classList.remove('hidden');
-    for (const [tag, cnt] of tagCounts.entries()) {
+
+    // 사용 빈도 최다순(내림차순) 정렬, 동률이면 가나다순
+    const sortedTags = Array.from(tagCounts.entries()).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], 'ko');
+    });
+
+    const SIDEBAR_TAG_LIMIT = 15;
+    const shouldLimit = sortedTags.length > SIDEBAR_TAG_LIMIT && !isSidebarTagsExpanded;
+    // 평소에는 15개만 DOM 생성(부하 0%), 사용자가 [더보기]를 누른 순간에만 전체 DOM 지연 생성
+    const tagsToRender = shouldLimit ? sortedTags.slice(0, SIDEBAR_TAG_LIMIT) : sortedTags;
+
+    tagListEl.classList.toggle('expanded', isSidebarTagsExpanded && sortedTags.length > SIDEBAR_TAG_LIMIT);
+
+    for (const [tag, cnt] of tagsToRender) {
       const pill = document.createElement('button');
       pill.type = 'button';
       pill.className = `tag-pill ${activeNav === `tag:${tag}` ? 'active' : ''}`;
@@ -1093,6 +1108,26 @@ function renderSidebar() {
         selectCategoryNav(`tag:${tag}`);
       });
       tagListEl.appendChild(pill);
+    }
+
+    // 15개 초과 시 [+더보기] / [-접기] 지연 토글 버튼
+    if (sortedTags.length > SIDEBAR_TAG_LIMIT) {
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'tag-expand-btn';
+      if (!isSidebarTagsExpanded) {
+        toggleBtn.textContent = `＋${sortedTags.length - SIDEBAR_TAG_LIMIT}개 더보기`;
+        toggleBtn.title = `숨겨진 ${sortedTags.length - SIDEBAR_TAG_LIMIT}개 태그 모두 펼치기`;
+      } else {
+        toggleBtn.textContent = '− 접기';
+        toggleBtn.title = '인기 태그 15개만 보기';
+      }
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isSidebarTagsExpanded = !isSidebarTagsExpanded;
+        renderSidebar();
+      });
+      tagListEl.appendChild(toggleBtn);
     }
   }
 
