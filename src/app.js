@@ -1977,9 +1977,15 @@ function renderBlocksList(note, blocks) {
       toggleBlockSelection(block.id, e.shiftKey);
     });
 
+    // 1. PC 마우스 드래그 앤 드롭 (단일 블록 및 다중 선택 블록 일괄 이동)
     row.addEventListener('dragstart', (e) => {
       draggedBlockId = block.id;
-      row.classList.add('dragging');
+      const isMulti = selectedBlockIds.has(block.id);
+      if (isMulti) {
+        container.querySelectorAll('.selected-block-row').forEach((r) => r.classList.add('dragging'));
+      } else {
+        row.classList.add('dragging');
+      }
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', block.id);
@@ -1988,13 +1994,15 @@ function renderBlocksList(note, blocks) {
     row.addEventListener('dragend', () => {
       draggedBlockId = null;
       row.draggable = false;
-      row.classList.remove('dragging');
+      container.querySelectorAll('.dragging').forEach((r) => r.classList.remove('dragging'));
       container.querySelectorAll('.drop-target-top, .drop-target-bottom').forEach((n) => {
         n.classList.remove('drop-target-top', 'drop-target-bottom');
       });
     });
     row.addEventListener('dragover', (e) => {
-      if (!draggedBlockId || draggedBlockId === block.id) return;
+      if (!draggedBlockId) return;
+      const isMulti = selectedBlockIds.has(draggedBlockId);
+      if (isMulti ? selectedBlockIds.has(block.id) : draggedBlockId === block.id) return;
       e.preventDefault();
       const rect = row.getBoundingClientRect();
       const isAfter = e.clientY > rect.top + rect.height / 2;
@@ -2005,24 +2013,157 @@ function renderBlocksList(note, blocks) {
       row.classList.remove('drop-target-top', 'drop-target-bottom');
     });
     row.addEventListener('drop', (e) => {
-      if (!draggedBlockId || draggedBlockId === block.id) return;
+      if (!draggedBlockId) return;
+      const isMulti = selectedBlockIds.has(draggedBlockId);
+      if (isMulti ? selectedBlockIds.has(block.id) : draggedBlockId === block.id) return;
       e.preventDefault();
       e.stopPropagation();
       const rect = row.getBoundingClientRect();
       const isAfter = e.clientY > rect.top + rect.height / 2;
       row.classList.remove('drop-target-top', 'drop-target-bottom');
-      const fromIndex = blocks.findIndex((b) => b.id === draggedBlockId);
-      draggedBlockId = null;
-      if (fromIndex === -1) return;
-      const [movedBlock] = blocks.splice(fromIndex, 1);
-      const toIndex = blocks.findIndex((b) => b.id === block.id);
-      if (toIndex === -1) {
-        blocks.push(movedBlock);
+
+      recordPreActionSnapshot();
+
+      if (isMulti) {
+        // 다중 블록 묶음 일괄 이동 (원래 순서 보존)
+        const movedBlocks = blocks.filter((b) => selectedBlockIds.has(b.id));
+        const remainingBlocks = blocks.filter((b) => !selectedBlockIds.has(b.id));
+        const targetIdx = remainingBlocks.findIndex((b) => b.id === block.id);
+        if (targetIdx === -1) {
+          remainingBlocks.push(...movedBlocks);
+        } else {
+          remainingBlocks.splice(isAfter ? targetIdx + 1 : targetIdx, 0, ...movedBlocks);
+        }
+        if (!note.isEncrypted) {
+          note.blocks = remainingBlocks;
+        } else {
+          decryptedNotesSessionMap.set(note.id, remainingBlocks);
+        }
+        touchNote(note, remainingBlocks);
+        renderActiveNoteEditor();
+        showToast(`${movedBlocks.length}개 블록이 함께 이동되었습니다.`);
       } else {
-        blocks.splice(isAfter ? toIndex + 1 : toIndex, 0, movedBlock);
+        // 단일 블록 이동
+        const fromIndex = blocks.findIndex((b) => b.id === draggedBlockId);
+        if (fromIndex !== -1) {
+          const [movedBlock] = blocks.splice(fromIndex, 1);
+          const toIndex = blocks.findIndex((b) => b.id === block.id);
+          if (toIndex === -1) {
+            blocks.push(movedBlock);
+          } else {
+            blocks.splice(isAfter ? toIndex + 1 : toIndex, 0, movedBlock);
+          }
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        }
       }
-      touchNote(note, blocks);
-      renderActiveNoteEditor();
+      draggedBlockId = null;
+    });
+
+    // 2. 스마트폰/터치스크린용 손가락 터치 블록 드래그 엔진
+    let touchBlockMoved = false;
+    let currentBlockDropTarget = null;
+    let isBlockDropAfter = false;
+
+    dragBtn.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      draggedBlockId = block.id;
+      touchBlockMoved = false;
+      const isMulti = selectedBlockIds.has(block.id);
+      if (isMulti) {
+        container.querySelectorAll('.selected-block-row').forEach((r) => r.classList.add('dragging'));
+      } else {
+        row.classList.add('dragging');
+      }
+      if (navigator.vibrate) {
+        try { navigator.vibrate(20); } catch (_) {}
+      }
+    }, { passive: true });
+
+    dragBtn.addEventListener('touchmove', (e) => {
+      if (!draggedBlockId || draggedBlockId !== block.id) return;
+      touchBlockMoved = true;
+      if (e.cancelable) e.preventDefault();
+
+      const touch = e.touches[0];
+      const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (!elemBelow) return;
+
+      const targetRow = elemBelow.closest('.block-row');
+      container.querySelectorAll('.drop-target-top, .drop-target-bottom').forEach((n) => {
+        n.classList.remove('drop-target-top', 'drop-target-bottom');
+      });
+
+      const isMulti = selectedBlockIds.has(draggedBlockId);
+      const targetBlockId = targetRow?.dataset?.blockId;
+
+      if (targetRow && (isMulti ? !selectedBlockIds.has(targetBlockId) : targetRow !== row)) {
+        currentBlockDropTarget = targetRow;
+        const rect = targetRow.getBoundingClientRect();
+        isBlockDropAfter = touch.clientY > rect.top + rect.height / 2;
+        targetRow.classList.toggle('drop-target-top', !isBlockDropAfter);
+        targetRow.classList.toggle('drop-target-bottom', isBlockDropAfter);
+      } else {
+        currentBlockDropTarget = null;
+      }
+    }, { passive: false });
+
+    const finishBlockTouchDrag = (e) => {
+      if (!draggedBlockId || draggedBlockId !== block.id) return;
+      container.querySelectorAll('.dragging').forEach((r) => r.classList.remove('dragging'));
+      container.querySelectorAll('.drop-target-top, .drop-target-bottom').forEach((n) => {
+        n.classList.remove('drop-target-top', 'drop-target-bottom');
+      });
+
+      if (touchBlockMoved && currentBlockDropTarget) {
+        const targetBlockId = currentBlockDropTarget.dataset.blockId;
+        const isMulti = selectedBlockIds.has(draggedBlockId);
+        if (targetBlockId && (isMulti ? !selectedBlockIds.has(targetBlockId) : targetBlockId !== block.id)) {
+          recordPreActionSnapshot();
+          if (isMulti) {
+            const movedBlocks = blocks.filter((b) => selectedBlockIds.has(b.id));
+            const remainingBlocks = blocks.filter((b) => !selectedBlockIds.has(b.id));
+            const targetIdx = remainingBlocks.findIndex((b) => b.id === targetBlockId);
+            if (targetIdx === -1) {
+              remainingBlocks.push(...movedBlocks);
+            } else {
+              remainingBlocks.splice(isBlockDropAfter ? targetIdx + 1 : targetIdx, 0, ...movedBlocks);
+            }
+            if (!note.isEncrypted) note.blocks = remainingBlocks;
+            else decryptedNotesSessionMap.set(note.id, remainingBlocks);
+            touchNote(note, remainingBlocks);
+            renderActiveNoteEditor();
+            showToast(`${movedBlocks.length}개 블록이 함께 이동되었습니다.`);
+          } else {
+            const fromIndex = blocks.findIndex((b) => b.id === draggedBlockId);
+            if (fromIndex !== -1) {
+              const [movedBlock] = blocks.splice(fromIndex, 1);
+              const toIndex = blocks.findIndex((b) => b.id === targetBlockId);
+              if (toIndex === -1) {
+                blocks.push(movedBlock);
+              } else {
+                blocks.splice(isBlockDropAfter ? toIndex + 1 : toIndex, 0, movedBlock);
+              }
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+            }
+          }
+        }
+      }
+      draggedBlockId = null;
+      currentBlockDropTarget = null;
+      touchBlockMoved = false;
+    };
+
+    dragBtn.addEventListener('touchend', finishBlockTouchDrag);
+    dragBtn.addEventListener('touchcancel', () => {
+      container.querySelectorAll('.dragging').forEach((r) => r.classList.remove('dragging'));
+      container.querySelectorAll('.drop-target-top, .drop-target-bottom').forEach((n) => {
+        n.classList.remove('drop-target-top', 'drop-target-bottom');
+      });
+      draggedBlockId = null;
+      currentBlockDropTarget = null;
+      touchBlockMoved = false;
     });
 
     const body = document.createElement('div');
@@ -5699,6 +5840,25 @@ function bindEvents() {
         e.preventDefault();
         deleteSelectedBlocks();
         return;
+      }
+    }
+
+    // Ctrl+C / Cmd+C when multiple blocks are selected (Copy selected blocks content)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedBlockIds.size > 0) {
+      const activeEl = document.activeElement;
+      const selText = window.getSelection()?.toString();
+      // 글자 범위 드래그 선택이 없는 경우에만 블록 전체 내용 클립보드 복사
+      if (!selText || selText.length === 0) {
+        const note = getActiveNote();
+        const blocks = getEditableBlocksForNote(note) || [];
+        const lines = blocks
+          .filter((b) => selectedBlockIds.has(b.id))
+          .map((b) => b.text || b.details || (b.rows ? b.rows.map(r => r.join('\t')).join('\n') : ''))
+          .filter((t) => t.trim().length > 0);
+        if (lines.length > 0) {
+          navigator.clipboard.writeText(lines.join('\n'));
+          showToast(`${selectedBlockIds.size}개 블록 내용이 복사되었습니다.`);
+        }
       }
     }
   });
