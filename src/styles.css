@@ -732,6 +732,8 @@ select:focus {
   border-radius: 4px;
   opacity: 0.35;
   user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
   flex-shrink: 0;
   transition: opacity 0.12s, background 0.12s;
 }
@@ -2661,6 +2663,14 @@ mark.search-highlight {
   }
 
   /* 모바일(갤럭시 Z폴드 커버화면 및 스마트폰) 노트 목록 2단 줄바꿈 반응형 최적화 */
+  .drag-handle {
+    padding: 8px 12px;
+    font-size: 16px;
+    opacity: 0.65;
+    margin: -4px 6px -4px -6px;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
   .main-note-item {
     flex-direction: column;
     align-items: flex-start;

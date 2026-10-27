@@ -802,6 +802,7 @@ function reorderNoteInState(sourceId, targetId, placeAfter = false) {
 }
 
 function attachNoteRowDragEvents(el, noteId) {
+  // 1. PC 마우스용 표준 드래그 앤 드롭
   el.draggable = true;
   el.addEventListener('dragstart', (e) => {
     draggedNoteId = noteId;
@@ -840,6 +841,81 @@ function attachNoteRowDragEvents(el, noteId) {
     draggedNoteId = null;
     reorderNoteInState(srcId, noteId, isAfter);
   });
+
+  // 2. 스마트폰 및 터치스크린용 손가락 터치 드래그 엔진
+  const handle = el.querySelector('.drag-handle');
+  if (handle) {
+    let currentDropTarget = null;
+    let isDropAfter = false;
+    let touchMoved = false;
+
+    const clearTouchIndicators = () => {
+      document.querySelectorAll('.drop-target-top, .drop-target-bottom, .folder-drop-hover').forEach((node) => {
+        node.classList.remove('drop-target-top', 'drop-target-bottom', 'folder-drop-hover');
+      });
+    };
+
+    handle.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      e.stopPropagation();
+      draggedNoteId = noteId;
+      touchMoved = false;
+      el.classList.add('dragging');
+      if (navigator.vibrate) {
+        try { navigator.vibrate(25); } catch (_) {}
+      }
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', (e) => {
+      if (!draggedNoteId || draggedNoteId !== noteId) return;
+      touchMoved = true;
+      if (e.cancelable) e.preventDefault(); // 터치 드래그 시 화면 스크롤 방지
+      e.stopPropagation();
+
+      const touch = e.touches[0];
+      const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (!elemBelow) return;
+
+      const targetRow = elemBelow.closest('.main-note-item, .note-list-row');
+      clearTouchIndicators();
+
+      if (targetRow && targetRow !== el) {
+        currentDropTarget = targetRow;
+        const rect = targetRow.getBoundingClientRect();
+        isDropAfter = touch.clientY > rect.top + rect.height / 2;
+        targetRow.classList.toggle('drop-target-top', !isDropAfter);
+        targetRow.classList.toggle('drop-target-bottom', isDropAfter);
+      } else {
+        currentDropTarget = null;
+      }
+    }, { passive: false });
+
+    const finishTouchDrag = (e) => {
+      if (!draggedNoteId || draggedNoteId !== noteId) return;
+      e.stopPropagation();
+      el.classList.remove('dragging');
+      clearTouchIndicators();
+
+      if (touchMoved && currentDropTarget) {
+        const targetId = currentDropTarget.dataset.noteId || currentDropTarget.dataset.quickNoteId;
+        if (targetId && targetId !== noteId) {
+          reorderNoteInState(noteId, targetId, isDropAfter);
+        }
+      }
+      draggedNoteId = null;
+      currentDropTarget = null;
+      touchMoved = false;
+    };
+
+    handle.addEventListener('touchend', finishTouchDrag);
+    handle.addEventListener('touchcancel', () => {
+      el.classList.remove('dragging');
+      clearTouchIndicators();
+      draggedNoteId = null;
+      currentDropTarget = null;
+      touchMoved = false;
+    });
+  }
 }
 
 // ============================================================================
@@ -982,7 +1058,8 @@ function renderSidebar() {
         if (!note.trashed) {
           attachNoteRowDragEvents(row, note.id);
         }
-        row.addEventListener('click', () => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.drag-handle')) return;
           openNoteInEditor(note.id);
         });
         quickContainer.appendChild(row);
@@ -1272,7 +1349,8 @@ function renderMainNoteListView() {
       });
     });
 
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.drag-handle')) return;
       openNoteInEditor(note.id);
     });
 
