@@ -5275,18 +5275,18 @@ function renderWorkspaceView() {
   }
 
   if (activeViewMode === 'list') {
-    listView.classList.remove('hidden');
     renderMainNoteListView();
+    listView.classList.remove('hidden');
   } else if (activeViewMode === 'table') {
-    tableView.classList.remove('hidden');
     renderTableView();
+    tableView.classList.remove('hidden');
   } else if (activeViewMode === 'kanban') {
-    kanbanView.classList.remove('hidden');
     renderKanbanView();
+    kanbanView.classList.remove('hidden');
   } else {
-    editorArea.classList.remove('hidden');
     renderActiveNoteEditor();
     renderSecondarySplitPane();
+    editorArea.classList.remove('hidden');
   }
 }
 
@@ -5575,6 +5575,7 @@ function bindEvents() {
   });
 
   // Browser Back / Forward Navigation (popstate) — stay inside VaultNote and return to previous view/note
+  let consecutiveSkipBackCount = 0;
   window.addEventListener('popstate', (e) => {
     // Close any open modal or slash menu first
     closeSlashMenu();
@@ -5592,12 +5593,21 @@ function bindEvents() {
       const isTargetValid = targetNote && (!targetNote.trashed || activeNav === 'trash');
 
       if (isTargetValid) {
+        consecutiveSkipBackCount = 0;
         activeNoteId = targetNote.id;
       } else {
-        // 뒤로가기한 대상 노드가 삭제되었거나 유효하지 않은 경우 화면 노출 차단
-        if (activeViewMode === 'editor') {
-          activeViewMode = 'list';
+        // 뒤로가기한 대상 노드가 삭제된 노트인 경우
+        if (st.activeViewMode === 'editor' && !st.vnRootGuard && consecutiveSkipBackCount < 10) {
+          consecutiveSkipBackCount++;
+          // 현재 유령 엔트리를 안전한 목록 상태로 치환하고 즉시 한 단계 더 뒤로 이동 (화면 멈춤 없이 건너뛰기)
+          const cleanSnap = { vn: true, activeNav: 'all', activeViewMode: 'list', activeNoteId: null, secondaryNoteId: null };
+          window.history.replaceState(cleanSnap, '');
+          window.history.back();
+          return;
         }
+
+        consecutiveSkipBackCount = 0;
+        activeViewMode = 'list';
         const remaining = getFilteredNotes();
         activeNoteId = remaining[0]?.id || null;
 
@@ -6388,6 +6398,7 @@ function bindEvents() {
   document.getElementById('btn-delete-note').addEventListener('click', () => {
     const note = getActiveNote();
     if (!note) return;
+    const deletedId = note.id;
     if (note.trashed) {
       state.notes = state.notes.filter((n) => n.id !== note.id);
       showToast('영구 삭제되었습니다.');
@@ -6398,6 +6409,8 @@ function bindEvents() {
         undoLastNoteTrash();
       });
     }
+    // 기존 DOM 목록에서 삭제된 노트 요소 즉시 제거하여 화면 전환 시 잔상(Flicker) 원천 방지
+    document.querySelectorAll(`.main-note-item[data-note-id="${deletedId}"], [data-quick-note-id="${deletedId}"]`).forEach((el) => el.remove());
     const remaining = getFilteredNotes();
     activeNoteId = remaining[0]?.id || null;
     activeViewMode = 'list';
