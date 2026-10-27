@@ -1065,6 +1065,15 @@ function applyEditorSearchHighlight(query) {
 }
 
 function openNoteInEditor(noteId) {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note || (note.trashed && activeNav !== 'trash')) {
+    showToast('삭제되었거나 존재하지 않는 메모입니다.');
+    const remaining = getFilteredNotes();
+    activeNoteId = remaining[0]?.id || null;
+    activeViewMode = 'list';
+    renderAll(false, true);
+    return;
+  }
   clearBlockSelection();
   clearSearchHighlights();
   activeNoteId = noteId;
@@ -1186,9 +1195,16 @@ function renderMainNoteListView() {
     item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
       e.stopPropagation();
       state.notes = state.notes.filter((n) => n.id !== note.id);
-      if (activeNoteId === note.id) activeNoteId = null;
-      scheduleSave();
-      renderAll();
+      if (activeNoteId === note.id) {
+        const remaining = getFilteredNotes();
+        activeNoteId = remaining[0]?.id || null;
+        activeViewMode = 'list';
+        scheduleSave();
+        renderAll(false, true);
+      } else {
+        scheduleSave();
+        renderAll();
+      }
       showToast('영구 삭제되었습니다.');
     });
 
@@ -1196,8 +1212,16 @@ function renderMainNoteListView() {
       e.stopPropagation();
       note.trashed = true;
       lastTrashedNoteIds.push(note.id);
-      scheduleSave();
-      renderAll();
+      if (activeNoteId === note.id) {
+        const remaining = getFilteredNotes();
+        activeNoteId = remaining[0]?.id || null;
+        activeViewMode = 'list';
+        scheduleSave();
+        renderAll(false, true);
+      } else {
+        scheduleSave();
+        renderAll();
+      }
       showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
         undoLastNoteTrash();
       });
@@ -1256,10 +1280,27 @@ function renderActiveNoteEditor() {
 
   encryptedGate.classList.add('hidden');
   editorContent.classList.remove('hidden');
+
+  let trashBanner = document.getElementById('editor-trash-banner');
+  if (!trashBanner) {
+    trashBanner = document.createElement('div');
+    trashBanner.id = 'editor-trash-banner';
+    trashBanner.style.cssText = 'padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:8px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;color:var(--text-primary);font-size:13px;';
+    editorContent.insertBefore(trashBanner, editorContent.firstChild);
+  }
+  trashBanner.classList.toggle('hidden', !note.trashed);
+  if (note.trashed) {
+    trashBanner.innerHTML = `
+      <span>🗑️ <strong>휴지통에 있는 메모입니다.</strong> (읽기 전용 모드)</span>
+      <span style="font-size:12px;color:var(--text-muted);">편집하거나 동기화하려면 상단의 [복원] 버튼을 누르세요.</span>
+    `;
+  }
+
   initNoteUndoHistory(note);
 
   const titlePreview = document.getElementById('note-title-preview');
   const titleInput = document.getElementById('note-title-input');
+  titleInput.readOnly = Boolean(note.trashed);
   if (document.activeElement !== titleInput) {
     titleInput.value = note.title || '';
   }
@@ -1272,14 +1313,16 @@ function renderActiveNoteEditor() {
   const favBtn = document.getElementById('btn-toggle-fav');
   favBtn.textContent = note.favorite ? '★ 중요' : '☆ 중요';
   favBtn.classList.toggle('active', Boolean(note.favorite));
+  favBtn.disabled = Boolean(note.trashed);
 
   const encBtn = document.getElementById('btn-toggle-note-encrypt');
   encBtn.textContent = note.isEncrypted ? '암호화 해제' : '암호화 잠금';
   encBtn.classList.toggle('active', Boolean(note.isEncrypted));
+  encBtn.disabled = Boolean(note.trashed);
 
   const relockBtn = document.getElementById('btn-relock-note');
   if (relockBtn) {
-    relockBtn.classList.toggle('hidden', !note.isEncrypted);
+    relockBtn.classList.toggle('hidden', !note.isEncrypted || note.trashed);
   }
 
   const restoreBtn = document.getElementById('btn-restore-note');
@@ -1287,8 +1330,18 @@ function renderActiveNoteEditor() {
   restoreBtn.classList.toggle('hidden', !note.trashed);
   delBtn.textContent = note.trashed ? '영구 삭제' : '삭제';
 
-  document.getElementById('note-folder-select').value = note.folderId || (state.folders[0]?.id || '');
-  document.getElementById('note-status-select').value = note.status || '';
+  const folderSel = document.getElementById('note-folder-select');
+  if (folderSel) {
+    folderSel.value = note.folderId || (state.folders[0]?.id || '');
+    folderSel.disabled = Boolean(note.trashed);
+  }
+  const statusSel = document.getElementById('note-status-select');
+  if (statusSel) {
+    statusSel.value = note.status || '';
+    statusSel.disabled = Boolean(note.trashed);
+  }
+  const tagInput = document.getElementById('note-tag-input');
+  if (tagInput) tagInput.disabled = Boolean(note.trashed);
 
   // Created & Updated timestamps display
   const datesEl = document.getElementById('note-dates-display');
@@ -1312,16 +1365,31 @@ function renderActiveNoteEditor() {
   for (const tag of note.tags || []) {
     const chip = document.createElement('span');
     chip.className = 'tag-chip';
-    chip.innerHTML = `#${escapeHtml(tag)} <button type="button" title="태그 삭제">×</button>`;
-    chip.querySelector('button').addEventListener('click', () => {
-      note.tags = (note.tags || []).filter((t) => t !== tag);
-      touchNote(note);
-      renderAll();
-    });
+    chip.innerHTML = `#${escapeHtml(tag)} ${note.trashed ? '' : '<button type="button" title="태그 삭제">×</button>'}`;
+    if (!note.trashed) {
+      chip.querySelector('button')?.addEventListener('click', () => {
+        note.tags = (note.tags || []).filter((t) => t !== tag);
+        touchNote(note);
+        renderAll();
+      });
+    }
     tagsWrap.appendChild(chip);
   }
 
   renderBlocksList(note, blocks);
+
+  if (note.trashed) {
+    const blocksContainer = document.getElementById('blocks-container');
+    if (blocksContainer) {
+      blocksContainer.querySelectorAll('input, textarea').forEach((el) => {
+        el.readOnly = true;
+      });
+      blocksContainer.querySelectorAll('.block-gutter, .img-quick-toolbar, .block-plus-btn, .block-drag-btn, .text-btn').forEach((el) => {
+        el.style.display = 'none';
+      });
+    }
+  }
+
   hideMobileAccessoryBar();
   renderBacklinksPanel(note, blocks);
 }
@@ -2678,7 +2746,7 @@ function performRedo() {
  * Light-weight touchNote that does NOT rebuild the editor DOM during typing
  */
 function touchNote(note, updatedBlocks = null) {
-  if (!note) return;
+  if (!note || note.trashed) return;
   pushUndoSnapshot(false);
   note.updatedAt = new Date().toISOString();
   if (note.isEncrypted && updatedBlocks && unlockedVaultPassword) {
@@ -5257,12 +5325,17 @@ function initNavigationHistory() {
   window.history.pushState(currentSnap, '');
 }
 
-function syncNavigationHistory(fromPopState = false) {
+function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
   if (!isHistoryInitialized) return;
   const snap = getNavStateSnapshot();
   const key = getNavStateKey(snap);
   if (fromPopState) {
     lastHistoryKey = key;
+    return;
+  }
+  if (replaceHistory) {
+    lastHistoryKey = key;
+    window.history.replaceState(snap, '');
     return;
   }
   if (key !== lastHistoryKey) {
@@ -5271,7 +5344,7 @@ function syncNavigationHistory(fromPopState = false) {
   }
 }
 
-function renderAll(fromPopState = false) {
+function renderAll(fromPopState = false, replaceHistory = false) {
   const currentTheme = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
   document.documentElement.setAttribute('data-theme', currentTheme);
   state.settings.theme = currentTheme;
@@ -5279,7 +5352,7 @@ function renderAll(fromPopState = false) {
   const isMobile = window.innerWidth <= 820;
   document.getElementById('sidebar')?.classList.toggle('collapsed', Boolean(state.settings.sidebarCollapsed));
   document.getElementById('sidebar-backdrop')?.classList.toggle('hidden', Boolean(state.settings.sidebarCollapsed) || !isMobile);
-  syncNavigationHistory(fromPopState);
+  syncNavigationHistory(fromPopState, replaceHistory);
   renderSidebar();
   renderWorkspaceView();
 }
@@ -5514,10 +5587,32 @@ function bindEvents() {
     if (st && st.vn) {
       activeNav = st.activeNav || 'all';
       activeViewMode = st.activeViewMode || 'list';
-      if (st.activeNoteId && state.notes.some((n) => n.id === st.activeNoteId)) {
-        activeNoteId = st.activeNoteId;
+
+      const targetNote = st.activeNoteId ? state.notes.find((n) => n.id === st.activeNoteId) : null;
+      const isTargetValid = targetNote && (!targetNote.trashed || activeNav === 'trash');
+
+      if (isTargetValid) {
+        activeNoteId = targetNote.id;
+      } else {
+        // 뒤로가기한 대상 노드가 삭제되었거나 유효하지 않은 경우 화면 노출 차단
+        if (activeViewMode === 'editor') {
+          activeViewMode = 'list';
+        }
+        const remaining = getFilteredNotes();
+        activeNoteId = remaining[0]?.id || null;
+
+        // 히스토리의 현재 위치를 유효한 목록 상태로 치환하여 삭제된 노트 기록 덮어씀
+        const cleanSnap = getNavStateSnapshot();
+        lastHistoryKey = getNavStateKey(cleanSnap);
+        window.history.replaceState(cleanSnap, '');
       }
-      secondaryNoteId = st.secondaryNoteId || null;
+
+      if (st.secondaryNoteId) {
+        const secNote = state.notes.find((n) => n.id === st.secondaryNoteId);
+        secondaryNoteId = secNote && (!secNote.trashed || activeNav === 'trash') ? secNote.id : null;
+      } else {
+        secondaryNoteId = null;
+      }
 
       // If the user backed all the way to the root guard entry, re-push a guard so another Back press won't exit the app
       if (st.vnRootGuard) {
@@ -5833,8 +5928,9 @@ function bindEvents() {
     if (!confirm('휴지통의 모든 노트를 영구 삭제하시겠습니까?')) return;
     state.notes = state.notes.filter((n) => !n.trashed);
     activeNoteId = state.notes[0]?.id || null;
+    activeViewMode = 'list';
     scheduleSave();
-    renderAll();
+    renderAll(false, true);
     showToast('휴지통을 비웠습니다.');
   });
 
@@ -6306,7 +6402,7 @@ function bindEvents() {
     activeNoteId = remaining[0]?.id || null;
     activeViewMode = 'list';
     scheduleSave();
-    renderAll();
+    renderAll(false, true);
   });
 
   // Slash Menu Items (Block Type & Block Action)
