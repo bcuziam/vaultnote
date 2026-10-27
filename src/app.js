@@ -6169,16 +6169,6 @@ function bindEvents() {
     // 인위적인 가드를 걸지 않고 스마트폰 OS의 표준 흐름(홈 화면 퇴장/백그라운드 전환)에 맡김
   });
 
-  // Topbar Back / Forward Buttons
-  document.getElementById('btn-nav-back')?.addEventListener('click', () => {
-    if (activeViewMode === 'editor' || activeViewMode === 'split') {
-      activeViewMode = 'list';
-      renderAll(false, true);
-    }
-  });
-  document.getElementById('btn-nav-forward')?.addEventListener('click', () => {
-    window.history.forward();
-  });
 
   // Undo / Redo Buttons
   document.getElementById('btn-editor-undo')?.addEventListener('click', (e) => {

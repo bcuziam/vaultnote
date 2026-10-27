@@ -2815,11 +2815,6 @@ mark.search-highlight {
     padding: 3px 4px;
     min-width: 22px;
   }
-  #btn-nav-back, #btn-nav-forward {
-    flex-shrink: 0;
-    padding: 3px 4px;
-    min-width: 20px;
-  }
   .topbar-left .meta-sep {
     display: none !important;
   }
