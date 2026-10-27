@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v69';
+const CACHE_NAME = 'vaultnote-v70';
 const ASSETS = [
   './',
   './index.html',

@@ -5753,12 +5753,17 @@ function renderWorkspaceView() {
   }
 }
 
-let lastHistoryKey = '';
+// ============================================================================
+// Navigation History & Smartphone 2-Tier Gesture Controller
+// Tier 0: Root Note List (depth: 0)
+// Tier 1: Detail Views (Editor / Split / Table / Kanban / Vault / Graph / Clipper) (depth: 1)
+// ============================================================================
 let isHistoryInitialized = false;
 
-function getNavStateSnapshot() {
+function getNavStateSnapshot(depth = 0) {
   return {
     vn: true,
+    depth,
     activeNav,
     activeViewMode,
     activeNoteId,
@@ -5766,59 +5771,69 @@ function getNavStateSnapshot() {
   };
 }
 
-function getNavStateKey(snap) {
-  return `${snap.activeNav}|${snap.activeViewMode}|${snap.activeNoteId || ''}|${snap.secondaryNoteId || ''}`;
-}
-
 function initNavigationHistory() {
   if (isHistoryInitialized) return;
   isHistoryInitialized = true;
 
-  // 1단계 기본 상태: 목록 화면(루트)
-  const baseListState = {
-    vn: true,
-    view: 'list',
-    activeNav: 'all',
-    activeViewMode: 'list',
-    activeNoteId: null,
-    secondaryNoteId: null
-  };
-  window.history.replaceState(baseListState, '');
+  const isList = activeViewMode === 'list';
 
-  // 만약 첫 화면이 에디터라면 2단계 에디터 상태를 1개 push
-  if (activeViewMode === 'editor' && activeNoteId) {
-    const editorSnap = getNavStateSnapshot();
-    lastHistoryKey = getNavStateKey(editorSnap);
-    window.history.pushState(editorSnap, '');
+  // 1. Tier 0 바닥 상태: 목록 화면을 히스토리 루트로 고정
+  window.history.replaceState(
+    { vn: true, depth: 0, view: 'list', activeNav: 'all' },
+    ''
+  );
+
+  // 2. 만약 첫 화면이 본문(에디터)이라면 Tier 1 상태를 1개 push
+  if (!isList) {
+    window.history.pushState(getNavStateSnapshot(1), '');
   }
+
+  // 3. 모바일 브라우저의 사용자 상호작용(User Activation) 보안 정책 완벽 보장:
+  // 앱 최초 구동 후 사용자가 화면을 처음 터치/클릭하는 순간,
+  // 브라우저가 Tier 1 스택을 정식 제스처 엔트리로 확정하도록 보장
+  const ensureUserGestureActivation = () => {
+    if (activeViewMode !== 'list' && window.history.state?.depth !== 1) {
+      window.history.pushState(getNavStateSnapshot(1), '');
+    }
+  };
+  window.addEventListener('touchstart', ensureUserGestureActivation, { once: true, passive: true });
+  window.addEventListener('pointerdown', ensureUserGestureActivation, { once: true, passive: true });
 }
 
 function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
   if (!isHistoryInitialized) return;
-  const snap = getNavStateSnapshot();
-  const key = getNavStateKey(snap);
+  const currentDepth = Number(window.history.state?.depth ?? 0);
+  const isList = activeViewMode === 'list';
 
   if (fromPopState) {
-    lastHistoryKey = key;
+    // popstate로 이동해왔을 때:
+    // 이미 브라우저가 스택을 이동시켰으므로 상태만 정리
+    if (isList && currentDepth !== 0) {
+      window.history.replaceState(getNavStateSnapshot(0), '');
+    }
     return;
   }
 
-  // 목록 화면일 때는 항상 현재 히스토리 슬롯을 최신 목록 상태로 치환
-  if (snap.activeViewMode === 'list') {
-    lastHistoryKey = key;
-    window.history.replaceState(snap, '');
-    return;
-  }
-
-  // 에디터 화면일 때:
-  // 이미 이전 상태가 에디터였으면 replaceState로 교체(노트를 이것저것 봐도 히스토리가 10개 쌓이지 않음)
-  // 목록에서 에디터로 처음 들어왔을 때만 pushState로 1단계 확장
-  if (replaceHistory || lastHistoryKey.includes('|editor|')) {
-    lastHistoryKey = key;
-    window.history.replaceState(snap, '');
+  if (isList) {
+    // [목록 화면으로 전환할 때]
+    if (currentDepth === 1) {
+      // 1층(상세)에 있던 상태에서 화면 버튼/메뉴를 눌러 목록으로 나가는 경우:
+      // 브라우저 히스토리를 1단계 뒤로(history.back) 감아주어 스택 중복을 완벽히 방지!
+      // (목록에 진입했을 때 스택이 무조건 0층에 위치하게 됨)
+      window.history.back();
+    } else {
+      // 이미 0층 목록에 있던 상태라면 목록 필터 상태만 최신으로 치환
+      window.history.replaceState(getNavStateSnapshot(0), '');
+    }
   } else {
-    lastHistoryKey = key;
-    window.history.pushState(snap, '');
+    // [상세 화면(에디터/특수화면)으로 전환할 때]
+    if (currentDepth === 1 || replaceHistory) {
+      // 이미 1층에 있거나 명시적 교체 요청이면 히스토리를 늘리지 않고 1층에서 내용만 교체
+      window.history.replaceState(getNavStateSnapshot(1), '');
+    } else {
+      // 0층(목록)에서 1층으로 새로 올라갈 때만 pushState로 1단계 확장
+      window.history.pushState(getNavStateSnapshot(1), '');
+    }
   }
 }
 
@@ -6157,9 +6172,9 @@ function bindEvents() {
       return;
     }
 
-    // 2. 에디터(노트 본문)에서 뒤로가기를 눌렀을 때:
-    // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면]으로 직행!
-    if (activeViewMode === 'editor' || activeViewMode === 'split') {
+    // 2. 본문(에디터) 또는 특수 뷰(1층)에서 뒤로가기를 눌렀을 때:
+    // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면](0층)으로 직행!
+    if (activeViewMode !== 'list') {
       activeViewMode = 'list';
       renderAll(true, true);
       return;
