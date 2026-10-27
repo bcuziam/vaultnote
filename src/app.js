@@ -1226,12 +1226,108 @@ function openNoteInEditor(noteId) {
 // ============================================================================
 // Rendering Main Note List View (#workspace-list-view)
 // ============================================================================
+const MAIN_LIST_PAGE_SIZE = 40;
+let mainListViewRenderedCount = 0;
+let mainListObserver = null;
+let mainListScrollHandler = null;
+
+function createMainNoteItemElement(note, folderMap, query, isTrash) {
+  const item = document.createElement('div');
+  item.className = `main-note-item ${note.id === activeNoteId ? 'active' : ''}`;
+  item.dataset.noteId = note.id;
+  const folderName = folderMap.get(note.folderId) || '기본';
+  const tagsText = (note.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ');
+  const prefix = note.isEncrypted ? '[암호화] ' : note.favorite ? '★ ' : '';
+
+  const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
+  const highlightedSnippet = highlightSearchTerm(getNotePlainSnippet(note, query), query);
+
+  item.innerHTML = `
+    ${!isTrash ? `<span class="drag-handle" title="마우스로 잡고 위아래로 끌어 순서 변경 (또는 좌측 폴더로 이동)">⋮⋮</span>` : ''}
+    <div class="main-note-left">
+      <div class="main-note-title">${highlightedTitle}</div>
+      <div class="main-note-snippet">${highlightedSnippet}</div>
+    </div>
+    <div class="main-note-right">
+      ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
+      <span class="note-folder-badge">${escapeHtml(folderName)}</span>
+      <span class="note-date-badge">${formatDate(note.updatedAt)}</span>
+      ${
+        isTrash
+          ? `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
+             <button type="button" class="btn btn-danger btn-sm btn-row-del">영구 삭제</button>`
+          : `<button type="button" class="text-btn text-danger btn-row-trash" title="휴지통으로 이동">삭제</button>`
+      }
+    </div>
+  `;
+
+  if (!isTrash) {
+    attachNoteRowDragEvents(item, note.id);
+  }
+
+  item.querySelector('.btn-row-restore')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    lastLocalMutationTime = Date.now();
+    note.trashed = false;
+    note.updatedAt = new Date().toISOString();
+    scheduleSave(true, true);
+    renderAll();
+    showToast('노트가 복원되었습니다.');
+  });
+
+  item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    lastLocalMutationTime = Date.now();
+    state.notes = state.notes.filter((n) => n.id !== note.id);
+    if (activeNoteId === note.id) {
+      const remaining = getFilteredNotes();
+      activeNoteId = remaining[0]?.id || null;
+      activeViewMode = 'list';
+      scheduleSave(true, true);
+      renderAll(false, true);
+    } else {
+      scheduleSave(true, true);
+      renderAll();
+    }
+    showToast('영구 삭제되었습니다.');
+  });
+
+  item.querySelector('.btn-row-trash')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    lastLocalMutationTime = Date.now();
+    note.trashed = true;
+    note.updatedAt = new Date().toISOString();
+    lastTrashedNoteIds.push(note.id);
+    if (activeNoteId === note.id) {
+      const remaining = getFilteredNotes();
+      activeNoteId = remaining[0]?.id || null;
+      activeViewMode = 'list';
+      scheduleSave(true, true);
+      renderAll(false, true);
+    } else {
+      scheduleSave(true, true);
+      renderAll();
+    }
+    showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
+      undoLastNoteTrash();
+    });
+  });
+
+  item.addEventListener('click', (e) => {
+    if (e.target.closest('.drag-handle')) return;
+    openNoteInEditor(note.id);
+  });
+
+  return item;
+}
+
 function renderMainNoteListView() {
   const titleEl = document.getElementById('current-filter-title');
   const subtitleEl = document.getElementById('current-filter-subtitle');
   const emptyTrashBtn = document.getElementById('btn-empty-trash');
   const quickUrlBar = document.getElementById('list-quick-url-bar');
   const container = document.getElementById('note-items-container');
+  const scrollContainer = document.getElementById('workspace-list-view');
 
   hideMobileAccessoryBar();
   const navTitle = getCurrentNavTitle();
@@ -1250,6 +1346,15 @@ function renderMainNoteListView() {
       : '마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.';
   }
 
+  if (mainListObserver) {
+    mainListObserver.disconnect();
+    mainListObserver = null;
+  }
+  if (mainListScrollHandler && scrollContainer) {
+    scrollContainer.removeEventListener('scroll', mainListScrollHandler);
+    mainListScrollHandler = null;
+  }
+
   if (!container) return;
   container.innerHTML = '';
 
@@ -1266,96 +1371,85 @@ function renderMainNoteListView() {
 
   const folderMap = new Map(state.folders.map((f) => [f.id, f.name]));
   const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
+  mainListViewRenderedCount = 0;
 
-  for (const note of notes) {
-    const item = document.createElement('div');
-    item.className = `main-note-item ${note.id === activeNoteId ? 'active' : ''}`;
-    item.dataset.noteId = note.id;
-    const folderName = folderMap.get(note.folderId) || '기본';
-    const tagsText = (note.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ');
-    const prefix = note.isEncrypted ? '[암호화] ' : note.favorite ? '★ ' : '';
+  function loadNextBatch() {
+    const sentinel = document.getElementById('main-list-sentinel');
+    if (sentinel) sentinel.remove();
 
-    const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
-    const highlightedSnippet = highlightSearchTerm(getNotePlainSnippet(note, query), query);
+    const start = mainListViewRenderedCount;
+    const end = Math.min(notes.length, start + MAIN_LIST_PAGE_SIZE);
+    const fragment = document.createDocumentFragment();
 
-    item.innerHTML = `
-      ${!isTrash ? `<span class="drag-handle" title="마우스로 잡고 위아래로 끌어 순서 변경 (또는 좌측 폴더로 이동)">⋮⋮</span>` : ''}
-      <div class="main-note-left">
-        <div class="main-note-title">${highlightedTitle}</div>
-        <div class="main-note-snippet">${highlightedSnippet}</div>
-      </div>
-      <div class="main-note-right">
-        ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
-        <span class="note-folder-badge">${escapeHtml(folderName)}</span>
-        <span class="note-date-badge">${formatDate(note.updatedAt)}</span>
-        ${
-          isTrash
-            ? `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
-               <button type="button" class="btn btn-danger btn-sm btn-row-del">영구 삭제</button>`
-            : `<button type="button" class="text-btn text-danger btn-row-trash" title="휴지통으로 이동">삭제</button>`
-        }
-      </div>
-    `;
-
-    if (!isTrash) {
-      attachNoteRowDragEvents(item, note.id);
+    for (let i = start; i < end; i++) {
+      fragment.appendChild(createMainNoteItemElement(notes[i], folderMap, query, isTrash));
     }
+    container.appendChild(fragment);
+    mainListViewRenderedCount = end;
 
-    item.querySelector('.btn-row-restore')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      lastLocalMutationTime = Date.now();
-      note.trashed = false;
-      note.updatedAt = new Date().toISOString();
-      scheduleSave(true, true);
-      renderAll();
-      showToast('노트가 복원되었습니다.');
-    });
-
-    item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      lastLocalMutationTime = Date.now();
-      state.notes = state.notes.filter((n) => n.id !== note.id);
-      if (activeNoteId === note.id) {
-        const remaining = getFilteredNotes();
-        activeNoteId = remaining[0]?.id || null;
-        activeViewMode = 'list';
-        scheduleSave(true, true);
-        renderAll(false, true);
-      } else {
-        scheduleSave(true, true);
-        renderAll();
-      }
-      showToast('영구 삭제되었습니다.');
-    });
-
-    item.querySelector('.btn-row-trash')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      lastLocalMutationTime = Date.now();
-      note.trashed = true;
-      note.updatedAt = new Date().toISOString();
-      lastTrashedNoteIds.push(note.id);
-      if (activeNoteId === note.id) {
-        const remaining = getFilteredNotes();
-        activeNoteId = remaining[0]?.id || null;
-        activeViewMode = 'list';
-        scheduleSave(true, true);
-        renderAll(false, true);
-      } else {
-        scheduleSave(true, true);
-        renderAll();
-      }
-      showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
-        undoLastNoteTrash();
+    if (mainListViewRenderedCount < notes.length) {
+      const nextSentinel = document.createElement('div');
+      nextSentinel.id = 'main-list-sentinel';
+      nextSentinel.className = 'main-list-sentinel';
+      nextSentinel.innerHTML = `
+        <div class="main-list-more-wrap">
+          <span class="text-muted" style="font-size:12px;">스크롤을 내리면 추가로 표시됩니다 (${mainListViewRenderedCount} / ${notes.length})</span>
+          <button type="button" class="btn btn-secondary btn-xs btn-load-more-manual" style="margin-left:8px;padding:3px 8px;font-size:11px;">더 불러오기</button>
+        </div>
+      `;
+      nextSentinel.querySelector('.btn-load-more-manual')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadNextBatch();
       });
-    });
+      container.appendChild(nextSentinel);
 
-    item.addEventListener('click', (e) => {
-      if (e.target.closest('.drag-handle')) return;
-      openNoteInEditor(note.id);
-    });
+      if ('IntersectionObserver' in window && scrollContainer) {
+        if (!mainListObserver) {
+          mainListObserver = new IntersectionObserver(
+            (entries) => {
+              if (entries[0] && entries[0].isIntersecting) {
+                loadNextBatch();
+              }
+            },
+            {
+              root: scrollContainer,
+              rootMargin: '250px',
+              threshold: 0.01,
+            }
+          );
+        }
+        mainListObserver.observe(nextSentinel);
+      }
 
-    container.appendChild(item);
+      if (!mainListScrollHandler && scrollContainer) {
+        mainListScrollHandler = () => {
+          if (mainListViewRenderedCount >= notes.length) return;
+          if (scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 350) {
+            loadNextBatch();
+          }
+        };
+        scrollContainer.addEventListener('scroll', mainListScrollHandler, { passive: true });
+      }
+    } else {
+      if (mainListObserver) {
+        mainListObserver.disconnect();
+        mainListObserver = null;
+      }
+      if (mainListScrollHandler && scrollContainer) {
+        scrollContainer.removeEventListener('scroll', mainListScrollHandler);
+        mainListScrollHandler = null;
+      }
+      if (notes.length > MAIN_LIST_PAGE_SIZE) {
+        const endNotice = document.createElement('div');
+        endNotice.className = 'main-list-end-notice';
+        endNotice.style.cssText = 'padding:14px;text-align:center;font-size:12px;color:var(--text-muted);border-top:1px dashed var(--border);';
+        endNotice.textContent = `모든 노트 (${notes.length}개)를 다 불러왔습니다.`;
+        container.appendChild(endNotice);
+      }
+    }
   }
+
+  loadNextBatch();
 }
 
 // ============================================================================

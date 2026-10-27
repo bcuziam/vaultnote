@@ -772,6 +772,31 @@ select:focus {
   background: var(--bg-card);
 }
 
+.main-list-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 16px;
+  background: var(--bg-hover);
+  border-top: 1px solid var(--border);
+}
+
+.main-list-more-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.main-list-end-notice {
+  padding: 14px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px dashed var(--border);
+  background: var(--bg-card);
+}
+
 .main-note-item {
   display: flex;
   align-items: center;
