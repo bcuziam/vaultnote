@@ -212,9 +212,11 @@ function undoLastNoteTrash() {
   const noteId = lastTrashedNoteIds.pop();
   const note = state.notes.find((n) => n.id === noteId);
   if (!note || !note.trashed) return false;
+  lastLocalMutationTime = Date.now();
   note.trashed = false;
+  note.updatedAt = new Date().toISOString();
   activeNoteId = note.id;
-  scheduleSave();
+  scheduleSave(true, true);
   renderAll();
   showToast(`'${note.title || '제목 없음'}' 노트가 복원되었습니다.`);
   return true;
@@ -398,6 +400,7 @@ function getCurrentNavTitle() {
 let saveDebounceTimer = null;
 let lastSyncedMtimeMs = 0;
 let isSyncingLive = false;
+let lastLocalMutationTime = 0;
 
 async function pushLiveSyncState() {
   if (isSyncingLive) return;
@@ -435,8 +438,13 @@ function hasNewerRemoteNotes(remoteNotes, localNotes) {
   }
   for (const lNote of localNotes) {
     const rNote = remoteNotes.find((n) => n.id === lNote.id);
-    if (!rNote) return true; // 원격에서 삭제/정리된 노트
-    if (Boolean(rNote.trashed) !== Boolean(lNote.trashed)) return true;
+    if (!rNote) return true; // 원격에서 완전히 삭제/정리된 노트
+    // trashed 상태가 다를 때는 원격이 더 최신일 때만 업데이트로 판정
+    if (Boolean(rNote.trashed) !== Boolean(lNote.trashed)) {
+      const rTime = new Date(rNote.updatedAt || 0).getTime();
+      const lTime = new Date(lNote.updatedAt || 0).getTime();
+      if (rTime > lTime) return true;
+    }
   }
   return false;
 }
@@ -456,20 +464,28 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
   };
 
-  // Smart note-level merge: 개별 노트 단위로 더 최신 updatedAt을 가진 버전을 보존
-  const localMap = new Map((state.notes || []).map((n) => [n.id, n]));
-  const mergedNotes = (remoteState.notes || []).map((rNote) => {
-    const lNote = localMap.get(rNote.id);
-    if (!lNote) return rNote;
-    const rTime = new Date(rNote.updatedAt || 0).getTime();
-    const lTime = new Date(lNote.updatedAt || 0).getTime();
-    return rTime >= lTime ? rNote : lNote;
-  });
+  // Smart note-level merge: 로컬의 정렬 순서와 최신 로컬 수정을 최우선 보존
+  const remoteMap = new Map((remoteState.notes || []).map((n) => [n.id, n]));
+  const mergedNotes = [];
+  const processedIds = new Set();
 
-  const remoteIdSet = new Set((remoteState.notes || []).map((n) => n.id));
   for (const lNote of (state.notes || [])) {
-    if (!remoteIdSet.has(lNote.id)) {
+    const rNote = remoteMap.get(lNote.id);
+    if (rNote) {
+      const rTime = new Date(rNote.updatedAt || 0).getTime();
+      const lTime = new Date(lNote.updatedAt || 0).getTime();
+      // 원격이 확실하게 더 최신일 때만 원격 데이터를 취하고, 같거나 로컬이 최신이면 로컬 유지
+      mergedNotes.push(rTime > lTime ? rNote : lNote);
+    } else {
       mergedNotes.push(lNote);
+    }
+    processedIds.add(lNote.id);
+  }
+
+  for (const rNote of (remoteState.notes || [])) {
+    if (!processedIds.has(rNote.id)) {
+      mergedNotes.push(rNote);
+      processedIds.add(rNote.id);
     }
   }
 
@@ -508,6 +524,10 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
 
 async function pullLiveSyncStateIfNewer(isInitial = false) {
   if (isSyncingLive) return false;
+  // 로컬에서 삭제/수정이 발생한 직후 2.5초간은 아직 업로드 완료되지 않은 과거 클라우드 데이터 수신 차단
+  if (!isInitial && Date.now() - lastLocalMutationTime < 2500) {
+    return false;
+  }
   isSyncingLive = true;
   try {
     // 1. OneDrive or Google Drive Cloud API Auto-Pull (works on GitHub Pages, Smartphone Web App, and External PCs without any PC software installed)
@@ -592,12 +612,12 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
   return false;
 }
 
-function scheduleSave(triggerCloud = true) {
+function scheduleSave(triggerCloud = true, immediate = false) {
   const indicator = document.getElementById('save-indicator');
   if (indicator && triggerCloud) indicator.textContent = '저장 중...';
 
   clearTimeout(saveDebounceTimer);
-  saveDebounceTimer = setTimeout(async () => {
+  const executeSave = async () => {
     if (triggerCloud) {
       state.lastSavedAt = new Date().toISOString();
     }
@@ -642,7 +662,13 @@ function scheduleSave(triggerCloud = true) {
           .catch(() => {});
       }
     }
-  }, 300);
+  };
+
+  if (immediate) {
+    executeSave();
+  } else {
+    saveDebounceTimer = setTimeout(executeSave, 1000); // 1000ms(1초) 타이핑 안정 디바운스
+  }
 }
 
 // ============================================================================
@@ -1186,23 +1212,26 @@ function renderMainNoteListView() {
 
     item.querySelector('.btn-row-restore')?.addEventListener('click', (e) => {
       e.stopPropagation();
+      lastLocalMutationTime = Date.now();
       note.trashed = false;
-      scheduleSave();
+      note.updatedAt = new Date().toISOString();
+      scheduleSave(true, true);
       renderAll();
       showToast('노트가 복원되었습니다.');
     });
 
     item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
       e.stopPropagation();
+      lastLocalMutationTime = Date.now();
       state.notes = state.notes.filter((n) => n.id !== note.id);
       if (activeNoteId === note.id) {
         const remaining = getFilteredNotes();
         activeNoteId = remaining[0]?.id || null;
         activeViewMode = 'list';
-        scheduleSave();
+        scheduleSave(true, true);
         renderAll(false, true);
       } else {
-        scheduleSave();
+        scheduleSave(true, true);
         renderAll();
       }
       showToast('영구 삭제되었습니다.');
@@ -1210,16 +1239,18 @@ function renderMainNoteListView() {
 
     item.querySelector('.btn-row-trash')?.addEventListener('click', (e) => {
       e.stopPropagation();
+      lastLocalMutationTime = Date.now();
       note.trashed = true;
+      note.updatedAt = new Date().toISOString();
       lastTrashedNoteIds.push(note.id);
       if (activeNoteId === note.id) {
         const remaining = getFilteredNotes();
         activeNoteId = remaining[0]?.id || null;
         activeViewMode = 'list';
-        scheduleSave();
+        scheduleSave(true, true);
         renderAll(false, true);
       } else {
-        scheduleSave();
+        scheduleSave(true, true);
         renderAll();
       }
       showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
@@ -5936,10 +5967,11 @@ function bindEvents() {
 
   document.getElementById('btn-empty-trash').addEventListener('click', () => {
     if (!confirm('휴지통의 모든 노트를 영구 삭제하시겠습니까?')) return;
+    lastLocalMutationTime = Date.now();
     state.notes = state.notes.filter((n) => !n.trashed);
     activeNoteId = state.notes[0]?.id || null;
     activeViewMode = 'list';
-    scheduleSave();
+    scheduleSave(true, true);
     renderAll(false, true);
     showToast('휴지통을 비웠습니다.');
   });
@@ -6389,8 +6421,10 @@ function bindEvents() {
   document.getElementById('btn-restore-note').addEventListener('click', () => {
     const note = getActiveNote();
     if (!note) return;
+    lastLocalMutationTime = Date.now();
     note.trashed = false;
-    scheduleSave();
+    note.updatedAt = new Date().toISOString();
+    scheduleSave(true, true);
     renderAll();
     showToast('노트가 복원되었습니다.');
   });
@@ -6399,11 +6433,13 @@ function bindEvents() {
     const note = getActiveNote();
     if (!note) return;
     const deletedId = note.id;
+    lastLocalMutationTime = Date.now();
     if (note.trashed) {
       state.notes = state.notes.filter((n) => n.id !== note.id);
       showToast('영구 삭제되었습니다.');
     } else {
       note.trashed = true;
+      note.updatedAt = new Date().toISOString();
       lastTrashedNoteIds.push(note.id);
       showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
         undoLastNoteTrash();
@@ -6414,7 +6450,7 @@ function bindEvents() {
     const remaining = getFilteredNotes();
     activeNoteId = remaining[0]?.id || null;
     activeViewMode = 'list';
-    scheduleSave();
+    scheduleSave(true, true);
     renderAll(false, true);
   });
 
