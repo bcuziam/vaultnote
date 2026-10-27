@@ -137,6 +137,7 @@ function createInitialState() {
     ],
     vaultItems: [],
     scratchpad: '',
+    orderUpdatedAt: now,
     settings: {
       theme: 'dark',
       fullWidth: false,
@@ -425,9 +426,21 @@ async function pushLiveSyncState() {
   }
 }
 
-function hasNewerRemoteNotes(remoteNotes, localNotes) {
+function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = null, localOrderUpdatedAt = null) {
   if (!Array.isArray(remoteNotes)) return false;
   if (!Array.isArray(localNotes)) return true;
+
+  // 1. 순서 변경 감지: 원격의 orderUpdatedAt이 로컬보다 최신이고 실제 노트 순서가 다르면 즉시 동기화 대상으로 판정
+  if (remoteOrderUpdatedAt && localOrderUpdatedAt) {
+    const rOTime = new Date(remoteOrderUpdatedAt).getTime();
+    const lOTime = new Date(localOrderUpdatedAt).getTime();
+    if (rOTime > lOTime + 300) {
+      const rIds = remoteNotes.map((n) => n.id).join(',');
+      const lIds = localNotes.map((n) => n.id).join(',');
+      if (rIds !== lIds) return true;
+    }
+  }
+
   const localMap = new Map(localNotes.map((n) => [n.id, n]));
   for (const rNote of remoteNotes) {
     const lNote = localMap.get(rNote.id);
@@ -478,28 +491,35 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
   };
 
-  // Smart note-level merge: 로컬의 정렬 순서와 최신 로컬 수정을 최우선 보존
-  const remoteMap = new Map((remoteState.notes || []).map((n) => [n.id, n]));
+  // Smart note-level merge: 기기 간 순서 타임스탬프를 비교하여 최신 순서를 우선하되, 개별 노트 내용은 최신 수정본 보존
+  const rOrderTime = new Date(remoteState.orderUpdatedAt || 0).getTime();
+  const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
+  const preferRemoteOrder = rOrderTime > lOrderTime;
+
+  const primaryNotes = preferRemoteOrder ? (remoteState.notes || []) : (state.notes || []);
+  const secondaryNotes = preferRemoteOrder ? (state.notes || []) : (remoteState.notes || []);
+  const secondaryMap = new Map(secondaryNotes.map((n) => [n.id, n]));
+
   const mergedNotes = [];
   const processedIds = new Set();
 
-  for (const lNote of (state.notes || [])) {
-    const rNote = remoteMap.get(lNote.id);
-    if (rNote) {
-      const rTime = new Date(rNote.updatedAt || 0).getTime();
-      const lTime = new Date(lNote.updatedAt || 0).getTime();
-      // 원격이 확실하게 더 최신일 때만 원격 데이터를 취하고, 같거나 로컬이 최신이면 로컬 유지
-      mergedNotes.push(rTime > lTime ? rNote : lNote);
+  for (const pNote of primaryNotes) {
+    const sNote = secondaryMap.get(pNote.id);
+    if (sNote) {
+      const pTime = new Date(pNote.updatedAt || 0).getTime();
+      const sTime = new Date(sNote.updatedAt || 0).getTime();
+      // 내용/제목은 둘 중 더 최신에 수정된 노트를 온전히 채택
+      mergedNotes.push(sTime > pTime ? sNote : pNote);
     } else {
-      mergedNotes.push(lNote);
+      mergedNotes.push(pNote);
     }
-    processedIds.add(lNote.id);
+    processedIds.add(pNote.id);
   }
 
-  for (const rNote of (remoteState.notes || [])) {
-    if (!processedIds.has(rNote.id)) {
-      mergedNotes.push(rNote);
-      processedIds.add(rNote.id);
+  for (const sNote of secondaryNotes) {
+    if (!processedIds.has(sNote.id)) {
+      mergedNotes.unshift(sNote);
+      processedIds.add(sNote.id);
     }
   }
 
@@ -515,6 +535,7 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     new Date(remoteState.lastSavedAt || 0).getTime(),
     new Date(state.lastSavedAt || 0).getTime()
   );
+  const latestOrderTime = Math.max(rOrderTime, lOrderTime);
 
   state = {
     ...createInitialState(),
@@ -522,7 +543,8 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     notes: mergedNotes,
     folders: mergedFolders.length > 0 ? mergedFolders : state.folders,
     settings: mergedSettings,
-    lastSavedAt: new Date(latestMtime).toISOString()
+    lastSavedAt: new Date(latestMtime).toISOString(),
+    orderUpdatedAt: new Date(latestOrderTime || latestMtime).toISOString()
   };
   if (prevActiveId && state.notes.some((n) => n.id === prevActiveId && !n.trashed)) {
     activeNoteId = prevActiveId;
@@ -554,8 +576,10 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         } else if (remoteGD && Array.isArray(remoteGD.notes)) {
           const remoteTime = new Date(remoteGD.lastSavedAt || 0).getTime();
           const localTime = new Date(state.lastSavedAt || 0).getTime();
-          const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes);
-          if (isInitial || remoteTime > localTime + 300 || hasUpdates) {
+          const rOrderTime = new Date(remoteGD.orderUpdatedAt || 0).getTime();
+          const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
+          const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes, remoteGD.orderUpdatedAt, state.orderUpdatedAt);
+          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
             await applyRemoteSyncedState(remoteGD, 'Google Drive 자동 동기화됨');
             return true;
           }
@@ -572,8 +596,10 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         } else if (remoteOD && Array.isArray(remoteOD.notes)) {
           const remoteTime = new Date(remoteOD.lastSavedAt || 0).getTime();
           const localTime = new Date(state.lastSavedAt || 0).getTime();
-          const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes);
-          if (isInitial || remoteTime > localTime + 300 || hasUpdates) {
+          const rOrderTime = new Date(remoteOD.orderUpdatedAt || 0).getTime();
+          const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
+          const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes, remoteOD.orderUpdatedAt, state.orderUpdatedAt);
+          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
             await applyRemoteSyncedState(remoteOD, 'OneDrive 자동 동기화됨');
             return true;
           }
@@ -587,8 +613,10 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
       if (folderState && Array.isArray(folderState.notes)) {
         const remoteTime = new Date(folderState.lastSavedAt || 0).getTime();
         const localTime = new Date(state.lastSavedAt || 0).getTime();
-        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes);
-        if (remoteTime > localTime + 300 || hasUpdates) {
+        const rOrderTime = new Date(folderState.orderUpdatedAt || 0).getTime();
+        const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
+        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes, folderState.orderUpdatedAt, state.orderUpdatedAt);
+        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
           await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
           return true;
         }
@@ -797,7 +825,9 @@ function reorderNoteInState(sourceId, targetId, placeAfter = false) {
   if (sortSelect && sortSelect.value !== 'custom') {
     sortSelect.value = 'custom';
   }
-  scheduleSave();
+  lastLocalMutationTime = Date.now();
+  state.orderUpdatedAt = new Date().toISOString();
+  scheduleSave(true, true);
   renderAll();
 }
 
@@ -7642,6 +7672,8 @@ function createNewNote() {
   };
 
   state.notes.unshift(newNote);
+  lastLocalMutationTime = Date.now();
+  state.orderUpdatedAt = now;
   activeNoteId = newNote.id;
   if (['vault', 'graph', 'clipper', 'trash'].includes(activeNav)) activeNav = 'all';
   activeViewMode = 'editor';
