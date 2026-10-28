@@ -6113,15 +6113,9 @@ async function initApp() {
 
     const now = Date.now();
     const idleMs = now - lastUserActivityTime;
-    const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
-    // 동적 주기 결정
-    let intervalMs = 4000; // 기본 활성 작업: 4초
-    if (idleMs >= 5 * 60 * 1000) {
-      intervalMs = 60000; // 5분 이상 미사용 방치(자리 비움): 60초
-    } else if (!hasFocus) {
-      intervalMs = 20000; // 화면에 보이지만 다른 창 사용 중: 20초
-    }
+    // 동적 주기 결정: 사용 중일 땐 4초 실시간, 5분 이상 조작 없을 땐 60초 초절전
+    const intervalMs = idleMs >= 5 * 60 * 1000 ? 60000 : 4000;
 
     if (now - lastSyncPollTime >= intervalMs) {
       lastSyncPollTime = now;
