@@ -6072,23 +6072,62 @@ async function initApp() {
 
   await pullLiveSyncStateIfNewer(true);
 
+  // ============================================================================
+  // 하이브리드 스마트 절전 동기화 (Smart Adaptive Polling Engine)
+  // - 창 포커스 복귀 / 화면 켜짐 시: 즉시(0초) 1회 확인
+  // - 포커스 활성 작업 중 (최근 3분 내 사용): 4초 간격 초고속 실시간 확인
+  // - 포커스 없음 (다른 창 사용 중이지만 화면에 보임): 20초 간격 절전 확인
+  // - 장시간 자리 비움 (5분 이상 조작 없음): 60초 간격 초절전 확인
+  // - 창 최소화 / 화면 꺼짐 / 다른 탭: 완전 중단 (0회)
+  // ============================================================================
+  let lastUserActivityTime = Date.now();
+  const markUserActivity = () => {
+    lastUserActivityTime = Date.now();
+  };
+  window.addEventListener('pointerdown', markUserActivity, { passive: true });
+  window.addEventListener('keydown', markUserActivity, { passive: true });
+  window.addEventListener('scroll', markUserActivity, { passive: true });
+
   window.addEventListener('focus', () => {
+    markUserActivity();
     pullLiveSyncStateIfNewer(false);
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      markUserActivity();
       pullLiveSyncStateIfNewer(false);
     }
   });
+
+  let lastSyncPollTime = Date.now();
   setInterval(() => {
+    // 1. 화면이 숨겨져 있으면(최소화, 화면 꺼짐, 다른 탭) 완전 정지
+    if (document.visibilityState !== 'visible') return;
+
+    // 2. 사용자가 현재 직접 글을 타이핑 중이면 로컬 편집 방해 방지를 위해 폴링 건너뜀
     const activeEl = document.activeElement;
     const isTyping =
       activeEl &&
       (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
-    if (!isTyping && document.visibilityState === 'visible') {
+    if (isTyping) return;
+
+    const now = Date.now();
+    const idleMs = now - lastUserActivityTime;
+    const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+
+    // 동적 주기 결정
+    let intervalMs = 4000; // 기본 활성 작업: 4초
+    if (idleMs >= 5 * 60 * 1000) {
+      intervalMs = 60000; // 5분 이상 미사용 방치(자리 비움): 60초
+    } else if (!hasFocus) {
+      intervalMs = 20000; // 화면에 보이지만 다른 창 사용 중: 20초
+    }
+
+    if (now - lastSyncPollTime >= intervalMs) {
+      lastSyncPollTime = now;
       pullLiveSyncStateIfNewer(false);
     }
-  }, 4000);
+  }, 1000);
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     let isUpdatePromptShown = false;
