@@ -2784,6 +2784,8 @@ function renderBlocksList(note, blocks) {
           e.preventDefault();
           closeSlashMenu();
           recordPreActionSnapshot();
+
+          // 1. 빈 목록(todo, bullet, number)에서 엔터 시 들여쓰기 감소 또는 일반 문단(p)으로 변환
           if (['todo', 'bullet', 'number'].includes(block.type) && !block.text.trim()) {
             if ((block.indent || 0) > 0) {
               block.indent = (block.indent || 0) - 1;
@@ -2798,12 +2800,35 @@ function renderBlocksList(note, blocks) {
             focusBlock(block.id);
             return;
           }
+
+          const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : (block.text || '').length;
+          const currentText = block.text || '';
+
+          // 2. [노션 표준] 커서가 문장 맨 앞(0번째)에 있을 때:
+          // 현재 블록 위에 새 빈 줄을 삽입하고, 새 빈 줄에 포커스를 줌! (기존 글은 아래로 밀림)
+          if (selStart === 0 && currentText.length > 0) {
+            const newBlock = { id: uid('b'), type: 'p', text: '', checked: false, indent: block.indent || 0 };
+            blocks.splice(idx, 0, newBlock);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(newBlock.id);
+            return;
+          }
+
+          // 3. [노션 표준] 커서가 문장 중간 또는 끝에 있을 때:
+          // 커서 앞부분은 현재 블록에 남기고, 커서 뒷부분은 새 블록으로 분할하여 아랫줄로 이동
+          const headText = currentText.slice(0, selStart);
+          const tailText = currentText.slice(selStart);
+          block.text = headText;
+
+          // 헤딩(H1/H2/H3) 뒤에서 엔터를 치면 다음 줄은 일반 본문('p')으로 전환, 목록은 목록 타입 유지
           const nextType = ['todo', 'bullet', 'number'].includes(block.type) ? block.type : 'p';
-          const newBlock = { id: uid('b'), type: nextType, text: '', checked: false, indent: block.indent || 0 };
+          const newBlock = { id: uid('b'), type: nextType, text: tailText, checked: false, indent: block.indent || 0 };
           blocks.splice(idx + 1, 0, newBlock);
           touchNote(note, blocks);
           renderActiveNoteEditor();
           focusBlock(newBlock.id);
+          return;
         } else if (e.key === 'Backspace' && ta.value === '') {
           e.preventDefault();
           closeSlashMenu();
@@ -6819,7 +6844,18 @@ function bindEvents() {
       e.preventDefault();
       const note = getActiveNote();
       const blocks = getEditableBlocksForNote(note);
-      if (blocks && blocks[0]) focusBlock(blocks[0].id);
+      if (!note || !blocks) return;
+      if (blocks.length === 0 || (blocks[0] && blocks[0].text && blocks[0].text.trim().length > 0)) {
+        // 본문 첫 줄에 이미 내용이 있으면 본문 맨 위에 새 빈 줄을 삽입하고 그곳으로 포커스
+        const newBlock = { id: uid('b'), type: 'p', text: '', checked: false, indent: 0 };
+        blocks.unshift(newBlock);
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+        focusBlock(newBlock.id);
+      } else if (blocks[0]) {
+        // 본문 첫 줄이 이미 비어있다면 바로 그곳으로 포커스
+        focusBlock(blocks[0].id);
+      }
     }
   });
 
