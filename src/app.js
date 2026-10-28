@@ -5618,47 +5618,41 @@ function extractYouTubeVideoId(rawUrl = '') {
 async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '') {
   if (!apiKey) throw new Error('NO_API_KEY');
 
-  const promptText = `당신은 최고 수준의 영상 콘텐츠 분석 및 문서화 전문가입니다.
-제공된 유튜브 영상을 처음부터 끝까지 정밀하게 시청하고 분석하여, 영상을 직접 보지 않고 이 문서만 읽더라도 영상의 전체 맥락, 세부 주장, 구체적 데이터, 실천 방법, 타임라인까지 100% 완벽하게 파악할 수 있는 고품질 심층 리포트를 작성해주세요.
+  const promptText = `당신은 최고 수준의 영상 콘텐츠 분석 및 문서화 전문가(전문 테크 라이터 및 위키 에디터)입니다.
+제공된 유튜브 영상을 처음부터 끝까지 정밀하게 시청하고 분석하여, 영상을 직접 보지 않고 이 문서만 읽더라도 영상의 전체 맥락, 세부 주장, 구체적 데이터, 핵심 원리, 주요 타임라인까지 100% 완벽하게 파악할 수 있는 LiveWiki 스타일의 고품질 심층 리포트를 작성해주세요.
 
-[작성 지침]
-1. 단순 3~4줄 요약으로 끝내지 말고, 내용이 매우 풍부하고 구체적이어야 합니다.
-2. 발표자/크리에이터가 언급한 구체적인 사례, 수치, 방법론, 기술적/논리적 근거를 생생하고 충실하게 서술해주세요.
-3. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성해주세요.
-4. 반드시 아래 지정된 JSON 포맷으로만 응답해야 합니다.
+[작성 지침 - 필수 준수]
+1. 정형화된 꼬리표 금지: '제1주제', '발단 및 배경', '원인 분석' 같은 인위적이고 딱딱한 카테고리 틀을 절대 붙이지 마세요.
+2. 내용 주도형 자연스러운 흐름: 영상에 챕터 구분이 없더라도 화자가 실제로 이야기하는 논리의 흐름(Storyline)을 있는 그대로 따라가며, 영상 분량에 맞추어 2개에서 6개 내외의 자연스러운 대주제(sections)로 구성하세요.
+3. 구체적인 문장형 소제목: 각 섹션의 소제목(heading)은 해당 구간에서 다룬 핵심 알맹이가 한눈에 보이는 생생한 문장형/구문형 제목으로 작성하세요. (예: "1. 머스크의 메모리 갈증: 델의 경고와 반도체 시장의 딜레마", "2. HBM 공정이 초래한 병목 현상 및 LPDDR 상용 추진", "3. 메모리 용량 충족에도 성능을 유지하는 기술의 비밀")
+4. 풍부한 디테일과 시간대: 단순 1~2줄 요약으로 끝내지 말고, 발표자가 언급한 구체적인 사례, 수치(%, 금액, 시간), 기업/인물명, 비유, 기술적 인과관계를 충실하게 서술하고, 주요 설명 뒤에 해당 내용이 나오는 영상 시간대(예: [02:35])를 자연스럽게 표기하세요.
+5. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성하세요.
+6. 반드시 아래 지정된 JSON 규격으로만 응답해야 합니다.
 
 {
   "title": "영상 원제 또는 내용을 직관적으로 대변하는 세련된 한글 제목",
-  "oneLine": "영상 전체를 관통하는 핵심 메시지 및 최종 결론 (선명하고 완성된 2~3문장)",
-  "overview": "이 영상이 다루는 핵심 화두 및 발표 배경, 문제의식 상세 해설 (충실한 1~2개 문단)",
+  "keyConclusions": [
+    "영상 전체를 관통하는 핵심 요약/결론 1 (선명한 완결된 문장)",
+    "영상 전체를 관통하는 핵심 요약/결론 2 (선명한 완결된 문장)",
+    "영상 전체를 관통하는 핵심 요약/결론 3 (필요시 추가 결론)"
+  ],
   "sections": [
     {
-      "heading": "제1주제: 명확하고 구체적인 소제목",
-      "bullets": [
-        "상세 설명 1 (구체적 설명, 근거, 발표자의 핵심 주장 등을 완결된 문장으로 서술)",
-        "상세 설명 2 (사례, 비교, 실천 방법 등 구체적 팁)"
+      "heading": "1. 화자의 실제 논점을 드러내는 구체적 문장형 소제목",
+      "paragraphs": [
+        "구체적인 설명, 근거 데이터, 인과관계가 충실히 담긴 상세 설명 문단 [01:25]",
+        "사례, 기술적 원리, 비교 분석 등이 서술된 상세 설명 문단 [03:40]"
       ]
     },
     {
-      "heading": "제2주제: ...",
-      "bullets": [
-        "상세 설명 1",
-        "상세 설명 2"
-      ]
-    },
-    {
-      "heading": "제3주제: ...",
-      "bullets": [
-        "상세 설명 1",
-        "상세 설명 2"
+      "heading": "2. 다음 논점에 대한 구체적 문장형 소제목",
+      "paragraphs": [
+        "상세 설명 문단 [06:15]",
+        "상세 설명 문단 [08:50]"
       ]
     }
   ],
-  "timeline": [
-    { "time": "01:25", "summary": "구간별 핵심 내용 및 논의 주제" },
-    { "time": "05:40", "summary": "구간별 핵심 내용 및 논의 주제" }
-  ],
-  "takeaway": "시청자가 즉시 일상/업무에 적용할 수 있는 핵심 액션 플랜 및 시사점",
+  "insights": "이 영상이 시청자나 관련 산업/실무에 주는 핵심 시사점 및 최종 결론 한 문단",
   "tags": ["유튜브", "영상요약", "주제키워드1", "주제키워드2", "주제키워드3"]
 }`;
 
@@ -5754,53 +5748,42 @@ function convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, videoId, fallbackT
     text: `출처: ${sourceUrl || `https://www.youtube.com/watch?v=${videoId}`}`
   });
 
-  // 3. One-line Core Conclusion
-  if (aiResult?.oneLine) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '📌 핵심 요약 & 최종 결론' });
-    blocks.push({ id: uid('b'), type: 'callout', text: aiResult.oneLine });
+  // 3. LiveWiki Style: 상단 핵심 요약 (Numbered Key Conclusions)
+  const conclusions = Array.isArray(aiResult?.keyConclusions)
+    ? aiResult.keyConclusions
+    : (aiResult?.oneLine ? [aiResult.oneLine] : []);
+
+  if (conclusions.length > 0) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '📌 핵심 요약' });
+    for (const c of conclusions) {
+      if (c && String(c).trim()) {
+        blocks.push({ id: uid('b'), type: 'number', text: String(c).trim() });
+      }
+    }
   }
 
-  // 4. Overview & Background
-  if (aiResult?.overview) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '📖 개요 및 발표 배경' });
-    blocks.push({ id: uid('b'), type: 'p', text: aiResult.overview });
-  }
-
-  // 5. In-depth Key Sections
+  // 4. LiveWiki Style: 본문 심층 분석 (Sections with informative headings and rich paragraphs + timestamps)
   if (Array.isArray(aiResult?.sections) && aiResult.sections.length > 0) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '💡 주제별 상세 심층 해설' });
     for (const sec of aiResult.sections) {
       if (sec.heading) {
-        blocks.push({ id: uid('b'), type: 'h3', text: sec.heading });
+        blocks.push({ id: uid('b'), type: 'h2', text: String(sec.heading).trim() });
       }
-      if (Array.isArray(sec.bullets)) {
-        for (const item of sec.bullets) {
-          if (item && String(item).trim()) {
-            blocks.push({ id: uid('b'), type: 'bullet', text: String(item).trim() });
-          }
+      const paras = Array.isArray(sec.paragraphs)
+        ? sec.paragraphs
+        : (Array.isArray(sec.bullets) ? sec.bullets : (sec.content ? [sec.content] : []));
+      for (const p of paras) {
+        if (p && String(p).trim()) {
+          blocks.push({ id: uid('b'), type: 'p', text: String(p).trim() });
         }
-      } else if (sec.content) {
-        blocks.push({ id: uid('b'), type: 'p', text: String(sec.content).trim() });
       }
     }
   }
 
-  // 6. Timeline Key Moments
-  if (Array.isArray(aiResult?.timeline) && aiResult.timeline.length > 0) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '⏱️ 타임라인별 핵심 내용' });
-    for (const item of aiResult.timeline) {
-      const timeStr = item.time ? `[${item.time}] ` : '';
-      const summaryStr = item.summary || item.text || '';
-      if (summaryStr) {
-        blocks.push({ id: uid('b'), type: 'bullet', text: `${timeStr}${summaryStr}` });
-      }
-    }
-  }
-
-  // 7. Takeaway / Action Plan
-  if (aiResult?.takeaway) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '🎯 핵심 시사점 & 실행 가이드' });
-    blocks.push({ id: uid('b'), type: 'p', text: aiResult.takeaway });
+  // 5. 핵심 시사점 & 결론 (Insights / Takeaway)
+  const insightsText = aiResult?.insights || aiResult?.takeaway || '';
+  if (insightsText && String(insightsText).trim()) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '🎯 핵심 시사점 & 결론' });
+    blocks.push({ id: uid('b'), type: 'callout', text: String(insightsText).trim() });
   }
 
   return blocks;

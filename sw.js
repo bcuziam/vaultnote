@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v78';
+const CACHE_NAME = 'vaultnote-v79';
 const ASSETS = [
   './',
   './index.html',
@@ -14,9 +14,23 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  // 새 파일 다운로드만 완료하고, 사용자가 [지금 적용] 버튼을 누를 때까지 대기(waiting)
+  // 새 파일 다운로드 시 브라우저 디스크 캐시를 완전히 우회(cache: 'reload')하여 무조건 최신 서버 파일을 캐시에 저장
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) => {
+      return Promise.all(
+        ASSETS.map((url) =>
+          fetch(new Request(url, { cache: 'reload' }))
+            .then((res) => {
+              if (res && res.status === 200) {
+                return cache.put(url, res);
+              }
+            })
+            .catch((err) => {
+              console.warn('[SW Install Asset Fetch Warning]:', url, err);
+            })
+        )
+      );
+    })
   );
 });
 
