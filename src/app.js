@@ -1565,6 +1565,38 @@ function getEditableBlocksForNote(note) {
   return decryptedNotesSessionMap.get(note.id) || null;
 }
 
+function closeTagPopover() {
+  const pop = document.getElementById('note-tag-popover');
+  if (pop) pop.classList.add('hidden');
+}
+
+function commitPopoverTags() {
+  const inp = document.getElementById('note-tag-popover-input');
+  const raw = (inp?.value || '').trim();
+  const note = getActiveNote();
+  if (!raw || !note) {
+    closeTagPopover();
+    return;
+  }
+  const tokens = raw
+    .split(/[,]+/)
+    .map((t) => t.replace(/^#/, '').trim())
+    .filter(Boolean);
+
+  if (tokens.length > 0) {
+    note.tags = note.tags || [];
+    for (const tag of tokens) {
+      if (!note.tags.includes(tag)) note.tags.push(tag);
+    }
+    touchNote(note);
+    if (inp) inp.value = '';
+    closeTagPopover();
+    renderAll();
+  } else {
+    closeTagPopover();
+  }
+}
+
 function renderActiveNoteEditor() {
   const note = getActiveNote();
   const encryptedGate = document.getElementById('note-encrypted-gate');
@@ -1657,8 +1689,9 @@ function renderActiveNoteEditor() {
     statusSel.value = note.status || '';
     statusSel.disabled = Boolean(note.trashed);
   }
-  const tagInput = document.getElementById('note-tag-input');
-  if (tagInput) tagInput.disabled = Boolean(note.trashed);
+  const tagAddBtn = document.getElementById('btn-open-tag-popover');
+  if (tagAddBtn) tagAddBtn.disabled = Boolean(note.trashed);
+  closeTagPopover();
 
   // Created & Updated timestamps display
   const datesEl = document.getElementById('note-dates-display');
@@ -6127,7 +6160,7 @@ function bindEvents() {
     // Delete or Backspace key when multiple blocks are selected
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBlockIds.size > 0) {
       const activeEl = document.activeElement;
-      const isOutsideEditor = activeEl && activeEl.closest('.modal-backdrop, #search-modal, #note-title-input, #note-tag-input, #scratchpad-drawer');
+      const isOutsideEditor = activeEl && activeEl.closest('.modal-backdrop, #search-modal, #note-title-input, #note-tag-popover-input, #scratchpad-drawer');
       if (!isOutsideEditor) {
         e.preventDefault();
         deleteSelectedBlocks();
@@ -6164,6 +6197,13 @@ function bindEvents() {
   // 자연스러운 2단계 뒤로가기: 본문에서 뒤로가기 -> 목록 직행, 목록에서 뒤로가기 -> 자연스러운 홈 화면 퇴장(스마트폰 OS 표준)
   window.addEventListener('popstate', (e) => {
     closeSlashMenu();
+
+    // 0. 열려있는 태그 말풍선이 있다면 말풍선만 먼저 닫기
+    const tagPopover = document.getElementById('note-tag-popover');
+    if (tagPopover && !tagPopover.classList.contains('hidden')) {
+      closeTagPopover();
+      return;
+    }
 
     // 1. 열려있는 모달(검색창, 동기화 창 등)이 있다면 모달만 먼저 닫기
     const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
@@ -6300,7 +6340,7 @@ function bindEvents() {
     const isInsideNoteEditorField =
       activeEl &&
       (activeEl.id === 'note-title-input' ||
-        activeEl.id === 'note-tag-input' ||
+        activeEl.id === 'note-tag-popover-input' ||
         activeEl.id === 'scratchpad-textarea' ||
         activeEl.id === 'clipper-paste-zone' ||
         activeEl.id === 'gemini-api-key-input' ||
@@ -6823,17 +6863,37 @@ function bindEvents() {
     touchNote(note);
   });
 
-  document.getElementById('note-tag-input').addEventListener('keydown', (e) => {
+  // Tag Popover (Notion-style) Listeners
+  document.getElementById('btn-open-tag-popover')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const pop = document.getElementById('note-tag-popover');
+    if (!pop) return;
+    const isHidden = pop.classList.contains('hidden');
+    if (isHidden) {
+      pop.classList.remove('hidden');
+      const inp = document.getElementById('note-tag-popover-input');
+      setTimeout(() => inp?.focus(), 40);
+    } else {
+      pop.classList.add('hidden');
+    }
+  });
+
+  document.getElementById('btn-submit-tag-popover')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    commitPopoverTags();
+  });
+
+  document.getElementById('note-tag-popover-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const val = e.target.value.replace(/^#/, '').trim();
-      const note = getActiveNote();
-      if (!val || !note) return;
-      note.tags = note.tags || [];
-      if (!note.tags.includes(val)) note.tags.push(val);
-      e.target.value = '';
-      touchNote(note);
-      renderAll();
+      commitPopoverTags();
+    }
+  });
+
+  // 바깥 터치/클릭 시 태그 말풍선 자동 닫기
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.tag-popover-wrap')) {
+      closeTagPopover();
     }
   });
 
