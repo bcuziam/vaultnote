@@ -4068,6 +4068,7 @@ const ENGLISH_STOPWORDS = new Set([
 
 const GENERIC_GRAPH_TAGS = new Set([
   '클리핑', '요약', '웹스크랩', '스크랩', '메모', '노트', '가이드', '일반', '기타', '뉴스', '기사', '링크',
+  '유튜브', 'youtube', '영상', '영상요약', '동영상', '비디오', 'video',
   'clip', 'note', 'summary', 'memo', 'news', 'article'
 ]);
 
@@ -4100,7 +4101,7 @@ function sanitizeExistingNoteTags() {
     if (Array.isArray(n.tags)) {
       const beforeStr = JSON.stringify(n.tags);
       n.tags = n.tags.filter((t) => {
-        if (t === '요약' || t === '클리핑' || t === '가이드') return true;
+        if (t === '요약' || t === '클리핑' || t === '가이드' || t === '유튜브') return true;
         return isMeaningfulTopicTag(t);
       });
       if (JSON.stringify(n.tags) !== beforeStr) changed = true;
@@ -5627,7 +5628,8 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
 3. 구체적인 문장형 소제목: 각 섹션의 소제목(heading)은 해당 구간에서 다룬 핵심 알맹이가 한눈에 보이는 생생한 문장형/구문형 제목으로 작성하세요. (예: "1. 머스크의 메모리 갈증: 델의 경고와 반도체 시장의 딜레마", "2. HBM 공정이 초래한 병목 현상 및 LPDDR 상용 추진")
 4. 풍부한 디테일과 시간대: 본문(sections)에는 두루뭉술한 요약 대신 화자가 언급한 구체적인 사례, 수치(%, 금액, 시간), 기업/인물명, 비유, 기술적 인과관계를 충실하게 서술하고, 주요 설명 뒤에 해당 내용이 나오는 영상 시간대(예: [02:35])를 자연스럽게 표기하세요. 단, 상단 'keyConclusions'에는 시간 표기를 넣지 마세요.
 5. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성하세요.
-6. 반드시 아래 지정된 JSON 규격으로만 응답해야 합니다.
+6. 태그(tags) 지침: '유튜브', '영상', '동영상', '요약' 같은 매체 형식이나 일반 명칭은 절대 태그에 넣지 마세요. 오직 영상 본문에서 실제로 심도 있게 다룬 '핵심 고유명사, 기술/산업 분야, 핵심 주제 키워드'(예: 'HBM', '엔비디아', '인공지능', '금리', '자율주행' 등)로 3~5개를 엄선하여 추출하세요.
+7. 반드시 아래 지정된 JSON 규격으로만 응답해야 합니다.
 
 {
   "title": "영상 원제 또는 내용을 직관적으로 대변하는 세련된 한글 제목",
@@ -5653,7 +5655,7 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
     }
   ],
   "insights": "이 영상이 시청자나 관련 산업/실무에 주는 핵심 시사점 및 최종 결론 한 문단",
-  "tags": ["유튜브", "영상요약", "주제키워드1", "주제키워드2", "주제키워드3"]
+  "tags": ["핵심주제1", "핵심주제2", "핵심주제3"]
 }`;
 
   const videoModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
@@ -8856,7 +8858,10 @@ async function runAISummarizeOnActiveNote() {
         note.title = aiResult.title;
       }
       for (const t of (aiResult.tags || [])) {
-        if (!note.tags.includes(t)) note.tags.push(t);
+        const cleanTag = String(t).replace(/^#/, '').trim();
+        if (cleanTag && !note.tags.includes(cleanTag) && isMeaningfulTopicTag(cleanTag)) {
+          note.tags.push(cleanTag);
+        }
       }
       note.updatedAt = new Date().toISOString();
       scheduleSave();
