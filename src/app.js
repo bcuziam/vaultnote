@@ -2645,6 +2645,65 @@ function renderBlocksList(note, blocks) {
       });
       setTimeout(() => autoResizeTextarea(dtArea), 0);
       body.appendChild(wrap);
+    } else if (block.type === 'youtube') {
+      body.className += ' block-youtube';
+      const videoId = block.videoId || extractYouTubeVideoId(block.url || '');
+      const thumbUrl = block.thumbnailUrl || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+      const videoUrl = block.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+      const title = block.title || 'YouTube 동영상';
+      const channel = block.channelTitle || '';
+
+      body.innerHTML = `
+        <div class="youtube-player-card" data-video-id="${escapeHtml(videoId || '')}">
+          <div class="youtube-media-container">
+            <img class="youtube-thumb-img" src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(title)}" loading="lazy" />
+            <div class="youtube-play-overlay" title="노트 안에서 바로 재생">
+              <button type="button" class="youtube-big-play-btn" aria-label="재생">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="youtube-card-meta">
+            <div class="youtube-card-info">
+              <div class="youtube-card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+              ${channel ? `<div class="youtube-card-channel">${escapeHtml(channel)}</div>` : ''}
+            </div>
+            <div class="youtube-card-actions">
+              <button type="button" class="youtube-btn-inline-play" title="노트 내에서 바로 재생">
+                <span>▶</span> 바로 재생
+              </button>
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" class="youtube-btn-app-open" title="유튜브 앱 또는 웹사이트로 열기">
+                <span>📺</span> YouTube 앱에서 열기 ↗
+              </a>
+              <button type="button" class="text-btn text-danger btn-del-youtube" style="padding:4px 8px;font-size:12px;" title="동영상 카드 삭제">삭제</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const mediaContainer = body.querySelector('.youtube-media-container');
+      const startInlinePlay = () => {
+        if (!videoId || !mediaContainer) return;
+        mediaContainer.innerHTML = `
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0"
+            title="${escapeHtml(title)}"
+            style="width:100%;height:100%;border:0;display:block;"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen>
+          </iframe>
+        `;
+      };
+
+      body.querySelector('.youtube-play-overlay')?.addEventListener('click', startInlinePlay);
+      body.querySelector('.youtube-btn-inline-play')?.addEventListener('click', startInlinePlay);
+      body.querySelector('.btn-del-youtube')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        blocks.splice(idx, 1);
+        if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
     } else {
       const innerWrap = document.createElement('div');
       if (block.type === 'todo') {
@@ -3673,6 +3732,28 @@ function renderSecondarySplitPane() {
             <img src="${b.dataUrl || ''}" alt="${escapeHtml(b.text || '참조 이미지')}" loading="lazy" />
             ${b.text ? `<figcaption class="split-image-caption">${renderMarkdownInlineHtml(b.text)}</figcaption>` : ''}
           </div>`;
+      case 'youtube': {
+        const videoId = b.videoId || extractYouTubeVideoId(b.url || '');
+        const thumbUrl = b.thumbnailUrl || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+        const videoUrl = b.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+        const title = b.title || 'YouTube 동영상';
+        return `
+          <div class="split-doc-youtube" style="max-width:760px;margin:12px auto;">
+            <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;">
+              <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);text-decoration:none;">
+                <div style="width:56px;height:40px;background:#ff0000;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </div>
+              </a>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:13px;">
+              <span style="font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(title)}</span>
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="color:#ff5252;text-decoration:none;font-weight:600;white-space:nowrap;margin-left:8px;">YouTube 앱에서 열기 ↗</a>
+            </div>
+          </div>
+        `;
+      }
       case 'table': {
         const rows = Array.isArray(b.rows) ? b.rows : [];
         if (rows.length === 0) return '';
@@ -5517,12 +5598,377 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
   };
 }
 
+/**
+ * YouTube Video Helper & Summarizer System
+ */
+function extractYouTubeVideoId(rawUrl = '') {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const str = rawUrl.trim();
+  const patterns = [
+    /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/|embed\/))([a-zA-Z0-9_-]{11})/i,
+    /^[a-zA-Z0-9_-]{11}$/
+  ];
+  for (const p of patterns) {
+    const match = str.match(p);
+    if (match) return match[1] || match[0];
+  }
+  return null;
+}
+
+async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '') {
+  if (!apiKey) throw new Error('NO_API_KEY');
+
+  const promptText = `당신은 최고 수준의 영상 콘텐츠 분석 및 문서화 전문가입니다.
+제공된 유튜브 영상을 처음부터 끝까지 정밀하게 시청하고 분석하여, 영상을 직접 보지 않고 이 문서만 읽더라도 영상의 전체 맥락, 세부 주장, 구체적 데이터, 실천 방법, 타임라인까지 100% 완벽하게 파악할 수 있는 고품질 심층 리포트를 작성해주세요.
+
+[작성 지침]
+1. 단순 3~4줄 요약으로 끝내지 말고, 내용이 매우 풍부하고 구체적이어야 합니다.
+2. 발표자/크리에이터가 언급한 구체적인 사례, 수치, 방법론, 기술적/논리적 근거를 생생하고 충실하게 서술해주세요.
+3. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성해주세요.
+4. 반드시 아래 지정된 JSON 포맷으로만 응답해야 합니다.
+
+{
+  "title": "영상 원제 또는 내용을 직관적으로 대변하는 세련된 한글 제목",
+  "oneLine": "영상 전체를 관통하는 핵심 메시지 및 최종 결론 (선명하고 완성된 2~3문장)",
+  "overview": "이 영상이 다루는 핵심 화두 및 발표 배경, 문제의식 상세 해설 (충실한 1~2개 문단)",
+  "sections": [
+    {
+      "heading": "제1주제: 명확하고 구체적인 소제목",
+      "bullets": [
+        "상세 설명 1 (구체적 설명, 근거, 발표자의 핵심 주장 등을 완결된 문장으로 서술)",
+        "상세 설명 2 (사례, 비교, 실천 방법 등 구체적 팁)"
+      ]
+    },
+    {
+      "heading": "제2주제: ...",
+      "bullets": [
+        "상세 설명 1",
+        "상세 설명 2"
+      ]
+    },
+    {
+      "heading": "제3주제: ...",
+      "bullets": [
+        "상세 설명 1",
+        "상세 설명 2"
+      ]
+    }
+  ],
+  "timeline": [
+    { "time": "01:25", "summary": "구간별 핵심 내용 및 논의 주제" },
+    { "time": "05:40", "summary": "구간별 핵심 내용 및 논의 주제" }
+  ],
+  "takeaway": "시청자가 즉시 일상/업무에 적용할 수 있는 핵심 액션 플랜 및 시사점",
+  "tags": ["유튜브", "영상요약", "주제키워드1", "주제키워드2", "주제키워드3"]
+}`;
+
+  const videoModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  let parsedJson = null;
+  let lastErr = null;
+
+  for (const model of videoModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(65000),
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: promptText },
+                {
+                  file_data: {
+                    file_uri: `https://www.youtube.com/watch?v=${videoId}`
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2
+          }
+        })
+      });
+
+      if (!res.ok) {
+        let errBody = null;
+        try { errBody = await res.json(); } catch {}
+        const msg = errBody?.error?.message || `HTTP ${res.status}`;
+        lastErr = new Error(msg);
+        if (res.status === 404) continue;
+        if (res.status === 400 || res.status === 403 || res.status === 429) {
+          throw lastErr;
+        }
+        continue;
+      }
+
+      const resData = await res.json();
+      const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!rawText.trim()) throw new Error('EMPTY_RESPONSE');
+
+      try {
+        parsedJson = JSON.parse(rawText.trim());
+        if (parsedJson) break;
+      } catch {
+        const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+        parsedJson = JSON.parse(cleaned);
+        if (parsedJson) break;
+      }
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'AbortError') throw new Error('TIMEOUT');
+      if (err.message && (err.message.includes('API_KEY_INVALID') || err.message.includes('QUOTA_EXCEEDED'))) {
+        throw err;
+      }
+    }
+  }
+
+  if (!parsedJson) {
+    throw lastErr || new Error('ALL_MODELS_FAILED');
+  }
+
+  return parsedJson;
+}
+
+function convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, videoId, fallbackTitle = '', channelName = '') {
+  const blocks = [];
+
+  // 1. YouTube 16:9 Responsive Media Block
+  blocks.push({
+    id: uid('b'),
+    type: 'youtube',
+    videoId,
+    title: aiResult?.title || fallbackTitle || 'YouTube 동영상',
+    channelTitle: channelName || '',
+    thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    url: sourceUrl || `https://www.youtube.com/watch?v=${videoId}`
+  });
+
+  // 2. Source callout
+  blocks.push({
+    id: uid('b'),
+    type: 'callout',
+    text: `출처: ${sourceUrl || `https://www.youtube.com/watch?v=${videoId}`}`
+  });
+
+  // 3. One-line Core Conclusion
+  if (aiResult?.oneLine) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '📌 핵심 요약 & 최종 결론' });
+    blocks.push({ id: uid('b'), type: 'callout', text: aiResult.oneLine });
+  }
+
+  // 4. Overview & Background
+  if (aiResult?.overview) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '📖 개요 및 발표 배경' });
+    blocks.push({ id: uid('b'), type: 'p', text: aiResult.overview });
+  }
+
+  // 5. In-depth Key Sections
+  if (Array.isArray(aiResult?.sections) && aiResult.sections.length > 0) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '💡 주제별 상세 심층 해설' });
+    for (const sec of aiResult.sections) {
+      if (sec.heading) {
+        blocks.push({ id: uid('b'), type: 'h3', text: sec.heading });
+      }
+      if (Array.isArray(sec.bullets)) {
+        for (const item of sec.bullets) {
+          if (item && String(item).trim()) {
+            blocks.push({ id: uid('b'), type: 'bullet', text: String(item).trim() });
+          }
+        }
+      } else if (sec.content) {
+        blocks.push({ id: uid('b'), type: 'p', text: String(sec.content).trim() });
+      }
+    }
+  }
+
+  // 6. Timeline Key Moments
+  if (Array.isArray(aiResult?.timeline) && aiResult.timeline.length > 0) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '⏱️ 타임라인별 핵심 내용' });
+    for (const item of aiResult.timeline) {
+      const timeStr = item.time ? `[${item.time}] ` : '';
+      const summaryStr = item.summary || item.text || '';
+      if (summaryStr) {
+        blocks.push({ id: uid('b'), type: 'bullet', text: `${timeStr}${summaryStr}` });
+      }
+    }
+  }
+
+  // 7. Takeaway / Action Plan
+  if (aiResult?.takeaway) {
+    blocks.push({ id: uid('b'), type: 'h2', text: '🎯 핵심 시사점 & 실행 가이드' });
+    blocks.push({ id: uid('b'), type: 'p', text: aiResult.takeaway });
+  }
+
+  return blocks;
+}
+
+async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
+  const { summarize = true, openEditor = false, targetFolderId = null } = options;
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  showToast('🎬 유튜브 영상 정보 확인 중...');
+
+  // 1. Fetch metadata via oEmbed
+  let videoTitle = `YouTube 동영상 (${videoId})`;
+  let channelName = '';
+  let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+
+  try {
+    const oembedRes = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (oembedRes && oembedRes.ok) {
+      const data = await oembedRes.json();
+      if (data.title) videoTitle = data.title;
+      if (data.author_name) channelName = data.author_name;
+      if (data.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+    }
+  } catch (e) {
+    console.warn('[YouTube oEmbed warning]:', e);
+  }
+
+  const loadingBlockId = uid('b');
+  const initialBlocks = [
+    {
+      id: uid('b'),
+      type: 'youtube',
+      videoId,
+      title: videoTitle,
+      channelTitle: channelName,
+      thumbnailUrl,
+      url: canonicalUrl
+    },
+    {
+      id: uid('b'),
+      type: 'callout',
+      text: `출처: ${canonicalUrl}`
+    }
+  ];
+
+  if (summarize) {
+    initialBlocks.push({
+      id: loadingBlockId,
+      type: 'callout',
+      text: `⏳ AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 15~25초 소요)... 다른 노트를 작성하거나 열람하셔도 작업이 안전하게 유지됩니다.`
+    });
+  }
+
+  const folderId =
+    targetFolderId ||
+    (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
+  const now = new Date().toISOString();
+  const newNote = {
+    id: uid('note'),
+    title: videoTitle,
+    folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
+    docType: 'clip',
+    status: '',
+    priority: 'normal',
+    favorite: activeNav === 'favorites',
+    trashed: false,
+    isEncrypted: false,
+    tags: ['유튜브', '클리핑', ...(summarize ? ['요약'] : [])],
+    createdAt: now,
+    updatedAt: now,
+    blocks: initialBlocks
+  };
+
+  state.notes.unshift(newNote);
+  activeNoteId = newNote.id;
+  scheduleSave();
+
+  if (openEditor) {
+    openNoteInEditor(newNote.id);
+  } else {
+    renderAll();
+  }
+
+  showToast(`유튜브 영상 노트가 생성되었습니다: ${videoTitle.slice(0, 24)}`);
+
+  // Step 2: Asynchronous Gemini Deep Video Summarization
+  const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+  if (summarize) {
+    if (!apiKey) {
+      const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
+      if (loadBlock) {
+        loadBlock.text = `💡 Gemini API 키가 설정되지 않아 영상 심층 분석을 건너뛰었습니다. [설정 > AI 키]를 등록하시면 언제든 상단 [AI 요약]으로 분석을 받으실 수 있습니다.`;
+        scheduleSave();
+        if (activeNoteId === newNote.id) renderActiveNoteEditor();
+      }
+      showToast('Gemini API 키가 설정되지 않았습니다. 설정에서 키를 등록해 주세요.', 4000);
+      return newNote;
+    }
+
+    summarizeYouTubeWithGeminiAI(videoId, videoTitle, apiKey)
+      .then((aiResult) => {
+        if (!aiResult || newNote.trashed || newNote.isEncrypted) return;
+
+        const updatedBlocks = convertYouTubeAiSummaryToBlocks(aiResult, canonicalUrl, videoId, videoTitle, channelName);
+        newNote.blocks = updatedBlocks;
+        if (aiResult.title && (!newNote.title || newNote.title.startsWith('YouTube 동영상'))) {
+          newNote.title = aiResult.title;
+        }
+        if (Array.isArray(aiResult.tags)) {
+          for (const t of aiResult.tags) {
+            const cleanTag = String(t).replace(/^#/, '').trim();
+            if (cleanTag && !newNote.tags.includes(cleanTag) && isMeaningfulTopicTag(cleanTag)) {
+              newNote.tags.push(cleanTag);
+            }
+          }
+        }
+        newNote.updatedAt = new Date().toISOString();
+        scheduleSave();
+
+        // Safe Non-blocking UI update: only re-render editor if the user is currently viewing THIS note
+        if (activeNoteId === newNote.id) {
+          renderActiveNoteEditor();
+        } else {
+          renderSidebar();
+        }
+        showToast(`✨ [${(newNote.title || '').slice(0, 20)}] 영상 심층 요약이 완료되었습니다!`, 4000);
+      })
+      .catch((err) => {
+        console.warn('[YouTube Gemini Summarize Error]:', err);
+        let reason = 'AI 통신 실패';
+        const msg = String(err?.message || '');
+        if (msg.includes('NO_API_KEY')) reason = 'Gemini API 키가 설정되지 않음';
+        else if (msg.includes('TIMEOUT')) reason = 'AI 응답 시간 초과 (영상 분량 확인)';
+        else if (msg.includes('QUOTA') || msg.includes('429')) reason = 'API 할당량 초과';
+        else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) reason = 'API 키 불일치';
+        else if (msg.includes('404')) reason = '일시적 모델 접근 불가';
+
+        const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
+        if (loadBlock) {
+          loadBlock.text = `⚠️ AI 영상 심층 분석을 완료하지 못했습니다 (${reason}). 상단 [AI 요약] 메뉴를 누르면 언제든 다시 시도할 수 있습니다.`;
+        }
+        scheduleSave();
+        if (activeNoteId === newNote.id) {
+          renderActiveNoteEditor();
+        }
+        showToast(`유튜브 AI 요약 실패: ${reason}`, 4000);
+      });
+  }
+
+  return newNote;
+}
+
 async function clipAndSummarizeUrl(rawUrl, options = {}) {
   const { summarize = true, openEditor = false, targetFolderId = null } = options;
   let url = String(rawUrl || '').trim();
   if (!/^https?:\/\/\S+/i.test(url)) {
     showToast('유효한 웹 주소(http:// 또는 https://)를 입력해주세요.');
     return null;
+  }
+
+  // 0. Detect YouTube Video URLs (watch, shorts, youtu.be, live, embed)
+  const ytVideoId = extractYouTubeVideoId(url);
+  if (ytVideoId) {
+    return await clipAndSummarizeYouTube(ytVideoId, url, options);
   }
 
   // Automatically normalize CNN edition domain to www to avoid Jina's domain-level rate block
@@ -8404,6 +8850,41 @@ async function runAISummarizeOnActiveNote() {
   const cleanBlocks = stripExistingSummaryBlocks(blocks);
   const sourceBlock = cleanBlocks.find((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
   const sourceUrl = sourceBlock ? sourceBlock.text.replace(/^출처:\s*/, '').trim() : '';
+
+  // Check if this note contains a YouTube video block or YouTube source URL
+  const ytBlock = cleanBlocks.find((b) => b.type === 'youtube');
+  const ytVideoId = ytBlock?.videoId || extractYouTubeVideoId(sourceUrl);
+  if (ytVideoId) {
+    document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
+    showToast('🎬 Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 15~25초)...');
+    try {
+      const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+      const aiResult = await summarizeYouTubeWithGeminiAI(ytVideoId, note.title || '', apiKey);
+      const newBlocks = convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, ytVideoId, note.title, ytBlock?.channelTitle);
+      note.blocks = newBlocks;
+      if (aiResult.title && (!note.title || note.title.startsWith('YouTube 동영상'))) {
+        note.title = aiResult.title;
+      }
+      for (const t of (aiResult.tags || [])) {
+        if (!note.tags.includes(t)) note.tags.push(t);
+      }
+      note.updatedAt = new Date().toISOString();
+      scheduleSave();
+      renderActiveNoteEditor();
+      showToast(`✨ 유튜브 영상 심층 요약이 완료되었습니다: ${(note.title || '').slice(0, 24)}`);
+      return;
+    } catch (err) {
+      console.warn('[Gemini YouTube Summarize Error]:', err);
+      let reason = 'AI 통신 실패';
+      const msg = String(err?.message || '');
+      if (msg.includes('NO_API_KEY')) reason = 'Gemini API 키가 설정되지 않음';
+      else if (msg.includes('TIMEOUT')) reason = 'AI 서버 응답 시간 초과 (영상 길이 확인)';
+      else if (msg.includes('QUOTA') || msg.includes('429')) reason = 'API 할당량 초과';
+      else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) reason = 'API 키 불일치';
+      showToast(`유튜브 AI 분석 실패 (${reason})`, 4200);
+      return;
+    }
+  }
 
   try {
     const aiResult = await summarizeWithGeminiAI(note.title || '', cleanBlocks, sourceUrl, true);

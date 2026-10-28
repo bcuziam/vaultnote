@@ -241,6 +241,7 @@ export const VaultStorage = {
           else if (b.type === 'quote' || b.type === 'callout') lines.push(`${indentStr}> ${b.text || ''}`);
           else if (b.type === 'code') lines.push(`\`\`\`${b.lang || ''}\n${b.text || ''}\n\`\`\``);
           else if (b.type === 'divider') lines.push(`---`);
+          else if (b.type === 'youtube') lines.push(`[![${b.title || 'YouTube'}](${b.thumbnailUrl || `https://img.youtube.com/vi/${b.videoId}/hqdefault.jpg`})](${b.url || `https://www.youtube.com/watch?v=${b.videoId}`})`);
           else if (b.type === 'secret') lines.push(`> 🔒 [암호화된 보안 블록]`);
           else lines.push(indentStr ? `${indentStr}${b.text || ''}` : (b.text || ''));
           lines.push('');
