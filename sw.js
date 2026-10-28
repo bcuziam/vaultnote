@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v74';
+const CACHE_NAME = 'vaultnote-v75';
 const ASSETS = [
   './',
   './index.html',
@@ -14,7 +14,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  // 새 파일 다운로드만 완료하고, 사용자가 [지금 적용] 버튼을 누를 때까지 대기(waiting)
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );

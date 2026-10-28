@@ -2780,13 +2780,19 @@ function renderBlocksList(note, blocks) {
           return;
         }
 
+        const currentText = typeof ta.value === 'string' ? ta.value : (block.text || '');
+        const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : currentText.length;
+        const selEnd = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : currentText.length;
+        const isCollapsed = selStart === selEnd;
+        const isMergeableTextType = (t) => ['p', 'h1', 'h2', 'h3', 'bullet', 'number', 'todo', 'quote', 'callout'].includes(t);
+
         if (e.key === 'Enter' && !e.shiftKey && block.type !== 'code') {
           e.preventDefault();
           closeSlashMenu();
           recordPreActionSnapshot();
 
           // 1. 빈 목록(todo, bullet, number)에서 엔터 시 들여쓰기 감소 또는 일반 문단(p)으로 변환
-          if (['todo', 'bullet', 'number'].includes(block.type) && !block.text.trim()) {
+          if (['todo', 'bullet', 'number'].includes(block.type) && !currentText.trim()) {
             if ((block.indent || 0) > 0) {
               block.indent = (block.indent || 0) - 1;
               touchNote(note, blocks);
@@ -2801,9 +2807,6 @@ function renderBlocksList(note, blocks) {
             return;
           }
 
-          const currentText = typeof ta.value === 'string' ? ta.value : (block.text || '');
-          const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : currentText.length;
-
           // 2. [노션 표준] 커서가 문장 맨 앞(0번째)에 있을 때:
           // 현재 블록 위에 새 빈 줄을 삽입하고, 새 빈 줄에 포커스를 줌! (기존 글은 아래로 밀림)
           if (selStart === 0 && currentText.length > 0) {
@@ -2811,7 +2814,7 @@ function renderBlocksList(note, blocks) {
             blocks.splice(idx, 0, newBlock);
             touchNote(note, blocks);
             renderActiveNoteEditor();
-            focusBlock(newBlock.id);
+            focusBlock(newBlock.id, 0);
             return;
           }
 
@@ -2827,32 +2830,103 @@ function renderBlocksList(note, blocks) {
           blocks.splice(idx + 1, 0, newBlock);
           touchNote(note, blocks);
           renderActiveNoteEditor();
-          focusBlock(newBlock.id);
+          focusBlock(newBlock.id, 0);
           return;
-        } else if (e.key === 'Backspace' && ta.value === '') {
-          e.preventDefault();
-          closeSlashMenu();
-          recordPreActionSnapshot();
+        } else if (e.key === 'Backspace' && isCollapsed && selStart === 0) {
+          // [노션 표준] 커서가 문장 맨 앞(0번째)에 있을 때 Backspace:
           if ((block.indent || 0) > 0) {
+            e.preventDefault();
+            closeSlashMenu();
+            recordPreActionSnapshot();
             block.indent = (block.indent || 0) - 1;
             touchNote(note, blocks);
             renderActiveNoteEditor();
-            focusBlock(block.id);
+            focusBlock(block.id, 0);
             return;
           }
-          if (block.type !== 'p') {
+          if (block.type !== 'p' && isMergeableTextType(block.type)) {
+            e.preventDefault();
+            closeSlashMenu();
+            recordPreActionSnapshot();
             block.type = 'p';
             touchNote(note, blocks);
             renderActiveNoteEditor();
-            focusBlock(block.id);
+            focusBlock(block.id, 0);
             return;
           }
-          if (blocks.length > 1) {
-            const prevBlock = blocks[idx - 1] || blocks[idx + 1];
+          if (idx > 0) {
+            const prevBlock = blocks[idx - 1];
+            if (currentText === '') {
+              // 현재 블록이 빈 블록이면 현재 블록 삭제하고 이전 블록 끝으로 이동
+              e.preventDefault();
+              closeSlashMenu();
+              recordPreActionSnapshot();
+              blocks.splice(idx, 1);
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(prevBlock.id);
+              return;
+            } else if (isMergeableTextType(prevBlock.type) && isMergeableTextType(block.type)) {
+              // 내용이 있는 경우 이전 텍스트 블록 끝에 현재 줄 내용 병합
+              e.preventDefault();
+              closeSlashMenu();
+              recordPreActionSnapshot();
+              const mergePos = (prevBlock.text || '').length;
+              prevBlock.text = (prevBlock.text || '') + currentText;
+              blocks.splice(idx, 1);
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(prevBlock.id, mergePos);
+              return;
+            } else if (prevBlock.type === 'divider') {
+              // 윗줄이 구분선이면 구분선 삭제
+              e.preventDefault();
+              closeSlashMenu();
+              recordPreActionSnapshot();
+              blocks.splice(idx - 1, 1);
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(block.id, 0);
+              return;
+            }
+          } else if (currentText === '' && blocks.length > 1) {
+            // 최상단 빈 블록 삭제
+            e.preventDefault();
+            closeSlashMenu();
+            recordPreActionSnapshot();
             blocks.splice(idx, 1);
             touchNote(note, blocks);
             renderActiveNoteEditor();
-            if (prevBlock) focusBlock(prevBlock.id);
+            if (blocks[0]) focusBlock(blocks[0].id, 0);
+            return;
+          }
+        } else if (e.key === 'Delete' && isCollapsed && selStart === currentText.length) {
+          // [노션 표준] 커서가 문장 맨 뒤에 있을 때 Delete:
+          if (idx < blocks.length - 1) {
+            const nextBlock = blocks[idx + 1];
+            if (isMergeableTextType(block.type) && isMergeableTextType(nextBlock.type)) {
+              // 아랫줄 내용을 끌어올려 현재 블록 끝에 병합
+              e.preventDefault();
+              closeSlashMenu();
+              recordPreActionSnapshot();
+              const mergePos = currentText.length;
+              block.text = currentText + (nextBlock.text || '');
+              blocks.splice(idx + 1, 1);
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(block.id, mergePos);
+              return;
+            } else if (nextBlock.type === 'divider') {
+              // 아랫줄이 구분선이면 구분선 삭제
+              e.preventDefault();
+              closeSlashMenu();
+              recordPreActionSnapshot();
+              blocks.splice(idx + 1, 1);
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              focusBlock(block.id, currentText.length);
+              return;
+            }
           }
         } else if (e.key === 'ArrowUp' && ta.selectionStart === 0 && idx > 0) {
           e.preventDefault();
@@ -3099,7 +3173,7 @@ function getPlaceholderForType(type) {
   return map[type] || '';
 }
 
-function focusBlock(blockId) {
+function focusBlock(blockId, cursorPos = null) {
   setTimeout(() => {
     const row = document.querySelector(`.block-row[data-block-id="${blockId}"]`);
     const input = row?.querySelector('.block-editable');
@@ -3113,8 +3187,8 @@ function focusBlock(blockId) {
       input.scrollTop = 0;
       input.focus();
       if (input.setSelectionRange) {
-        const len = input.value.length;
-        input.setSelectionRange(len, len);
+        const pos = typeof cursorPos === 'number' ? Math.max(0, Math.min(input.value.length, cursorPos)) : input.value.length;
+        input.setSelectionRange(pos, pos);
       }
     }
   }, 10);
