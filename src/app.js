@@ -5624,17 +5624,17 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
 [작성 지침 - 필수 준수]
 1. 정형화된 꼬리표 금지: '제1주제', '발단 및 배경', '원인 분석' 같은 인위적이고 딱딱한 카테고리 틀을 절대 붙이지 마세요.
 2. 내용 주도형 자연스러운 흐름: 영상에 챕터 구분이 없더라도 화자가 실제로 이야기하는 논리의 흐름(Storyline)을 있는 그대로 따라가며, 영상 분량에 맞추어 2개에서 6개 내외의 자연스러운 대주제(sections)로 구성하세요.
-3. 구체적인 문장형 소제목: 각 섹션의 소제목(heading)은 해당 구간에서 다룬 핵심 알맹이가 한눈에 보이는 생생한 문장형/구문형 제목으로 작성하세요. (예: "1. 머스크의 메모리 갈증: 델의 경고와 반도체 시장의 딜레마", "2. HBM 공정이 초래한 병목 현상 및 LPDDR 상용 추진", "3. 메모리 용량 충족에도 성능을 유지하는 기술의 비밀")
-4. 풍부한 디테일과 시간대: 단순 1~2줄 요약으로 끝내지 말고, 발표자가 언급한 구체적인 사례, 수치(%, 금액, 시간), 기업/인물명, 비유, 기술적 인과관계를 충실하게 서술하고, 주요 설명 뒤에 해당 내용이 나오는 영상 시간대(예: [02:35])를 자연스럽게 표기하세요.
+3. 구체적인 문장형 소제목: 각 섹션의 소제목(heading)은 해당 구간에서 다룬 핵심 알맹이가 한눈에 보이는 생생한 문장형/구문형 제목으로 작성하세요. (예: "1. 머스크의 메모리 갈증: 델의 경고와 반도체 시장의 딜레마", "2. HBM 공정이 초래한 병목 현상 및 LPDDR 상용 추진")
+4. 풍부한 디테일과 시간대: 본문(sections)에는 두루뭉술한 요약 대신 화자가 언급한 구체적인 사례, 수치(%, 금액, 시간), 기업/인물명, 비유, 기술적 인과관계를 충실하게 서술하고, 주요 설명 뒤에 해당 내용이 나오는 영상 시간대(예: [02:35])를 자연스럽게 표기하세요. 단, 상단 'keyConclusions'에는 시간 표기를 넣지 마세요.
 5. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성하세요.
 6. 반드시 아래 지정된 JSON 규격으로만 응답해야 합니다.
 
 {
   "title": "영상 원제 또는 내용을 직관적으로 대변하는 세련된 한글 제목",
   "keyConclusions": [
-    "영상 전체를 관통하는 핵심 요약/결론 1 (선명한 완결된 문장)",
-    "영상 전체를 관통하는 핵심 요약/결론 2 (선명한 완결된 문장)",
-    "영상 전체를 관통하는 핵심 요약/결론 3 (필요시 추가 결론)"
+    "영상 전체를 관통하는 핵심 요약 1 (시간 표기 없이 완결된 문장으로 서술)",
+    "영상 전체를 관통하는 핵심 요약 2 (시간 표기 없이 완결된 문장으로 서술)",
+    "영상 전체를 관통하는 핵심 요약 3 (시간 표기 없이 완결된 문장으로 서술)"
   ],
   "sections": [
     {
@@ -5748,21 +5748,35 @@ function convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, videoId, fallbackT
     text: `출처: ${sourceUrl || `https://www.youtube.com/watch?v=${videoId}`}`
   });
 
-  // 3. LiveWiki Style: 상단 핵심 요약 (Numbered Key Conclusions)
+  // 3. 핵심요약 섹션
+  blocks.push({ id: uid('b'), type: 'h2', text: '핵심요약' });
+
+  // 3-1. 기존 '핵심 시사점 & 결론' 내용을 콜아웃 박스로 바로 배치
+  const insightsText = aiResult?.insights || aiResult?.takeaway || '';
+  if (insightsText && String(insightsText).trim()) {
+    blocks.push({ id: uid('b'), type: 'callout', text: String(insightsText).trim() });
+  }
+
+  // 3-2. 제목 없이 글머리 기호(bullet)로 핵심 요약 항목들 배치 (시간 표시 [00:00] 완벽 제거)
   const conclusions = Array.isArray(aiResult?.keyConclusions)
     ? aiResult.keyConclusions
     : (aiResult?.oneLine ? [aiResult.oneLine] : []);
 
-  if (conclusions.length > 0) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '📌 핵심 요약' });
-    for (const c of conclusions) {
-      if (c && String(c).trim()) {
-        blocks.push({ id: uid('b'), type: 'number', text: String(c).trim() });
+  for (const c of conclusions) {
+    if (c && String(c).trim()) {
+      const cleaned = String(c)
+        .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]|\(\d{1,2}:\d{2}(?::\d{2})?\)/g, '')
+        .trim();
+      if (cleaned) {
+        blocks.push({ id: uid('b'), type: 'bullet', text: cleaned });
       }
     }
   }
 
-  // 4. LiveWiki Style: 본문 심층 분석 (Sections with informative headings and rich paragraphs + timestamps)
+  // 4. 한 줄 띄기 (구분선 Divider)
+  blocks.push({ id: uid('b'), type: 'divider', text: '' });
+
+  // 5. 별도 제목 없이 곧바로 본문 정리 내용 전개 (소주제별 H2 및 상세 문단들)
   if (Array.isArray(aiResult?.sections) && aiResult.sections.length > 0) {
     for (const sec of aiResult.sections) {
       if (sec.heading) {
@@ -5777,13 +5791,6 @@ function convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, videoId, fallbackT
         }
       }
     }
-  }
-
-  // 5. 핵심 시사점 & 결론 (Insights / Takeaway)
-  const insightsText = aiResult?.insights || aiResult?.takeaway || '';
-  if (insightsText && String(insightsText).trim()) {
-    blocks.push({ id: uid('b'), type: 'h2', text: '🎯 핵심 시사점 & 결론' });
-    blocks.push({ id: uid('b'), type: 'callout', text: String(insightsText).trim() });
   }
 
   return blocks;
