@@ -2801,8 +2801,8 @@ function renderBlocksList(note, blocks) {
             return;
           }
 
-          const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : (block.text || '').length;
-          const currentText = block.text || '';
+          const currentText = typeof ta.value === 'string' ? ta.value : (block.text || '');
+          const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : currentText.length;
 
           // 2. [노션 표준] 커서가 문장 맨 앞(0번째)에 있을 때:
           // 현재 블록 위에 새 빈 줄을 삽입하고, 새 빈 줄에 포커스를 줌! (기존 글은 아래로 밀림)
