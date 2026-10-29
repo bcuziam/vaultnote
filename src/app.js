@@ -5813,7 +5813,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
   const { summarize = true, openEditor = false, targetFolderId = null } = options;
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  showToast('🎬 유튜브 영상 정보 확인 중...');
+  showToast('유튜브 영상 정보 확인 중...');
 
   // 1. Fetch metadata via oEmbed
   let videoTitle = `YouTube 동영상 (${videoId})`;
@@ -5857,7 +5857,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
     initialBlocks.push({
       id: loadingBlockId,
       type: 'callout',
-      text: `⏳ AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 15~25초 소요)... 다른 노트를 작성하거나 열람하셔도 작업이 안전하게 유지됩니다.`
+      text: `AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 15~25초 소요)... 다른 노트를 작성하거나 열람하셔도 작업이 안전하게 유지됩니다.`
     });
   }
 
@@ -5899,7 +5899,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
     if (!apiKey) {
       const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
       if (loadBlock) {
-        loadBlock.text = `💡 Gemini API 키가 설정되지 않아 영상 심층 분석을 건너뛰었습니다. [설정 > AI 키]를 등록하시면 언제든 상단 [AI 요약]으로 분석을 받으실 수 있습니다.`;
+        loadBlock.text = `[안내] Gemini API 키가 설정되지 않아 영상 심층 분석을 건너뛰었습니다. [설정 > AI 키]를 등록하시면 언제든 상단 [AI 요약]으로 분석을 받으실 수 있습니다.`;
         scheduleSave();
         if (activeNoteId === newNote.id) renderActiveNoteEditor();
       }
@@ -5933,7 +5933,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
         } else {
           renderSidebar();
         }
-        showToast(`✨ [${(newNote.title || '').slice(0, 20)}] 영상 심층 요약이 완료되었습니다!`, 4000);
+        showToast(`[${(newNote.title || '').slice(0, 20)}] 영상 심층 요약이 완료되었습니다.`, 4000);
       })
       .catch((err) => {
         console.warn('[YouTube Gemini Summarize Error]:', err);
@@ -5947,7 +5947,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
 
         const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
         if (loadBlock) {
-          loadBlock.text = `⚠️ AI 영상 심층 분석을 완료하지 못했습니다 (${reason}). 상단 [AI 요약] 메뉴를 누르면 언제든 다시 시도할 수 있습니다.`;
+          loadBlock.text = `[안내] AI 영상 심층 분석을 완료하지 못했습니다 (${reason}). 상단 [AI 요약] 메뉴를 누르면 언제든 다시 시도할 수 있습니다.`;
         }
         scheduleSave();
         if (activeNoteId === newNote.id) {
@@ -5960,11 +5960,45 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
   return newNote;
 }
 
+async function tryFetchWordPressComPost(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (!u.hostname.endsWith('wordpress.com')) return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    const slug = parts[parts.length - 1];
+    if (!slug) return null;
+    const apiUrl = `https://public-api.wordpress.com/wp/v2/sites/${encodeURIComponent(u.hostname)}/posts?slug=${encodeURIComponent(slug)}`;
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const posts = await res.json();
+    if (Array.isArray(posts) && posts.length > 0 && posts[0]?.content?.rendered) {
+      const post = posts[0];
+      const rawTitle = post.title?.rendered || '';
+      let cleanTitle = '';
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(rawTitle, 'text/html');
+        cleanTitle = doc.body.textContent.trim();
+      } catch (_) {
+        cleanTitle = rawTitle.replace(/&nbsp;/g, ' ').replace(/&#8211;/g, '-').trim();
+      }
+      return {
+        title: cleanTitle,
+        html: post.content.rendered,
+        date: post.date
+      };
+    }
+  } catch (e) {
+    console.warn('[WordPress.com API fetch error]:', e);
+  }
+  return null;
+}
+
 async function clipAndSummarizeUrl(rawUrl, options = {}) {
   const { summarize = true, openEditor = false, targetFolderId = null } = options;
   let url = String(rawUrl || '').trim();
   if (!/^https?:\/\/\S+/i.test(url)) {
-    showToast('유효한 웹 주소(http:// 또는 https://)를 입력해주세요.');
+    showToast('유효한 웹 주소(http:// 또는 https://)를 입력해 주세요.');
     return null;
   }
 
@@ -5979,210 +6013,229 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
     url = url.replace(/^https?:\/\/edition\.cnn\.com\//i, 'https://www.cnn.com/');
   }
 
-  showToast(summarize ? '웹페이지 핵심 내용을 요약 정리 중...' : '웹페이지 본문 추출 중...');
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch {}
+  const initialTitle = domain ? `웹 클리핑: ${domain}` : '웹 클리핑';
+  const loadingBlockId = uid('b');
 
-  try {
-    let html = '';
-    let readerMarkdown = '';
-    let finalUrl = url;
-    let jinaTimedOut = false;
+  const folderId =
+    targetFolderId ||
+    (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
 
-    const localRes = await fetch(`/api/clip?url=${encodeURIComponent(url)}`).catch(() => null);
-    if (localRes && localRes.ok) {
-      const data = await localRes.json();
-      if (data.ok) {
-        html = data.html || '';
-        readerMarkdown = data.readerMarkdown || '';
-        finalUrl = data.finalUrl || url;
+  const now = new Date().toISOString();
+  const newNote = {
+    id: uid('note'),
+    title: initialTitle,
+    folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
+    docType: 'clip',
+    status: '',
+    priority: 'normal',
+    favorite: activeNav === 'favorites',
+    trashed: false,
+    isEncrypted: false,
+    tags: ['클리핑', ...(summarize ? ['요약'] : [])],
+    createdAt: now,
+    updatedAt: now,
+    blocks: [
+      {
+        id: uid('b'),
+        type: 'callout',
+        text: `출처: ${url}`
+      },
+      {
+        id: loadingBlockId,
+        type: 'callout',
+        text: summarize
+          ? '웹페이지 본문과 내용을 추출하고 분석 중입니다 (다른 노트를 작성하거나 열람하셔도 작업이 안전하게 유지됩니다)...'
+          : '웹페이지 본문을 추출 중입니다...'
       }
-    }
-    if (!html && !readerMarkdown) {
-      // 1. Try Jina Reader. First request of a short link (e.g. naver.me) can take 20s+ to render,
-      //    but Jina caches it, so a second attempt is usually fast. Retry once only on timeout/network error.
-      for (let attempt = 0; attempt < 2 && !readerMarkdown; attempt++) {
-        try {
-          if (attempt === 1) showToast('응답이 지연되어 한 번 더 시도하는 중... (단축 주소는 처음에 시간이 걸릴 수 있습니다)', 4000);
-          const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
-            signal: AbortSignal.timeout(attempt === 0 ? 45000 : 30000)
-          });
-          if (jinaRes && jinaRes.ok) {
-            const jinaText = await jinaRes.text();
-            if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
-              readerMarkdown = jinaText;
-            }
+    ]
+  };
+
+  state.notes.unshift(newNote);
+  activeNoteId = newNote.id;
+  scheduleSave();
+
+  if (openEditor) {
+    openNoteInEditor(newNote.id);
+  } else {
+    renderAll();
+  }
+
+  showToast(`웹 클리핑 노트가 생성되었습니다: ${initialTitle}`);
+
+  // Asynchronous background extraction and summarization
+  (async () => {
+    try {
+      let html = '';
+      let readerMarkdown = '';
+      let finalUrl = url;
+      let jinaTimedOut = false;
+
+      // 1. Try WordPress.com official public REST API first (fastest, high fidelity, bypasses Cloudflare)
+      try {
+        const wpPost = await tryFetchWordPressComPost(url);
+        if (wpPost && wpPost.html) {
+          html = wpPost.html;
+          if (wpPost.title && (!newNote.title || newNote.title.startsWith('웹 클리핑:'))) {
+            newNote.title = wpPost.title;
           }
-          break; // Got a definite HTTP answer (success or refusal): no point retrying
-        } catch (e) {
-          jinaTimedOut = true; // timeout or network error -> retry once
+        }
+      } catch (_) {}
+
+      // 2. Try local clip server if available
+      if (!html) {
+        const localRes = await fetch(`/api/clip?url=${encodeURIComponent(url)}`).catch(() => null);
+        if (localRes && localRes.ok) {
+          const data = await localRes.json();
+          if (data.ok) {
+            html = data.html || '';
+            readerMarkdown = data.readerMarkdown || '';
+            finalUrl = data.finalUrl || url;
+          }
         }
       }
 
-      // 2. If Jina failed or was blocked, try CORS proxies with timeout
+      // 3. Try Jina Reader with substantial body validation
       if (!html && !readerMarkdown) {
-        const proxies = [
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-        ];
-        for (const proxyUrl of proxies) {
+        for (let attempt = 0; attempt < 2 && !readerMarkdown; attempt++) {
           try {
-            const pRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-            if (pRes && pRes.ok) {
-              const pText = await pRes.text();
-              if (
-                pText &&
-                pText.length > 200 &&
-                !pText.includes('522: Connection timed out') &&
-                !pText.includes('Cloudflare') &&
-                !pText.includes('name="isbot"')
-              ) {
-                html = pText;
-                break;
+            if (attempt === 1) showToast('응답이 지연되어 한 번 더 시도하는 중입니다 (단축 주소는 처음에 시간이 걸릴 수 있습니다)...', 4000);
+            const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
+              signal: AbortSignal.timeout(attempt === 0 ? 45000 : 30000)
+            });
+            if (jinaRes && jinaRes.ok) {
+              const jinaText = await jinaRes.text();
+              if (!jinaText.startsWith('{"data":null') && !jinaText.includes('"AbuseAlleviationError"')) {
+                const contentIdx = jinaText.indexOf('Markdown Content:');
+                const bodyPart = contentIdx !== -1 ? jinaText.slice(contentIdx + 'Markdown Content:'.length).trim() : jinaText.trim();
+                const cleanBody = bodyPart.replace(/Warning:\s*This is a cached snapshot[^.\n]*[.\n]?/gi, '').trim();
+                if (cleanBody.length >= 80) {
+                  readerMarkdown = jinaText;
+                }
               }
             }
-          } catch {}
+            break;
+          } catch (e) {
+            jinaTimedOut = true;
+          }
+        }
+
+        // 4. Try CORS proxies if Jina failed or returned empty content
+        if (!html && !readerMarkdown) {
+          const proxies = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+          ];
+          for (const proxyUrl of proxies) {
+            try {
+              const pRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+              if (pRes && pRes.ok) {
+                const pText = await pRes.text();
+                if (
+                  pText &&
+                  pText.length > 200 &&
+                  !pText.includes('522: Connection timed out') &&
+                  !pText.includes('Cloudflare') &&
+                  !pText.includes('name="isbot"')
+                ) {
+                  html = pText;
+                  break;
+                }
+              }
+            } catch {}
+          }
         }
       }
-    }
 
-    if (!html && !readerMarkdown) {
-      let domain = '';
-      try { domain = new URL(url).hostname; } catch {}
-      const fallbackTitle = `웹페이지 링크: ${domain || url}`;
-      const isShortLink = /(^|\.)(naver\.me|bit\.ly|t\.co|tinyurl\.com|is\.gd|goo\.gl|ow\.ly|buff\.ly|lnkd\.in|youtu\.be|cnn\.it|bbc\.in|url\.kr|vo\.la)$/i.test(domain);
-      const failMsg = jinaTimedOut
-        ? `⏱️ ${domain}의 응답이 지연되어 본문을 가져오지 못했습니다. (보안 차단이 아니라 시간 초과일 수 있습니다.)`
-        : `⚠️ 해당 웹사이트(${domain})의 외부 크롤러 접근 차단(보안 정책)으로 인해 URL 자동 추출이 제한되었습니다.`;
-      const failHint = jinaTimedOut || isShortLink
-        ? `💡 해결 방법: 잠시 후 같은 주소로 다시 시도해 보세요. (처음 읽는 단축 주소는 느리지만 두 번째는 빨라집니다.) 계속 안 되면 단축 주소 대신 주소창에 나온 기사 전체 주소를 붙여 넣거나, 본문을 복사(Ctrl+C)해 [웹 클리퍼 붙여넣기] 영역에 붙여넣기(Ctrl+V)하세요.`
-        : `💡 해결 방법: 브라우저에서 해당 기사 페이지를 열고 본문을 복사(Ctrl+C)한 후, VaultNote의 [웹 클리퍼 붙여넣기] 영역이나 본문에 붙여넣기(Ctrl+V)하시면 서식과 이미지까지 즉시 완벽하게 저장 및 요약됩니다.`;
-      const fallbackBlocks = [
-        { id: uid('b'), type: 'callout', text: `출처: ${url}` },
-        { id: uid('b'), type: 'p', text: failMsg },
-        { id: uid('b'), type: 'p', text: failHint }
-      ];
+      // If extraction completely failed: Fallback guidance (no emojis)
+      if (!html && !readerMarkdown) {
+        if (newNote.trashed || newNote.isEncrypted) return;
+        const isShortLink = /(^|\.)(naver\.me|bit\.ly|t\.co|tinyurl\.com|is\.gd|goo\.gl|ow\.ly|buff\.ly|lnkd\.in|youtu\.be|cnn\.it|bbc\.in|url\.kr|vo\.la)$/i.test(domain);
+        const failMsg = jinaTimedOut
+          ? `[안내] ${domain || '웹사이트'}의 응답이 지연되어 본문을 가져오지 못했습니다. (네트워크 지연 또는 시간 초과)`
+          : `[안내] 해당 웹사이트(${domain || '웹사이트'})의 외부 크롤러 접근 제한(보안 정책 또는 로그인 필요)으로 인해 본문 자동 추출이 지원되지 않습니다.`;
+        const failHint = jinaTimedOut || isShortLink
+          ? `[해결 방법] 잠시 후 같은 주소로 다시 시도해 보시거나, 브라우저에서 해당 기사 본문을 복사(Ctrl+C)한 후 현재 열려 있는 이 화면 아래에 바로 붙여넣기(Ctrl+V)하시면 내용이 저장됩니다.`
+          : `[해결 방법] 브라우저에서 해당 기사 페이지를 열고 본문을 복사(Ctrl+C)한 후, 현재 열려 있는 이 화면 아래에 바로 붙여넣기(Ctrl+V)하시면 서식과 이미지까지 즉시 완벽하게 저장됩니다.`;
 
-      const folderId = targetFolderId || (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
-      const now = new Date().toISOString();
-      const fallbackNote = {
-        id: uid('note'),
-        title: fallbackTitle,
-        folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
-        docType: 'clip',
-        status: '',
-        priority: 'normal',
-        favorite: activeNav === 'favorites',
-        trashed: false,
-        isEncrypted: false,
-        tags: ['클리핑', '링크'],
-        createdAt: now,
-        updatedAt: now,
-        blocks: fallbackBlocks
-      };
+        const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
+        if (loadBlock) {
+          loadBlock.text = `${failMsg}\n\n${failHint}`;
+        }
+        scheduleSave();
+        if (activeNoteId === newNote.id) renderActiveNoteEditor();
+        showToast('사이트 보안 차단으로 본문 자동 추출이 제한되었습니다. 복사하여 붙여넣기를 이용해 주세요.', 4500);
+        return;
+      }
 
-      state.notes.unshift(fallbackNote);
-      activeNoteId = fallbackNote.id;
+      // Parse blocks from extracted HTML or Markdown
+      const parsed = html
+        ? parseHtmlToBlocks(html, finalUrl, readerMarkdown)
+        : parseMarkdownToBlocks(readerMarkdown, finalUrl);
+
+      const noteTitle = parsed.title || newNote.title || (domain ? `${domain} 기사` : '웹 클리핑');
+      let finalBlocks = parsed.blocks;
+      let tags = ['클리핑'];
+
+      if (summarize) {
+        const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
+        finalBlocks = localSum.blocks;
+        tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
+      }
+
+      if (newNote.trashed || newNote.isEncrypted) return;
+
+      newNote.title = noteTitle;
+      newNote.blocks = finalBlocks;
+      newNote.tags = tags;
+      newNote.updatedAt = new Date().toISOString();
       scheduleSave();
-      if (openEditor) openNoteInEditor(fallbackNote.id);
-      else renderAll();
+
+      if (activeNoteId === newNote.id) {
+        renderActiveNoteEditor();
+      } else {
+        renderSidebar();
+      }
 
       showToast(
-        jinaTimedOut
-          ? '응답 지연으로 본문을 가져오지 못했습니다. 잠시 후 같은 주소로 다시 시도하거나 기사 전체 주소를 사용해주세요.'
-          : '사이트 보안 차단으로 본문 자동 추출이 제한되었습니다. 기사 복사/붙여넣기를 이용해주세요.',
-        4500
+        summarize
+          ? `핵심 요약 노트가 완성되었습니다: ${noteTitle.slice(0, 24)}`
+          : `본문 클리핑이 완료되었습니다: ${noteTitle.slice(0, 24)}`
       );
-      return fallbackNote;
-    }
 
-    const parsed = html
-      ? parseHtmlToBlocks(html, finalUrl, readerMarkdown)
-      : parseMarkdownToBlocks(readerMarkdown, finalUrl);
-
-    const noteTitle = parsed.title || new URL(finalUrl).hostname;
-    let finalBlocks = parsed.blocks;
-    let tags = ['클리핑'];
-
-    // Step 1: Immediately generate fast local summary so the note is created & displayed right away (< 1s)
-    if (summarize) {
-      const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
-      finalBlocks = localSum.blocks;
-      tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
-    }
-
-    const folderId =
-      targetFolderId ||
-      (activeNav.startsWith('folder:') ? activeNav.slice(7) : 'f_clip');
-
-    const now = new Date().toISOString();
-    const newNote = {
-      id: uid('note'),
-      title: noteTitle,
-      folderId: state.folders.some((f) => f.id === folderId) ? folderId : (state.folders[0]?.id || 'f_work'),
-      docType: 'clip',
-      status: '',
-      priority: 'normal',
-      favorite: activeNav === 'favorites',
-      trashed: false,
-      isEncrypted: false,
-      tags,
-      createdAt: now,
-      updatedAt: now,
-      blocks: finalBlocks
-    };
-
-    state.notes.unshift(newNote);
-    activeNoteId = newNote.id;
-    scheduleSave();
-
-    if (openEditor) {
-      openNoteInEditor(newNote.id);
-    } else {
-      renderAll();
-    }
-
-    showToast(
-      summarize
-        ? `핵심 요약 노트가 생성되었습니다: ${noteTitle.slice(0, 28)}`
-        : `본문 클리핑 완료: ${noteTitle.slice(0, 28)}`
-    );
-
-    // Step 2: If Gemini API Key is configured, upgrade the summary in place with AI (~1s) without blocking note creation
-    if (summarize && (state.settings.geminiApiKey || '').trim()) {
-      summarizeWithGeminiAI(noteTitle, parsed.blocks, finalUrl, false)
-        .then((aiSum) => {
-          if (aiSum && aiSum.blocks && !newNote.trashed && !newNote.isEncrypted) {
-            newNote.blocks = aiSum.blocks;
-            for (const kw of aiSum.autoTags || []) {
-              if (isMeaningfulTopicTag(kw) && !newNote.tags.includes(kw)) newNote.tags.push(kw);
+      // Upgrade with Gemini AI summary if configured
+      if (summarize && (state.settings.geminiApiKey || '').trim()) {
+        summarizeWithGeminiAI(noteTitle, parsed.blocks, finalUrl, false)
+          .then((aiSum) => {
+            if (aiSum && aiSum.blocks && !newNote.trashed && !newNote.isEncrypted) {
+              newNote.blocks = aiSum.blocks;
+              for (const kw of aiSum.autoTags || []) {
+                if (isMeaningfulTopicTag(kw) && !newNote.tags.includes(kw)) newNote.tags.push(kw);
+              }
+              newNote.updatedAt = new Date().toISOString();
+              scheduleSave();
+              if (activeNoteId === newNote.id) renderActiveNoteEditor();
+              showToast(`AI 고품질 핵심 요약이 반영되었습니다: ${noteTitle.slice(0, 24)}`);
             }
-            newNote.updatedAt = new Date().toISOString();
-            scheduleSave();
-            renderAll();
-            showToast(`AI 고품질 핵심 요약이 반영되었습니다: ${noteTitle.slice(0, 24)}`);
-          }
-        })
-        .catch((err) => {
-          console.warn('[Gemini Auto-Summarize Failed]:', err);
-          let reason = 'AI 통신 실패';
-          const msg = String(err?.message || '');
-          if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) {
-            reason = 'API 키 불일치 (키 확인 필요)';
-          } else if (msg.includes('QUOTA_EXCEEDED') || msg.includes('429')) {
-            reason = 'API 일일/분당 할당량 초과';
-          } else if (msg.includes('TIMEOUT')) {
-            reason = 'AI 서버 응답 시간 초과';
-          } else if (msg.includes('SAFETY_BLOCKED')) {
-            reason = '콘텐츠 안전 정책 감지';
-          }
-          showToast(`AI 요약 연결 실패 (${reason}) -> 오프라인 추출 요약이 유지되었습니다.`, 3800);
-        });
+          })
+          .catch((err) => {
+            console.warn('[Gemini Auto-Summarize Failed]:', err);
+          });
+      }
+    } catch (err) {
+      console.warn('[clipAndSummarizeUrl background error]:', err);
+      const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
+      if (loadBlock) {
+        loadBlock.text = `[안내] 웹페이지 내용을 처리하는 중 일시적인 오류가 발생했습니다.\n\n[해결 방법] 브라우저에서 해당 기사 본문을 복사(Ctrl+C)한 후 현재 열려 있는 이 화면 아래에 바로 붙여넣기(Ctrl+V)해 주세요.`;
+      }
+      scheduleSave();
+      if (activeNoteId === newNote.id) renderActiveNoteEditor();
+      showToast('웹페이지 추출 중 오류가 발생했습니다. 복사하여 붙여넣기를 이용해 주세요.');
     }
+  })();
 
-    return newNote;
-  } catch {
-    showToast('URL 추출 실패: 웹 클리퍼의 복사 붙여넣기 영역을 이용해주세요.');
-    return null;
-  }
+  return newNote;
 }
 
 function setupBookmarklet() {
@@ -8859,7 +8912,7 @@ async function runAISummarizeOnActiveNote() {
   const ytVideoId = ytBlock?.videoId || extractYouTubeVideoId(sourceUrl);
   if (ytVideoId) {
     document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
-    showToast('🎬 Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 15~25초)...');
+    showToast('Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 15~25초)...');
     try {
       const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
       const aiResult = await summarizeYouTubeWithGeminiAI(ytVideoId, note.title || '', apiKey);
@@ -8877,7 +8930,7 @@ async function runAISummarizeOnActiveNote() {
       note.updatedAt = new Date().toISOString();
       scheduleSave();
       renderActiveNoteEditor();
-      showToast(`✨ 유튜브 영상 심층 요약이 완료되었습니다: ${(note.title || '').slice(0, 24)}`);
+      showToast(`유튜브 영상 심층 요약이 완료되었습니다: ${(note.title || '').slice(0, 24)}`);
       return;
     } catch (err) {
       console.warn('[Gemini YouTube Summarize Error]:', err);
