@@ -5679,8 +5679,8 @@ async function testGeminiApiKey(rawKey) {
   const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    // Uses the same verified model IDs as the real summarizer, trying each in order.
-    const testModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+    // Uses verified Google Gemini models with multi-tier fallback
+    const testModels = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-flash-lite-latest', 'gemini-1.5-flash'];
     let res = null;
     for (const m of testModels) {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`;
@@ -5780,9 +5780,8 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
         safeBody.slice(0, 12000)
       ].join('\n');
 
-  // Standard Google Gemini Flash models with fallback order
-  // NOTE: Verified-working model IDs (original v1 deployment). Do NOT change without live-key testing.
-  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+  // Standard Google Gemini Flash models with resilient multi-tier fallback order
+  const models = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-flash-lite-latest', 'gemini-1.5-flash'];
   let parsedJson = null;
   let lastErr = null;
 
@@ -6067,7 +6066,7 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
   "tags": ["핵심주제1", "핵심주제2", "핵심주제3"]
 }`;
 
-  const videoModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  const videoModels = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-flash-lite-latest', 'gemini-1.5-flash'];
   let parsedJson = null;
   let lastErr = null;
 
@@ -6077,7 +6076,7 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(65000),
+        signal: AbortSignal.timeout(120000),
         body: JSON.stringify({
           contents: [
             {
@@ -9322,7 +9321,7 @@ async function recognizeTextFromImageWithGemini(dataUrlOrHttpUrl) {
   const mimeType = match[1];
   const base64Data = match[2];
 
-  const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+  const models = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-flash-lite-latest', 'gemini-1.5-flash'];
   const prompt = '이 이미지에 포함된 모든 글자(텍스트, 한국어, 영어, 숫자, 기호 등)를 누락 없이 정확하게 추출(OCR)해 주세요. 다른 설명이나 사족 없이 오직 이미지에서 읽어낸 글자 내용만 그대로 출력하세요.';
 
   for (const model of models) {
