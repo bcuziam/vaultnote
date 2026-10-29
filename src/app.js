@@ -171,6 +171,9 @@ let decryptedVaultItemsCache = [];
 let decryptedNotesSessionMap = new Map();
 let activeVaultCategory = 'all';
 let vaultDisplayMode = localStorage.getItem('vaultnote_vault_display') || 'list';
+let revealedVaultItemIds = new Set();
+let isAllVaultSecretsRevealed = false;
+let vaultRenderToken = 0;
 let idleTimer = null;
 let draggedNoteId = null;
 let draggedBlockId = null;
@@ -649,7 +652,7 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   await VaultStorage.saveState(state, false);
 
   if (unlockedVaultPassword && activeNav === 'vault') {
-    renderSecureVaultView(true);
+    await renderSecureVaultView(true);
   }
 
   renderAll(true);
@@ -880,6 +883,8 @@ function resetIdleTimer() {
 async function lockEverything(reasonMsg = '화면이 잠금 상태로 전환되었습니다.', allowPromptSetup = false) {
   unlockedVaultPassword = null;
   decryptedVaultItemsCache = [];
+  revealedVaultItemIds.clear();
+  isAllVaultSecretsRevealed = false;
   decryptedNotesSessionMap.clear();
 
   const vaultIndicator = document.getElementById('vault-lock-indicator');
@@ -4060,6 +4065,56 @@ function updateVaultViewToggleButtons() {
   if (btnCard) btnCard.classList.toggle('active', vaultDisplayMode === 'card');
 }
 
+function openVaultItemModalForEdit(item) {
+  if (!unlockedVaultPassword) return showToast('먼저 금고 비밀번호를 입력해 잠금을 해제하세요.');
+  const modal = document.getElementById('vault-item-modal');
+  if (!modal) return;
+  const titleEl = document.getElementById('vault-item-modal-title');
+  if (titleEl) titleEl.textContent = '보안 항목 수정';
+  const editIdEl = document.getElementById('vi-edit-id');
+  if (editIdEl) editIdEl.value = item.id;
+  const catEl = document.getElementById('vi-category');
+  if (catEl) catEl.value = item.category || 'account';
+  const titleInp = document.getElementById('vi-title');
+  if (titleInp) titleInp.value = item.title || '';
+  const userInp = document.getElementById('vi-username');
+  if (userInp) userInp.value = item.username || '';
+  const secInp = document.getElementById('vi-secret');
+  if (secInp) {
+    secInp.value = item.secret || '';
+    secInp.type = 'password';
+  }
+  const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+  if (toggleBtn) toggleBtn.textContent = '보기';
+  const urlInp = document.getElementById('vi-url');
+  if (urlInp) urlInp.value = item.url || '';
+  const notesInp = document.getElementById('vi-notes');
+  if (notesInp) notesInp.value = item.notes || '';
+  const submitBtn = document.getElementById('vi-submit-btn');
+  if (submitBtn) submitBtn.textContent = '수정 완료';
+  modal.classList.remove('hidden');
+  if (titleInp) titleInp.focus();
+}
+
+function openVaultItemModalForNew() {
+  if (!unlockedVaultPassword) return showToast('먼저 금고 비밀번호를 입력해 잠금을 해제하세요.');
+  const modal = document.getElementById('vault-item-modal');
+  if (!modal) return;
+  document.getElementById('vault-item-form')?.reset();
+  const titleEl = document.getElementById('vault-item-modal-title');
+  if (titleEl) titleEl.textContent = '보안 금고 항목 추가';
+  const editIdEl = document.getElementById('vi-edit-id');
+  if (editIdEl) editIdEl.value = '';
+  const secInp = document.getElementById('vi-secret');
+  if (secInp) secInp.type = 'password';
+  const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+  if (toggleBtn) toggleBtn.textContent = '보기';
+  const submitBtn = document.getElementById('vi-submit-btn');
+  if (submitBtn) submitBtn.textContent = '암호화 저장';
+  modal.classList.remove('hidden');
+  document.getElementById('vi-title')?.focus();
+}
+
 async function renderSecureVaultView(forceDecrypt = false) {
   const lockedScreen = document.getElementById('vault-locked-screen');
   const unlockedContent = document.getElementById('vault-unlocked-content');
@@ -4080,15 +4135,21 @@ async function renderSecureVaultView(forceDecrypt = false) {
   if (indicator) indicator.textContent = '열림';
   updateVaultViewToggleButtons();
 
-  // Decrypt vault items once into decryptedVaultItemsCache when unlocking or when items changed
+  // Decrypt vault items into local array, guarded by execution token to prevent race-condition duplicates
+  const myToken = ++vaultRenderToken;
   if (forceDecrypt || decryptedVaultItemsCache.length !== state.vaultItems.length) {
-    decryptedVaultItemsCache = [];
-    for (const item of state.vaultItems) {
+    const itemsToDecrypt = [...(state.vaultItems || [])];
+    const freshCache = [];
+    for (const item of itemsToDecrypt) {
+      if (!item || !item.encryptedPayload) continue;
       try {
         const dec = await VaultCrypto.decryptData(item.encryptedPayload, unlockedVaultPassword);
-        decryptedVaultItemsCache.push({ id: item.id, createdAt: item.createdAt, ...dec });
+        freshCache.push({ id: item.id, createdAt: item.createdAt, ...dec });
       } catch {}
     }
+    // If a newer render was triggered while we were decrypting, discard this stale run
+    if (myToken !== vaultRenderToken) return;
+    decryptedVaultItemsCache = freshCache;
   }
 
   renderVaultItemsFromCache();
@@ -4101,7 +4162,17 @@ function renderVaultItemsFromCache() {
 
   const q = (document.getElementById('vault-search-input')?.value || '').trim().toLowerCase();
 
-  const filtered = decryptedVaultItemsCache.filter((it) => {
+  // De-duplicate by id to be 100% fail-safe against race condition duplication
+  const seenIds = new Set();
+  const uniqueItems = [];
+  for (const it of decryptedVaultItemsCache) {
+    if (!it || !it.id) continue;
+    if (seenIds.has(it.id)) continue;
+    seenIds.add(it.id);
+    uniqueItems.push(it);
+  }
+
+  const filtered = uniqueItems.filter((it) => {
     const matchCat = activeVaultCategory === 'all' || it.category === activeVaultCategory;
     if (!matchCat) return false;
     if (!q) return true;
@@ -4111,6 +4182,13 @@ function renderVaultItemsFromCache() {
     const inUrl = (it.url || '').toLowerCase().includes(q);
     return inTitle || inUser || inNotes || inUrl;
   });
+
+  const btnToggleAll = document.getElementById('btn-toggle-all-vault-secrets');
+  if (btnToggleAll) {
+    const allRevealed = filtered.length > 0 && filtered.every((it) => isAllVaultSecretsRevealed || revealedVaultItemIds.has(it.id));
+    btnToggleAll.textContent = allRevealed ? '전체 숨김' : '전체 보기';
+    btnToggleAll.classList.toggle('active', allRevealed);
+  }
 
   if (filtered.length === 0) {
     const emptyMsg = q
@@ -4133,28 +4211,62 @@ function renderVaultItemsFromCache() {
     grid.className = 'vault-cards-grid';
 
     for (const item of filtered) {
+      const isRevealed = isAllVaultSecretsRevealed || revealedVaultItemIds.has(item.id);
       const card = document.createElement('div');
       card.className = 'vault-card';
       card.innerHTML = `
         <div class="vault-card-header">
           <span class="vault-badge">${catLabels[item.category] || '보안'}</span>
-          <button type="button" class="text-btn text-danger" data-del="${item.id}">삭제</button>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button type="button" class="btn-sm-text btn-toggle-vis" style="font-size:11.5px;padding:2px 8px;">${isRevealed ? '숨김' : '보기'}</button>
+            <button type="button" class="text-btn btn-edit-vi" data-edit="${item.id}" style="font-size:12px;color:var(--text-secondary);">수정</button>
+            <button type="button" class="text-btn text-danger btn-del-vi" data-del="${item.id}" style="font-size:12px;">삭제</button>
+          </div>
         </div>
-        <h4 style="font-size:15px;margin:2px 0;">${escapeHtml(item.title)}</h4>
-        ${item.username ? `<div class="text-muted" style="font-size:13px;">ID/계좌: <strong style="color:var(--text-main);">${escapeHtml(item.username)}</strong></div>` : ''}
-        ${
-          item.secret
-            ? `<div class="vault-secret-row">
-                 <span class="secret-val" data-masked="1">••••••••••••</span>
-                 <div style="display:flex;gap:6px;">
-                   <button type="button" class="btn-sm-text btn-toggle-vis">보기</button>
-                   <button type="button" class="btn-sm-text btn-copy-sec">복사</button>
-                 </div>
-               </div>`
-            : ''
-        }
-        ${item.url ? `<div class="text-muted" style="font-size:12px;word-break:break-all;">${escapeHtml(item.url)}</div>` : ''}
-        ${item.notes ? `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);background:var(--bg-sidebar);padding:8px;border-radius:4px;margin:0;">${escapeHtml(item.notes)}</pre>` : ''}
+        <h4 style="font-size:15px;margin:2px 0 6px 0;">${escapeHtml(item.title)}</h4>
+
+        ${item.username ? `
+          <div class="vault-info-row" style="margin-bottom:6px;font-size:13px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <span class="text-muted">ID/계좌: </span>
+              ${isRevealed
+                ? `<strong style="color:var(--text-main);font-family:monospace;">${escapeHtml(item.username)}</strong>`
+                : `<span style="color:var(--text-secondary);font-family:monospace;letter-spacing:1px;">••••••••</span>`
+              }
+            </div>
+            ${isRevealed ? `<button type="button" class="btn-sm-text btn-copy-user" data-user="${escapeHtml(item.username)}" style="font-size:11px;padding:1px 6px;">복사</button>` : ''}
+          </div>
+        ` : ''}
+
+        ${item.secret ? `
+          <div class="vault-secret-row" style="margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="text-muted" style="font-size:13px;">비밀번호: </span>
+              <span class="secret-val" style="font-family:monospace;letter-spacing:0.5px;font-size:12.5px;">
+                ${isRevealed ? escapeHtml(item.secret) : '••••••••••••'}
+              </span>
+            </div>
+            ${isRevealed ? `<button type="button" class="btn-sm-text btn-copy-sec" data-sec="${escapeHtml(item.secret)}" style="font-size:11px;padding:1px 6px;">복사</button>` : ''}
+          </div>
+        ` : ''}
+
+        ${item.url ? `
+          <div class="text-muted" style="font-size:12px;word-break:break-all;margin-bottom:4px;">
+            ${isRevealed
+              ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" style="color:var(--accent-primary);text-decoration:none;">${escapeHtml(item.url)}</a>`
+              : `<span style="font-family:monospace;letter-spacing:1px;">••••••••••••</span>`
+            }
+          </div>
+        ` : ''}
+
+        ${item.notes ? `
+          <div style="font-size:12px;background:var(--bg-sidebar);padding:8px;border-radius:4px;margin-top:4px;">
+            ${isRevealed
+              ? `<pre style="white-space:pre-wrap;margin:0;font-family:inherit;color:var(--text-secondary);">${escapeHtml(item.notes)}</pre>`
+              : `<span style="color:var(--text-secondary);font-family:monospace;letter-spacing:1px;">••••••••••••</span>`
+            }
+          </div>
+        ` : ''}
       `;
 
       attachVaultItemRowEvents(card, item);
@@ -4172,9 +4284,9 @@ function renderVaultItemsFromCache() {
             <th style="width:115px;">분류</th>
             <th style="min-width:140px;">항목 이름</th>
             <th style="min-width:130px;">아이디/계좌</th>
-            <th style="min-width:200px;">비밀번호/시크릿</th>
+            <th style="min-width:180px;">비밀번호/시크릿</th>
             <th style="min-width:160px;">메모/URL</th>
-            <th style="width:55px;text-align:center;">관리</th>
+            <th style="width:140px;text-align:center;">관리</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -4183,30 +4295,47 @@ function renderVaultItemsFromCache() {
     const tbody = tableWrap.querySelector('tbody');
 
     for (const item of filtered) {
+      const isRevealed = isAllVaultSecretsRevealed || revealedVaultItemIds.has(item.id);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><span class="vault-badge">${catLabels[item.category] || '보안'}</span></td>
         <td><strong style="color:var(--text-main);font-size:13.5px;">${escapeHtml(item.title)}</strong></td>
-        <td><span style="font-family:monospace;font-size:12.5px;">${escapeHtml(item.username || '-')}</span></td>
         <td>
-          ${
-            item.secret
-              ? `<div style="display:flex;align-items:center;gap:8px;">
-                   <span class="secret-val" data-masked="1" style="font-family:monospace;font-size:12.5px;letter-spacing:1px;">••••••••••••</span>
-                   <button type="button" class="btn-sm-text btn-toggle-vis">보기</button>
-                   <button type="button" class="btn-sm-text btn-copy-sec">복사</button>
-                 </div>`
-              : `<span class="text-muted">-</span>`
-          }
+          ${item.username ? `
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-family:monospace;font-size:12.5px;${isRevealed ? '' : 'color:var(--text-secondary);letter-spacing:1px;'}">
+                ${isRevealed ? escapeHtml(item.username) : '••••••••'}
+              </span>
+              ${isRevealed ? `<button type="button" class="btn-sm-text btn-copy-user" data-user="${escapeHtml(item.username)}" style="font-size:10.5px;padding:1px 5px;">복사</button>` : ''}
+            </div>
+          ` : `<span class="text-muted">-</span>`}
         </td>
         <td>
-          <div style="max-width:260px;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(item.notes || item.url || '')}">
-            ${item.url ? `<span class="text-muted" style="margin-right:4px;">[링크]</span>` : ''}
-            ${escapeHtml(item.notes || item.url || '-')}
+          ${item.secret ? `
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="secret-val" style="font-family:monospace;font-size:12.5px;${isRevealed ? '' : 'color:var(--text-secondary);letter-spacing:1px;'}">
+                ${isRevealed ? escapeHtml(item.secret) : '••••••••••••'}
+              </span>
+              ${isRevealed ? `<button type="button" class="btn-sm-text btn-copy-sec" data-sec="${escapeHtml(item.secret)}" style="font-size:10.5px;padding:1px 5px;">복사</button>` : ''}
+            </div>
+          ` : `<span class="text-muted">-</span>`}
+        </td>
+        <td>
+          <div style="max-width:260px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${isRevealed ? `
+              ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" style="color:var(--accent-primary);margin-right:4px;text-decoration:none;">[링크]</a>` : ''}
+              <span style="color:var(--text-secondary);" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || item.url || '-')}</span>
+            ` : `
+              <span style="color:var(--text-secondary);font-family:monospace;letter-spacing:1px;">••••••••••••</span>
+            `}
           </div>
         </td>
         <td style="text-align:center;">
-          <button type="button" class="text-btn text-danger" data-del="${item.id}" style="font-size:12px;">삭제</button>
+          <div style="display:flex;gap:4px;justify-content:center;align-items:center;">
+            <button type="button" class="btn-sm-text btn-toggle-vis" style="font-size:11px;padding:2px 6px;">${isRevealed ? '숨김' : '보기'}</button>
+            <button type="button" class="text-btn btn-edit-vi" data-edit="${item.id}" style="font-size:12px;color:var(--text-secondary);margin:0 2px;">수정</button>
+            <button type="button" class="text-btn text-danger btn-del-vi" data-del="${item.id}" style="font-size:12px;">삭제</button>
+          </div>
         </td>
       `;
 
@@ -4218,32 +4347,67 @@ function renderVaultItemsFromCache() {
 }
 
 function attachVaultItemRowEvents(el, item) {
+  // Toggle individual item show/hide
   const toggleBtn = el.querySelector('.btn-toggle-vis');
   if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      const span = el.querySelector('.secret-val');
-      const isMasked = span.dataset.masked === '1';
-      span.textContent = isMasked ? item.secret : '••••••••••••';
-      span.dataset.masked = isMasked ? '0' : '1';
-      toggleBtn.textContent = isMasked ? '숨김' : '보기';
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (isAllVaultSecretsRevealed) {
+        // If master reveal is active and user clicks hide, disable master reveal and remove this item
+        isAllVaultSecretsRevealed = false;
+        decryptedVaultItemsCache.forEach((it) => {
+          if (it.id !== item.id) revealedVaultItemIds.add(it.id);
+        });
+        revealedVaultItemIds.delete(item.id);
+      } else {
+        if (revealedVaultItemIds.has(item.id)) {
+          revealedVaultItemIds.delete(item.id);
+        } else {
+          revealedVaultItemIds.add(item.id);
+        }
+      }
+      renderVaultItemsFromCache();
     });
   }
 
-  const copyBtn = el.querySelector('.btn-copy-sec');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(item.secret);
-      showToast('클립보드에 복사되었습니다.');
+  // Copy username
+  const copyUserBtn = el.querySelector('.btn-copy-user');
+  if (copyUserBtn) {
+    copyUserBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const val = copyUserBtn.dataset.user || item.username || '';
+      navigator.clipboard.writeText(val);
+      showToast('아이디/계좌가 복사되었습니다.');
     });
   }
 
-  el.querySelector('[data-del]')?.addEventListener('click', () => {
+  // Copy secret
+  const copySecBtn = el.querySelector('.btn-copy-sec');
+  if (copySecBtn) {
+    copySecBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const val = copySecBtn.dataset.sec || item.secret || '';
+      navigator.clipboard.writeText(val);
+      showToast('비밀번호가 복사되었습니다.');
+    });
+  }
+
+  // Edit item
+  el.querySelector('.btn-edit-vi')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openVaultItemModalForEdit(item);
+  });
+
+  // Delete item
+  el.querySelector('.btn-del-vi')?.addEventListener('click', (e) => {
+    e.stopPropagation();
     if (!confirm(`'${item.title}' 보안 항목을 삭제하시겠습니까?`)) return;
     lastLocalMutationTime = Date.now();
     if (!state.deletedVaultItemIds) state.deletedVaultItemIds = {};
     state.deletedVaultItemIds[item.id] = Date.now();
     state.vaultItems = state.vaultItems.filter((v) => v.id !== item.id);
     decryptedVaultItemsCache = decryptedVaultItemsCache.filter((v) => v.id !== item.id);
+    revealedVaultItemIds.delete(item.id);
     scheduleSave(true, true);
     renderVaultItemsFromCache();
     showToast('보안 항목이 삭제되었습니다.');
@@ -8153,13 +8317,19 @@ function bindEvents() {
     if (toggleBtn) toggleBtn.textContent = isPass ? '숨김' : '보기';
   });
 
+  // Master toggle for revealing/masking all vault details
+  document.getElementById('btn-toggle-all-vault-secrets')?.addEventListener('click', () => {
+    isAllVaultSecretsRevealed = !isAllVaultSecretsRevealed;
+    if (isAllVaultSecretsRevealed) {
+      decryptedVaultItemsCache.forEach((it) => revealedVaultItemIds.add(it.id));
+    } else {
+      revealedVaultItemIds.clear();
+    }
+    renderVaultItemsFromCache();
+  });
+
   document.getElementById('btn-add-vault-item').addEventListener('click', () => {
-    if (!unlockedVaultPassword) return showToast('먼저 금고 비밀번호를 입력해 잠금을 해제하세요.');
-    const secInp = document.getElementById('vi-secret');
-    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
-    if (secInp) secInp.type = 'password';
-    if (toggleBtn) toggleBtn.textContent = '보기';
-    document.getElementById('vault-item-modal').classList.remove('hidden');
+    openVaultItemModalForNew();
   });
 
   document.getElementById('btn-close-vault-item-modal').addEventListener('click', () => {
@@ -8168,6 +8338,8 @@ function bindEvents() {
     if (secInp) secInp.type = 'password';
     if (toggleBtn) toggleBtn.textContent = '보기';
     document.getElementById('vault-item-form')?.reset();
+    const editIdEl = document.getElementById('vi-edit-id');
+    if (editIdEl) editIdEl.value = '';
     document.getElementById('vault-item-modal').classList.add('hidden');
   });
 
@@ -8182,9 +8354,11 @@ function bindEvents() {
       showToast('제목을 입력해주세요.');
       return;
     }
+    const cat = document.getElementById('vi-category').value;
+    const editId = (document.getElementById('vi-edit-id')?.value || '').trim();
     lastLocalMutationTime = Date.now();
     const payload = {
-      category: document.getElementById('vi-category').value,
+      category: cat,
       title,
       username: document.getElementById('vi-username').value.trim(),
       secret: document.getElementById('vi-secret').value,
@@ -8192,21 +8366,58 @@ function bindEvents() {
       notes: document.getElementById('vi-notes').value.trim()
     };
     const encryptedPayload = await VaultCrypto.encryptData(payload, unlockedVaultPassword);
-    if (!Array.isArray(state.vaultItems)) state.vaultItems = [];
-    state.vaultItems.unshift({
-      id: uid('vi'),
-      createdAt: new Date().toISOString(),
-      encryptedPayload
-    });
-    e.target.reset();
-    const secInp = document.getElementById('vi-secret');
-    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
-    if (secInp) secInp.type = 'password';
-    if (toggleBtn) toggleBtn.textContent = '보기';
-    document.getElementById('vault-item-modal').classList.add('hidden');
-    scheduleSave(true, true);
-    renderSecureVaultView(true);
-    showToast('보안 항목이 안전하게 저장되었습니다.');
+
+    if (editId) {
+      // Edit existing item
+      if (!Array.isArray(state.vaultItems)) state.vaultItems = [];
+      const idx = state.vaultItems.findIndex((v) => v.id === editId);
+      if (idx !== -1) {
+        state.vaultItems[idx] = {
+          ...state.vaultItems[idx],
+          createdAt: state.vaultItems[idx].createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          encryptedPayload
+        };
+      }
+      const cIdx = decryptedVaultItemsCache.findIndex((v) => v.id === editId);
+      if (cIdx !== -1) {
+        decryptedVaultItemsCache[cIdx] = {
+          id: editId,
+          createdAt: decryptedVaultItemsCache[cIdx].createdAt || new Date().toISOString(),
+          ...payload
+        };
+      }
+      e.target.reset();
+      const editIdEl = document.getElementById('vi-edit-id');
+      if (editIdEl) editIdEl.value = '';
+      const secInp = document.getElementById('vi-secret');
+      const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+      if (secInp) secInp.type = 'password';
+      if (toggleBtn) toggleBtn.textContent = '보기';
+      document.getElementById('vault-item-modal').classList.add('hidden');
+      scheduleSave(true, true);
+      renderVaultItemsFromCache();
+      showToast('보안 항목이 수정되었습니다.');
+    } else {
+      // Add new item
+      if (!Array.isArray(state.vaultItems)) state.vaultItems = [];
+      state.vaultItems.unshift({
+        id: uid('vi'),
+        createdAt: new Date().toISOString(),
+        encryptedPayload
+      });
+      e.target.reset();
+      const editIdEl = document.getElementById('vi-edit-id');
+      if (editIdEl) editIdEl.value = '';
+      const secInp = document.getElementById('vi-secret');
+      const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+      if (secInp) secInp.type = 'password';
+      if (toggleBtn) toggleBtn.textContent = '보기';
+      document.getElementById('vault-item-modal').classList.add('hidden');
+      scheduleSave(true, true);
+      renderSecureVaultView(true);
+      showToast('보안 항목이 안전하게 저장되었습니다.');
+    }
   });
 
   // Graph Controls & Canvas Click

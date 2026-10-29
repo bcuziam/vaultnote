@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v85</span>
+        <span class="app-version-badge" id="app-version-display">v86</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -422,6 +422,7 @@
                 <button type="button" id="btn-clear-vault-search" class="vault-search-clear hidden" title="검색어 지우기">✕</button>
               </div>
               <div class="vault-view-toggle">
+                <button type="button" id="btn-toggle-all-vault-secrets" class="vault-toggle-btn" title="모든 내용 보이기/숨기기" style="margin-right:6px;">전체 보기</button>
                 <button type="button" id="btn-vault-view-list" class="vault-toggle-btn active" title="목록형 뷰">목록형</button>
                 <button type="button" id="btn-vault-view-card" class="vault-toggle-btn" title="카드형 뷰">카드형</button>
               </div>
@@ -699,14 +700,15 @@
     </div>
   </div>
 
-  <!-- 보안 금고 항목 추가 모달 -->
+  <!-- 보안 금고 항목 추가 및 수정 모달 -->
   <div id="vault-item-modal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>보안 금고 항목 추가</h3>
+        <h3 id="vault-item-modal-title">보안 금고 항목 추가</h3>
         <button type="button" id="btn-close-vault-item-modal" class="icon-btn">✕</button>
       </div>
       <form id="vault-item-form" class="modal-body">
+        <input type="hidden" id="vi-edit-id" value="" />
         <select id="vi-category" class="mb-8" required>
           <option value="account">계정 / 비밀번호</option>
           <option value="finance">은행 / 계좌 / 금융</option>
@@ -722,7 +724,7 @@
         <input type="text" id="vi-url" placeholder="관련 URL (선택)" class="mb-8" />
         <textarea id="vi-notes" rows="4" placeholder="상세 메모"></textarea>
         <div class="modal-footer mt-12">
-          <button type="submit" class="btn btn-primary btn-block">암호화 저장</button>
+          <button type="submit" id="vi-submit-btn" class="btn btn-primary btn-block">암호화 저장</button>
         </div>
       </form>
     </div>
