@@ -8895,8 +8895,45 @@ function bindEvents() {
     }
   };
 
+  const updateAppLockSecurityUI = () => {
+    const badge = document.getElementById('app-lock-status-badge');
+    const desc = document.getElementById('app-lock-status-desc');
+    const passInp = document.getElementById('set-app-lock-pass');
+    const btnSave = document.getElementById('btn-save-app-lock');
+    const btnRemove = document.getElementById('btn-Remove-app-lock');
+    const autoLockSel = document.getElementById('auto-lock-minutes');
+
+    if (!badge || !desc || !passInp || !btnSave || !btnRemove) return;
+
+    if (autoLockSel) {
+      autoLockSel.value = String(state.settings.autoLockMinutes ?? 5);
+    }
+
+    const isLocked = Boolean(state.settings.appLockVerifier);
+    if (isLocked) {
+      badge.textContent = '사용 중';
+      badge.style.color = '#10b981';
+      badge.style.background = 'rgba(16, 185, 129, 0.15)';
+      desc.textContent = '현재 앱 진입 잠금이 활성화되어 있습니다. 새 번호 입력 후 변경하거나 해제할 수 있습니다.';
+      passInp.value = '';
+      passInp.placeholder = '새 비밀번호 입력';
+      btnSave.textContent = '변경';
+      btnRemove.classList.remove('hidden');
+    } else {
+      badge.textContent = '미사용';
+      badge.style.color = 'var(--text-muted)';
+      badge.style.background = 'rgba(156, 163, 175, 0.15)';
+      desc.textContent = '앱 실행 시 화면을 보호할 비밀번호를 설정할 수 있습니다.';
+      passInp.value = '';
+      passInp.placeholder = '비밀번호 입력';
+      btnSave.textContent = '설정';
+      btnRemove.classList.add('hidden');
+    }
+  };
+
   document.getElementById('btn-security-modal').addEventListener('click', () => {
     refreshGeminiKeyModalUI();
+    updateAppLockSecurityUI();
     updateVaultMasterSecurityUI();
     document.getElementById('security-modal').classList.remove('hidden');
   });
@@ -8908,18 +8945,33 @@ function bindEvents() {
   );
 
   document.getElementById('btn-save-app-lock').addEventListener('click', async () => {
-    const pass = document.getElementById('set-app-lock-pass').value;
-    if (!pass) return;
+    const pass = (document.getElementById('set-app-lock-pass').value || '').trim();
+    if (!pass) return showToast('앱 잠금 비밀번호를 입력해주세요.');
+    const wasLocked = Boolean(state.settings.appLockVerifier);
     state.settings.appLockVerifier = await VaultCrypto.createVerifier(pass);
     document.getElementById('set-app-lock-pass').value = '';
-    scheduleSave();
-    showToast('앱 진입 잠금이 설정되었습니다.');
+    lastLocalMutationTime = Date.now();
+    scheduleSave(true, true);
+    updateAppLockSecurityUI();
+    showToast(wasLocked ? '앱 잠금 비밀번호가 변경되었습니다.' : '앱 진입 잠금이 설정되었습니다.');
   });
 
   document.getElementById('btn-Remove-app-lock').addEventListener('click', () => {
+    if (!state.settings.appLockVerifier) return;
     state.settings.appLockVerifier = null;
-    scheduleSave();
+    document.getElementById('set-app-lock-pass').value = '';
+    lastLocalMutationTime = Date.now();
+    scheduleSave(true, true);
+    updateAppLockSecurityUI();
     showToast('앱 진입 잠금이 해제되었습니다.');
+  });
+
+  document.getElementById('btn-toggle-app-lock-vis')?.addEventListener('click', (e) => {
+    const inp = document.getElementById('set-app-lock-pass');
+    if (!inp) return;
+    const isHidden = inp.type === 'password';
+    inp.type = isHidden ? 'text' : 'password';
+    e.currentTarget.textContent = isHidden ? '숨김' : '보기';
   });
 
   document.getElementById('auto-lock-minutes').addEventListener('change', (e) => {

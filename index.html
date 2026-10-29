@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v87</span>
+        <span class="app-version-badge" id="app-version-display">v88</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -646,16 +646,23 @@
         <button type="button" id="btn-close-security-modal" class="icon-btn">✕</button>
       </div>
       <div class="modal-body">
-        <div class="sync-box">
-          <h4>1단계: 앱 진입 잠금</h4>
-          <div class="sync-row">
-            <input type="password" id="set-app-lock-pass" placeholder="앱 잠금 비밀번호" />
-            <button type="button" id="btn-save-app-lock" class="btn btn-primary btn-sm">설정</button>
-            <button type="button" id="btn-Remove-app-lock" class="btn btn-secondary btn-sm">해제</button>
+        <div class="sync-box" id="app-lock-setting-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h4 style="margin-bottom:0;">1단계: 앱 진입 잠금</h4>
+            <span id="app-lock-status-badge" class="note-folder-badge" style="font-weight:600;">미사용</span>
           </div>
-          <div class="sync-row mt-8">
-            <span class="text-muted" style="white-space:nowrap;">자동 잠금:</span>
-            <select id="auto-lock-minutes">
+          <p id="app-lock-status-desc" class="text-muted mb-8" style="font-size:12.5px;line-height:1.5;">
+            앱 실행 시 화면을 보호할 비밀번호를 설정할 수 있습니다.
+          </p>
+          <div class="sync-row">
+            <input type="password" id="set-app-lock-pass" placeholder="비밀번호 입력" autocomplete="new-password" />
+            <button type="button" id="btn-toggle-app-lock-vis" class="btn btn-secondary btn-sm">보기</button>
+            <button type="button" id="btn-save-app-lock" class="btn btn-primary btn-sm">설정</button>
+            <button type="button" id="btn-Remove-app-lock" class="btn btn-secondary btn-sm hidden">해제</button>
+          </div>
+          <div class="sync-row mt-8" style="flex-wrap:wrap;">
+            <span class="text-muted" style="white-space:nowrap;font-size:13px;">자동 잠금:</span>
+            <select id="auto-lock-minutes" style="flex:1;min-width:110px;">
               <option value="0">사용 안 함</option>
               <option value="1">1분 후</option>
               <option value="5" selected>5분 후</option>
