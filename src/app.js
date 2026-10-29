@@ -1330,7 +1330,7 @@ function clearSearchHighlights() {
     const preview = row.querySelector('.block-preview-overlay');
     const ta = row.querySelector('textarea.block-editable');
     if (preview && ta) {
-      const stillHasFormatting = /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(ta.value || '');
+      const stillHasFormatting = /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(ta.value || '');
       if (stillHasFormatting) {
         preview.innerHTML = renderMarkdownInlineHtml(ta.value || '');
       } else if (document.activeElement !== ta) {
@@ -2028,6 +2028,8 @@ function renderMarkdownInlineHtml(text = '') {
   html = html.replace(/&lt;span style=&quot;color:\s*([^&"]+?);?&quot;&gt;([\s\S]*?)&lt;\/span&gt;/gi, '<span style="color:$1">$2</span>');
   // 글자 배경/형광펜 태그 (background-color)
   html = html.replace(/&lt;span style=&quot;background(?:-color)?:\s*([^&"]+?);?&quot;&gt;([\s\S]*?)&lt;\/span&gt;/gi, '<span style="background-color:$1">$2</span>');
+  // 밑줄: <u>text</u>
+  html = html.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/gi, '<u>$1</u>');
   // 형광펜: ==text==
   html = html.replace(/==([^=\n]+)==/g, '<mark class="inline-highlight">$1</mark>');
   // 굵게: **text**
@@ -2215,6 +2217,9 @@ function applyFormattingToActiveSelection(formatType, targetTa = null, customCol
     } else if (formatType === 'strike') {
       replacement = '~~~~';
       cursorOffset = 2;
+    } else if (formatType === 'underline') {
+      replacement = '<u></u>';
+      cursorOffset = 3;
     } else if (formatType === 'mark') {
       replacement = '====';
       cursorOffset = 2;
@@ -2241,6 +2246,12 @@ function applyFormattingToActiveSelection(formatType, targetTa = null, customCol
         replacement = selected.slice(2, -2);
       } else {
         replacement = `~~${selected}~~`;
+      }
+    } else if (formatType === 'underline') {
+      if (selected.startsWith('<u>') && selected.endsWith('</u>') && selected.length >= 7) {
+        replacement = selected.slice(3, -4);
+      } else {
+        replacement = `<u>${selected}</u>`;
       }
     } else if (formatType === 'mark') {
       if (selected.startsWith('==') && selected.endsWith('==') && selected.length >= 4) {
@@ -2963,6 +2974,11 @@ function renderBlocksList(note, blocks) {
           applyFormattingToActiveSelection('strike', ta);
           return;
         }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') {
+          e.preventDefault();
+          applyFormattingToActiveSelection('underline', ta);
+          return;
+        }
 
         const currentText = typeof ta.value === 'string' ? ta.value : (block.text || '');
         const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : currentText.length;
@@ -3132,7 +3148,7 @@ function renderBlocksList(note, blocks) {
       });
 
       const hasSearchMatch = Boolean(pendingEditorSearchHighlight && (block.text || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(block.text || '');
+      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(block.text || '');
       const previewDiv = document.createElement('div');
       previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
       let renderedHtml = renderMarkdownInlineHtml(block.text || '');
@@ -3164,7 +3180,7 @@ function renderBlocksList(note, blocks) {
         setTimeout(() => {
           if (document.activeElement !== ta) {
             const hasQuery = Boolean(pendingEditorSearchHighlight && (ta.value || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<span\s+style=|\[\[)/.test(ta.value || '');
+            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(ta.value || '');
             if (stillHasFormatting) {
               let updatedHtml = renderMarkdownInlineHtml(ta.value || '');
               if (pendingEditorSearchHighlight) {

@@ -1251,9 +1251,11 @@ select:focus {
   accent-color: var(--accent);
 }
 
-.split-doc-todo.is-done .todo-text {
-  text-decoration: line-through;
+.split-doc-todo.is-done .todo-text,
+.split-doc-todo.is-done .todo-text * {
+  text-decoration: line-through !important;
   color: var(--text-muted);
+  opacity: 0.65;
 }
 
 .split-doc-bullet,
@@ -1962,9 +1964,12 @@ select:focus {
   accent-color: var(--text-main);
   cursor: pointer;
 }
-.block-todo-done .block-editable {
-  text-decoration: line-through;
+.block-todo-done .block-editable,
+.block-todo-done .block-preview-overlay,
+.block-todo-done .block-preview-overlay * {
+  text-decoration: line-through !important;
   color: var(--text-muted);
+  opacity: 0.65;
 }
 
 .block-callout {
@@ -3102,6 +3107,12 @@ mark.search-highlight {
   font-style: italic;
   font-weight: 700;
   font-size: 15px;
+  line-height: 1;
+}
+.typo-u {
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: underline;
   line-height: 1;
 }
 .typo-s {
