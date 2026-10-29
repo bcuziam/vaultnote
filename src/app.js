@@ -168,6 +168,7 @@ let unlockedVaultPassword = null;
 let decryptedVaultItemsCache = [];
 let decryptedNotesSessionMap = new Map();
 let activeVaultCategory = 'all';
+let vaultDisplayMode = localStorage.getItem('vaultnote_vault_display') || 'list';
 let idleTimer = null;
 let draggedNoteId = null;
 let draggedBlockId = null;
@@ -3932,7 +3933,14 @@ function renderKanbanView() {
 // ============================================================================
 // Secure Vault View
 // ============================================================================
-async function renderSecureVaultView() {
+function updateVaultViewToggleButtons() {
+  const btnList = document.getElementById('btn-vault-view-list');
+  const btnCard = document.getElementById('btn-vault-view-card');
+  if (btnList) btnList.classList.toggle('active', vaultDisplayMode === 'list');
+  if (btnCard) btnCard.classList.toggle('active', vaultDisplayMode === 'card');
+}
+
+async function renderSecureVaultView(forceDecrypt = false) {
   const lockedScreen = document.getElementById('vault-locked-screen');
   const unlockedContent = document.getElementById('vault-unlocked-content');
   const indicator = document.getElementById('vault-lock-indicator');
@@ -3950,24 +3958,45 @@ async function renderSecureVaultView() {
   lockedScreen.classList.add('hidden');
   unlockedContent.classList.remove('hidden');
   if (indicator) indicator.textContent = '열림';
+  updateVaultViewToggleButtons();
 
-  decryptedVaultItemsCache = [];
-  for (const item of state.vaultItems) {
-    try {
-      const dec = await VaultCrypto.decryptData(item.encryptedPayload, unlockedVaultPassword);
-      decryptedVaultItemsCache.push({ id: item.id, createdAt: item.createdAt, ...dec });
-    } catch {}
+  // Decrypt vault items once into decryptedVaultItemsCache when unlocking or when items changed
+  if (forceDecrypt || decryptedVaultItemsCache.length !== state.vaultItems.length) {
+    decryptedVaultItemsCache = [];
+    for (const item of state.vaultItems) {
+      try {
+        const dec = await VaultCrypto.decryptData(item.encryptedPayload, unlockedVaultPassword);
+        decryptedVaultItemsCache.push({ id: item.id, createdAt: item.createdAt, ...dec });
+      } catch {}
+    }
   }
 
-  const grid = document.getElementById('vault-cards-grid');
-  grid.innerHTML = '';
+  renderVaultItemsFromCache();
+}
 
-  const filtered = decryptedVaultItemsCache.filter(
-    (it) => activeVaultCategory === 'all' || it.category === activeVaultCategory
-  );
+function renderVaultItemsFromCache() {
+  const container = document.getElementById('vault-items-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const q = (document.getElementById('vault-search-input')?.value || '').trim().toLowerCase();
+
+  const filtered = decryptedVaultItemsCache.filter((it) => {
+    const matchCat = activeVaultCategory === 'all' || it.category === activeVaultCategory;
+    if (!matchCat) return false;
+    if (!q) return true;
+    const inTitle = (it.title || '').toLowerCase().includes(q);
+    const inUser = (it.username || '').toLowerCase().includes(q);
+    const inNotes = (it.notes || '').toLowerCase().includes(q);
+    const inUrl = (it.url || '').toLowerCase().includes(q);
+    return inTitle || inUser || inNotes || inUrl;
+  });
 
   if (filtered.length === 0) {
-    grid.innerHTML = `<div class="text-muted" style="padding:16px 0;">등록된 보안 항목이 없습니다. 우측 상단 [＋ 항목 추가]로 추가하세요.</div>`;
+    const emptyMsg = q
+      ? '검색 결과와 일치하는 보안 항목이 없습니다.'
+      : '등록된 보안 항목이 없습니다. 우측 상단 [+ 항목 추가]로 추가하세요.';
+    container.innerHTML = `<div class="text-muted" style="padding:28px 0;text-align:center;">${emptyMsg}</div>`;
     return;
   }
 
@@ -3978,58 +4007,124 @@ async function renderSecureVaultView() {
     doc: '보안 메모'
   };
 
-  for (const item of filtered) {
-    const card = document.createElement('div');
-    card.className = 'vault-card';
-    card.innerHTML = `
-      <div class="vault-card-header">
-        <span>${catLabels[item.category] || '보안'}</span>
-        <button type="button" class="text-btn text-danger" data-del="${item.id}">삭제</button>
-      </div>
-      <h4 style="font-size:15px;">${escapeHtml(item.title)}</h4>
-      ${item.username ? `<div class="text-muted">ID/계좌: <strong>${escapeHtml(item.username)}</strong></div>` : ''}
-      ${
-        item.secret
-          ? `<div class="vault-secret-row">
-               <span class="secret-val" data-masked="1">••••••••••••</span>
-               <div style="display:flex;gap:6px;">
-                 <button type="button" class="text-btn btn-toggle-vis">보기</button>
-                 <button type="button" class="text-btn btn-copy-sec">복사</button>
-               </div>
-             </div>`
-          : ''
-      }
-      ${item.url ? `<div class="text-muted" style="font-size:12px;">${escapeHtml(item.url)}</div>` : ''}
-      ${item.notes ? `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);background:var(--bg-sidebar);padding:8px;border-radius:4px;">${escapeHtml(item.notes)}</pre>` : ''}
+  if (vaultDisplayMode === 'card') {
+    // Card View
+    const grid = document.createElement('div');
+    grid.className = 'vault-cards-grid';
+
+    for (const item of filtered) {
+      const card = document.createElement('div');
+      card.className = 'vault-card';
+      card.innerHTML = `
+        <div class="vault-card-header">
+          <span class="vault-badge">${catLabels[item.category] || '보안'}</span>
+          <button type="button" class="text-btn text-danger" data-del="${item.id}">삭제</button>
+        </div>
+        <h4 style="font-size:15px;margin:2px 0;">${escapeHtml(item.title)}</h4>
+        ${item.username ? `<div class="text-muted" style="font-size:13px;">ID/계좌: <strong style="color:var(--text-main);">${escapeHtml(item.username)}</strong></div>` : ''}
+        ${
+          item.secret
+            ? `<div class="vault-secret-row">
+                 <span class="secret-val" data-masked="1">••••••••••••</span>
+                 <div style="display:flex;gap:6px;">
+                   <button type="button" class="btn-sm-text btn-toggle-vis">보기</button>
+                   <button type="button" class="btn-sm-text btn-copy-sec">복사</button>
+                 </div>
+               </div>`
+            : ''
+        }
+        ${item.url ? `<div class="text-muted" style="font-size:12px;word-break:break-all;">${escapeHtml(item.url)}</div>` : ''}
+        ${item.notes ? `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);background:var(--bg-sidebar);padding:8px;border-radius:4px;margin:0;">${escapeHtml(item.notes)}</pre>` : ''}
+      `;
+
+      attachVaultItemRowEvents(card, item);
+      grid.appendChild(card);
+    }
+    container.appendChild(grid);
+  } else {
+    // List (Table) View - Default
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'vault-table-wrap';
+    tableWrap.innerHTML = `
+      <table class="vault-table">
+        <thead>
+          <tr>
+            <th style="width:115px;">분류</th>
+            <th style="min-width:140px;">항목 이름</th>
+            <th style="min-width:130px;">아이디/계좌</th>
+            <th style="min-width:200px;">비밀번호/시크릿</th>
+            <th style="min-width:160px;">메모/URL</th>
+            <th style="width:55px;text-align:center;">관리</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     `;
+    const tbody = tableWrap.querySelector('tbody');
 
-    const toggleBtn = card.querySelector('.btn-toggle-vis');
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        const span = card.querySelector('.secret-val');
-        const isMasked = span.dataset.masked === '1';
-        span.textContent = isMasked ? item.secret : '••••••••••••';
-        span.dataset.masked = isMasked ? '0' : '1';
-        toggleBtn.textContent = isMasked ? '숨김' : '보기';
-      });
+    for (const item of filtered) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="vault-badge">${catLabels[item.category] || '보안'}</span></td>
+        <td><strong style="color:var(--text-main);font-size:13.5px;">${escapeHtml(item.title)}</strong></td>
+        <td><span style="font-family:monospace;font-size:12.5px;">${escapeHtml(item.username || '-')}</span></td>
+        <td>
+          ${
+            item.secret
+              ? `<div style="display:flex;align-items:center;gap:8px;">
+                   <span class="secret-val" data-masked="1" style="font-family:monospace;font-size:12.5px;letter-spacing:1px;">••••••••••••</span>
+                   <button type="button" class="btn-sm-text btn-toggle-vis">보기</button>
+                   <button type="button" class="btn-sm-text btn-copy-sec">복사</button>
+                 </div>`
+              : `<span class="text-muted">-</span>`
+          }
+        </td>
+        <td>
+          <div style="max-width:260px;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(item.notes || item.url || '')}">
+            ${item.url ? `<span class="text-muted" style="margin-right:4px;">[링크]</span>` : ''}
+            ${escapeHtml(item.notes || item.url || '-')}
+          </div>
+        </td>
+        <td style="text-align:center;">
+          <button type="button" class="text-btn text-danger" data-del="${item.id}" style="font-size:12px;">삭제</button>
+        </td>
+      `;
+
+      attachVaultItemRowEvents(tr, item);
+      tbody.appendChild(tr);
     }
-
-    const copyBtn = card.querySelector('.btn-copy-sec');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(item.secret);
-        showToast('복사되었습니다.');
-      });
-    }
-
-    card.querySelector('[data-del]').addEventListener('click', () => {
-      state.vaultItems = state.vaultItems.filter((v) => v.id !== item.id);
-      scheduleSave();
-      renderSecureVaultView();
-    });
-
-    grid.appendChild(card);
+    container.appendChild(tableWrap);
   }
+}
+
+function attachVaultItemRowEvents(el, item) {
+  const toggleBtn = el.querySelector('.btn-toggle-vis');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const span = el.querySelector('.secret-val');
+      const isMasked = span.dataset.masked === '1';
+      span.textContent = isMasked ? item.secret : '••••••••••••';
+      span.dataset.masked = isMasked ? '0' : '1';
+      toggleBtn.textContent = isMasked ? '숨김' : '보기';
+    });
+  }
+
+  const copyBtn = el.querySelector('.btn-copy-sec');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(item.secret);
+      showToast('클립보드에 복사되었습니다.');
+    });
+  }
+
+  el.querySelector('[data-del]')?.addEventListener('click', () => {
+    if (!confirm(`'${item.title}' 보안 항목을 삭제하시겠습니까?`)) return;
+    state.vaultItems = state.vaultItems.filter((v) => v.id !== item.id);
+    decryptedVaultItemsCache = decryptedVaultItemsCache.filter((v) => v.id !== item.id);
+    scheduleSave();
+    renderVaultItemsFromCache();
+    showToast('보안 항목이 삭제되었습니다.');
+  });
 }
 
 // ============================================================================
@@ -7249,6 +7344,11 @@ function bindEvents() {
   sidebarInp?.addEventListener('input', (e) => {
     if (listSearchInp && listSearchInp.value !== e.target.value) listSearchInp.value = e.target.value;
     updateSearchClearButtons();
+    if (activeNav === 'vault') {
+      // Isolate vault view completely: do not force list view or re-render vault from sidebar search
+      renderSidebar();
+      return;
+    }
     if (activeViewMode !== 'list') activeViewMode = 'list';
     renderAll();
   });
@@ -7852,6 +7952,9 @@ function bindEvents() {
   document.getElementById('btn-lock-vault').addEventListener('click', () => {
     unlockedVaultPassword = null;
     decryptedVaultItemsCache = [];
+    const searchInp = document.getElementById('vault-search-input');
+    if (searchInp) searchInp.value = '';
+    document.getElementById('btn-clear-vault-search')?.classList.add('hidden');
     renderSecureVaultView();
   });
 
@@ -7860,17 +7963,72 @@ function bindEvents() {
       document.querySelectorAll('.vault-cat-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       activeVaultCategory = btn.dataset.vcat;
-      renderSecureVaultView();
+      renderVaultItemsFromCache();
     });
+  });
+
+  // Vault dedicated search
+  const vaultSearchInp = document.getElementById('vault-search-input');
+  const btnClearVaultSearch = document.getElementById('btn-clear-vault-search');
+
+  vaultSearchInp?.addEventListener('input', () => {
+    const val = vaultSearchInp.value.trim();
+    if (btnClearVaultSearch) btnClearVaultSearch.classList.toggle('hidden', !val);
+    renderVaultItemsFromCache();
+  });
+
+  btnClearVaultSearch?.addEventListener('click', () => {
+    if (vaultSearchInp) {
+      vaultSearchInp.value = '';
+      btnClearVaultSearch.classList.add('hidden');
+      renderVaultItemsFromCache();
+      vaultSearchInp.focus();
+    }
+  });
+
+  // Vault view mode toggle (List vs Card)
+  document.getElementById('btn-vault-view-list')?.addEventListener('click', () => {
+    vaultDisplayMode = 'list';
+    localStorage.setItem('vaultnote_vault_display', 'list');
+    updateVaultViewToggleButtons();
+    renderVaultItemsFromCache();
+  });
+
+  document.getElementById('btn-vault-view-card')?.addEventListener('click', () => {
+    vaultDisplayMode = 'card';
+    localStorage.setItem('vaultnote_vault_display', 'card');
+    updateVaultViewToggleButtons();
+    renderVaultItemsFromCache();
+  });
+
+  // Toggle secret visibility in Add Item Modal
+  document.getElementById('btn-toggle-vi-secret')?.addEventListener('click', () => {
+    const secInp = document.getElementById('vi-secret');
+    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+    if (!secInp) return;
+    const isPass = secInp.type === 'password';
+    secInp.type = isPass ? 'text' : 'password';
+    if (toggleBtn) toggleBtn.textContent = isPass ? '숨김' : '보기';
   });
 
   document.getElementById('btn-add-vault-item').addEventListener('click', () => {
     if (!unlockedVaultPassword) return showToast('먼저 금고 비밀번호를 입력해 잠금을 해제하세요.');
+    const secInp = document.getElementById('vi-secret');
+    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+    if (secInp) secInp.type = 'password';
+    if (toggleBtn) toggleBtn.textContent = '보기';
     document.getElementById('vault-item-modal').classList.remove('hidden');
   });
+
   document.getElementById('btn-close-vault-item-modal').addEventListener('click', () => {
+    const secInp = document.getElementById('vi-secret');
+    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+    if (secInp) secInp.type = 'password';
+    if (toggleBtn) toggleBtn.textContent = '보기';
+    document.getElementById('vault-item-form')?.reset();
     document.getElementById('vault-item-modal').classList.add('hidden');
   });
+
   document.getElementById('vault-item-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!unlockedVaultPassword) return;
@@ -7889,9 +8047,13 @@ function bindEvents() {
       encryptedPayload
     });
     e.target.reset();
+    const secInp = document.getElementById('vi-secret');
+    const toggleBtn = document.getElementById('btn-toggle-vi-secret');
+    if (secInp) secInp.type = 'password';
+    if (toggleBtn) toggleBtn.textContent = '보기';
     document.getElementById('vault-item-modal').classList.add('hidden');
     scheduleSave();
-    renderSecureVaultView();
+    renderSecureVaultView(true);
   });
 
   // Graph Controls & Canvas Click

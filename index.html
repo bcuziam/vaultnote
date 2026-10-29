@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v83</span>
+        <span class="app-version-badge" id="app-version-display">v84</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -409,14 +409,24 @@
           </div>
 
           <div id="vault-unlocked-content" class="vault-unlocked-content hidden">
-            <div class="vault-category-filter">
-              <button type="button" class="vault-cat-btn active" data-vcat="all">전체</button>
-              <button type="button" class="vault-cat-btn" data-vcat="account">계정/비밀번호</button>
-              <button type="button" class="vault-cat-btn" data-vcat="finance">금융/계좌</button>
-              <button type="button" class="vault-cat-btn" data-vcat="apikey">API/키</button>
-              <button type="button" class="vault-cat-btn" data-vcat="doc">보안 메모</button>
+            <div class="vault-toolbar">
+              <div class="vault-category-filter">
+                <button type="button" class="vault-cat-btn active" data-vcat="all">전체</button>
+                <button type="button" class="vault-cat-btn" data-vcat="account">계정/비밀번호</button>
+                <button type="button" class="vault-cat-btn" data-vcat="finance">금융/계좌</button>
+                <button type="button" class="vault-cat-btn" data-vcat="apikey">API/키</button>
+                <button type="button" class="vault-cat-btn" data-vcat="doc">보안 메모</button>
+              </div>
+              <div class="vault-search-wrap">
+                <input type="text" id="vault-search-input" placeholder="보안 항목 검색..." class="vault-search-input" autocomplete="off" />
+                <button type="button" id="btn-clear-vault-search" class="vault-search-clear hidden" title="검색어 지우기">✕</button>
+              </div>
+              <div class="vault-view-toggle">
+                <button type="button" id="btn-vault-view-list" class="vault-toggle-btn active" title="목록형 뷰">목록형</button>
+                <button type="button" id="btn-vault-view-card" class="vault-toggle-btn" title="카드형 뷰">카드형</button>
+              </div>
             </div>
-            <div id="vault-cards-grid" class="vault-cards-grid"></div>
+            <div id="vault-items-container"></div>
           </div>
         </div>
       </div>
@@ -705,7 +715,10 @@
         </select>
         <input type="text" id="vi-title" placeholder="항목 이름" class="mb-8" required />
         <input type="text" id="vi-username" placeholder="아이디 / 계좌번호" class="mb-8" />
-        <input type="password" id="vi-secret" placeholder="비밀번호 / 시크릿 값" class="mb-8" />
+        <div class="input-with-btn-wrap mb-8">
+          <input type="password" id="vi-secret" placeholder="비밀번호 / 시크릿 값" autocomplete="new-password" />
+          <button type="button" id="btn-toggle-vi-secret" class="btn-input-inner">보기</button>
+        </div>
         <input type="text" id="vi-url" placeholder="관련 URL (선택)" class="mb-8" />
         <textarea id="vi-notes" rows="4" placeholder="상세 메모"></textarea>
         <div class="modal-footer mt-12">
