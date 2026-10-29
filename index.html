@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v86</span>
+        <span class="app-version-badge" id="app-version-display">v87</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -665,11 +665,22 @@
           </div>
         </div>
 
-        <div class="sync-box">
-          <h4>2단계: 보안 금고 마스터 비밀번호 (AES-256)</h4>
-          <div class="sync-row">
-            <input type="password" id="set-vault-master-pass" placeholder="새 마스터 비밀번호" />
-            <button type="button" id="btn-save-vault-master" class="btn btn-primary btn-sm">설정/변경</button>
+        <div class="sync-box" id="vault-master-setting-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h4 style="margin-bottom:0;">2단계: 보안 금고 마스터 비밀번호 (AES-256)</h4>
+            <span id="vault-master-status-badge" class="note-folder-badge" style="font-weight:600;">미설정</span>
+          </div>
+          <p id="vault-master-status-desc" class="text-muted mb-8" style="font-size:12.5px;line-height:1.5;">
+            보안금고 항목과 개별 암호화 노트를 보호하는 마스터 비밀번호입니다.
+          </p>
+          <div id="vault-master-input-row" class="sync-row">
+            <input type="password" id="set-vault-master-pass" placeholder="새 마스터 비밀번호" autocomplete="new-password" />
+            <button type="button" id="btn-toggle-vault-master-vis" class="btn btn-secondary btn-sm">보기</button>
+            <button type="button" id="btn-save-vault-master" class="btn btn-primary btn-sm">설정</button>
+          </div>
+          <div id="vault-master-locked-row" class="hidden" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;">
+            <span id="vault-master-data-count-text" style="font-size:13px;color:var(--text-primary);">보안 데이터 보관 중</span>
+            <span style="font-size:12px;color:var(--text-muted);">변경 차단 보호 중</span>
           </div>
         </div>
 

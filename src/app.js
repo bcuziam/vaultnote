@@ -8829,13 +8829,75 @@ function bindEvents() {
       badge.style.color = key ? '#ffffff' : '';
     }
     if (feedback) {
-      feedback.textContent = key ? '💡 [테스트] 버튼을 눌러 Google Gemini 서버와의 실시간 통신 상태를 확인할 수 있습니다.' : '';
+      feedback.textContent = key ? '[테스트] 버튼을 눌러 Google Gemini 서버와의 실시간 통신 상태를 확인할 수 있습니다.' : '';
       feedback.style.color = 'var(--text-muted)';
+    }
+  };
+
+  const getEncryptedDataCounts = () => {
+    const vaultItemsCount = Array.isArray(state.vaultItems)
+      ? state.vaultItems.filter((v) => v && !state.deletedVaultItemIds?.[v.id]).length
+      : 0;
+    const encryptedNotesCount = Array.isArray(state.notes)
+      ? state.notes.filter((n) => n && n.isEncrypted && !state.deletedNoteIds?.[n.id]).length
+      : 0;
+    return {
+      vaultItemsCount,
+      encryptedNotesCount,
+      total: vaultItemsCount + encryptedNotesCount
+    };
+  };
+
+  const updateVaultMasterSecurityUI = () => {
+    const badge = document.getElementById('vault-master-status-badge');
+    const desc = document.getElementById('vault-master-status-desc');
+    const inputRow = document.getElementById('vault-master-input-row');
+    const lockedRow = document.getElementById('vault-master-locked-row');
+    const passInp = document.getElementById('set-vault-master-pass');
+    const btnSave = document.getElementById('btn-save-vault-master');
+    const countText = document.getElementById('vault-master-data-count-text');
+
+    if (!badge || !desc || !inputRow || !lockedRow || !passInp || !btnSave) return;
+
+    const hasVerifier = Boolean(state.settings.vaultMasterVerifier);
+    const { vaultItemsCount, encryptedNotesCount, total } = getEncryptedDataCounts();
+
+    if (!hasVerifier) {
+      badge.textContent = '미설정';
+      badge.style.color = 'var(--text-muted)';
+      badge.style.background = 'rgba(156, 163, 175, 0.15)';
+      desc.textContent = '보안금고 항목과 개별 암호화 노트를 보호하는 마스터 비밀번호입니다. (분실 시 복구 불가)';
+      inputRow.classList.remove('hidden');
+      lockedRow.classList.add('hidden');
+      passInp.value = '';
+      passInp.placeholder = '신규 마스터 비밀번호 입력';
+      btnSave.textContent = '등록';
+    } else if (total === 0) {
+      badge.textContent = '설정됨 (보관 데이터 없음)';
+      badge.style.color = 'var(--accent-primary)';
+      badge.style.background = 'rgba(59, 130, 246, 0.15)';
+      desc.textContent = '현재 암호화된 보관 데이터가 없으므로 데이터 유실 위험 없이 마스터 비밀번호를 자유롭게 변경하거나 재설정할 수 있습니다.';
+      inputRow.classList.remove('hidden');
+      lockedRow.classList.add('hidden');
+      passInp.value = '';
+      passInp.placeholder = '변경할 새 마스터 비밀번호 입력';
+      btnSave.textContent = '변경 저장';
+    } else {
+      badge.textContent = '보호 중 (데이터 보관 중)';
+      badge.style.color = '#10b981';
+      badge.style.background = 'rgba(16, 185, 129, 0.15)';
+      desc.textContent = `현재 보안금고 ${vaultItemsCount}개, 암호화 노트 ${encryptedNotesCount}개가 보관되어 있습니다. 기존 데이터의 영구 유실을 방지하기 위해 마스터 비밀번호 변경이 안전하게 차단되어 있습니다. (변경을 원하실 경우 먼저 암호화 노트 잠금을 해제하고 보안금고 항목을 비워주세요)`;
+      inputRow.classList.add('hidden');
+      lockedRow.classList.remove('hidden');
+      if (countText) {
+        countText.textContent = `보안금고 ${vaultItemsCount}개 / 암호화 노트 ${encryptedNotesCount}개 보관 중`;
+      }
     }
   };
 
   document.getElementById('btn-security-modal').addEventListener('click', () => {
     refreshGeminiKeyModalUI();
+    updateVaultMasterSecurityUI();
     document.getElementById('security-modal').classList.remove('hidden');
   });
   document.getElementById('btn-close-security-modal').addEventListener('click', () => {
@@ -8867,13 +8929,31 @@ function bindEvents() {
   });
 
   document.getElementById('btn-save-vault-master').addEventListener('click', async () => {
-    const pass = document.getElementById('set-vault-master-pass').value;
-    if (!pass) return;
+    const pass = document.getElementById('set-vault-master-pass').value.trim();
+    if (!pass) return showToast('마스터 비밀번호를 입력해주세요.');
+
+    const { total } = getEncryptedDataCounts();
+    if (state.settings.vaultMasterVerifier && total > 0) {
+      showToast('암호화된 데이터가 존재하여 비밀번호를 변경할 수 없습니다.');
+      updateVaultMasterSecurityUI();
+      return;
+    }
+
     state.settings.vaultMasterVerifier = await VaultCrypto.createVerifier(pass);
     unlockedVaultPassword = pass;
     document.getElementById('set-vault-master-pass').value = '';
-    scheduleSave();
-    showToast('마스터 비밀번호가 설정되었습니다.');
+    lastLocalMutationTime = Date.now();
+    scheduleSave(true, true);
+    updateVaultMasterSecurityUI();
+    showToast('마스터 비밀번호가 안전하게 설정되었습니다.');
+  });
+
+  document.getElementById('btn-toggle-vault-master-vis')?.addEventListener('click', (e) => {
+    const inp = document.getElementById('set-vault-master-pass');
+    if (!inp) return;
+    const isHidden = inp.type === 'password';
+    inp.type = isHidden ? 'text' : 'password';
+    e.currentTarget.textContent = isHidden ? '숨김' : '보기';
   });
 
   document.getElementById('btn-toggle-gemini-key-vis')?.addEventListener('click', (e) => {
