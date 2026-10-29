@@ -136,6 +136,8 @@ function createInitialState() {
       }
     ],
     vaultItems: [],
+    deletedNoteIds: {},
+    deletedVaultItemIds: {},
     scratchpad: '',
     orderUpdatedAt: now,
     settings: {
@@ -217,6 +219,9 @@ function undoLastNoteTrash() {
   if (!note || !note.trashed) return false;
   lastLocalMutationTime = Date.now();
   note.trashed = false;
+  if (state.deletedNoteIds && state.deletedNoteIds[noteId]) {
+    delete state.deletedNoteIds[noteId];
+  }
   note.updatedAt = new Date().toISOString();
   activeNoteId = note.id;
   scheduleSave(true, true);
@@ -428,7 +433,7 @@ async function pushLiveSyncState() {
   }
 }
 
-function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = null, localOrderUpdatedAt = null) {
+function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = null, localOrderUpdatedAt = null, remoteDeletedNoteIds = null) {
   if (!Array.isArray(remoteNotes)) return false;
   if (!Array.isArray(localNotes)) return true;
 
@@ -443,8 +448,22 @@ function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = nul
     }
   }
 
+  const localDeleted = state.deletedNoteIds || {};
+  const rDel = remoteDeletedNoteIds || {};
+
+  // 원격에 로컬이 모르는 새로운 삭제 기록이 있으면 동기화 필요
+  for (const id of Object.keys(rDel)) {
+    if (!localDeleted[id]) return true;
+  }
+
+  // 로컬에서 이미 삭제된 노트가 원격에 아직 남아있다면 클라우드 정리를 위해 동기화 필요
+  for (const rNote of remoteNotes) {
+    if (localDeleted[rNote.id]) return true;
+  }
+
   const localMap = new Map(localNotes.map((n) => [n.id, n]));
   for (const rNote of remoteNotes) {
+    if (localDeleted[rNote.id]) continue; // 로컬 삭제 장부에 있으면 신규 노트가 아님
     const lNote = localMap.get(rNote.id);
     if (!lNote) return true; // 원격에서 새로 생성된 노트
     const rTime = new Date(rNote.updatedAt || 0).getTime();
@@ -452,6 +471,7 @@ function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = nul
     if (rTime > lTime + 300) return true; // 원격에서 개별 수정된 노트
   }
   for (const lNote of localNotes) {
+    if (localDeleted[lNote.id]) continue;
     const rNote = remoteNotes.find((n) => n.id === lNote.id);
     if (!rNote) return true; // 원격에서 완전히 삭제/정리된 노트
     // trashed 상태가 다를 때는 원격이 더 최신일 때만 업데이트로 판정
@@ -460,6 +480,26 @@ function hasNewerRemoteNotes(remoteNotes, localNotes, remoteOrderUpdatedAt = nul
       const lTime = new Date(lNote.updatedAt || 0).getTime();
       if (rTime > lTime) return true;
     }
+  }
+  return false;
+}
+
+function hasVaultItemChanges(remoteVaultItems, localVaultItems, remoteDeletedVaultIds = null, localDeletedVaultIds = null) {
+  const rItems = Array.isArray(remoteVaultItems) ? remoteVaultItems : [];
+  const lItems = Array.isArray(localVaultItems) ? localVaultItems : [];
+  const rDel = remoteDeletedVaultIds || {};
+  const lDel = localDeletedVaultIds || {};
+
+  for (const id of Object.keys(rDel)) {
+    if (!lDel[id]) return true;
+  }
+  for (const item of rItems) {
+    if (lDel[item.id]) return true;
+  }
+  const lMap = new Map(lItems.map((v) => [v.id, v]));
+  for (const rItem of rItems) {
+    if (lDel[rItem.id]) continue;
+    if (!lMap.has(rItem.id)) return true;
   }
   return false;
 }
@@ -481,19 +521,30 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   if (!remoteState || !Array.isArray(remoteState.notes)) return false;
   const prevActiveId = activeNoteId;
   const localTheme = localStorage.getItem('vaultnote_theme') || state.settings?.theme || 'dark';
-  // Preserve local tokens/keys and device-specific theme if remote doesn't have them or differs
+
+  // 1. 영구 삭제 장부(Tombstones) 양방향 병합
+  const mergedDeletedNoteIds = {
+    ...(state.deletedNoteIds || {}),
+    ...(remoteState.deletedNoteIds || {})
+  };
+  const mergedDeletedVaultItemIds = {
+    ...(state.deletedVaultItemIds || {}),
+    ...(remoteState.deletedVaultItemIds || {})
+  };
+
+  // 2. 설정 병합 (기기별 로컬 테마 및 메뉴바 상태 보존)
   const mergedSettings = {
     ...createInitialState().settings,
     ...(state.settings || {}),
     ...(remoteState.settings || {}),
-    theme: localTheme, // 기기별 독립 테마 설정 보존 (클라우드가 로컬 테마를 덮어쓰지 않음)
-    sidebarCollapsed: isSidebarCollapsedOnDevice(), // 기기별 메뉴바 독립 유지 (클라우드가 덮어쓰지 않음)
+    theme: localTheme,
+    sidebarCollapsed: isSidebarCollapsedOnDevice(),
     onedriveToken: remoteState.settings?.onedriveToken || state.settings?.onedriveToken || '',
     gdriveToken: remoteState.settings?.gdriveToken || state.settings?.gdriveToken || '',
     geminiApiKey: remoteState.settings?.geminiApiKey || state.settings?.geminiApiKey || ''
   };
 
-  // Smart note-level merge: 기기 간 순서 타임스탬프를 비교하여 최신 순서를 우선하되, 개별 노트 내용은 최신 수정본 보존
+  // 3. 노트 레벨 안전 양방향 병합 (삭제 장부 필터링 및 LWW 최신본 채택)
   const rOrderTime = new Date(remoteState.orderUpdatedAt || 0).getTime();
   const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
   const preferRemoteOrder = rOrderTime > lOrderTime;
@@ -506,11 +557,12 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   const processedIds = new Set();
 
   for (const pNote of primaryNotes) {
+    if (!pNote || !pNote.id || mergedDeletedNoteIds[pNote.id]) continue;
     const sNote = secondaryMap.get(pNote.id);
     if (sNote) {
+      if (mergedDeletedNoteIds[sNote.id]) continue;
       const pTime = new Date(pNote.updatedAt || 0).getTime();
       const sTime = new Date(sNote.updatedAt || 0).getTime();
-      // 내용/제목은 둘 중 더 최신에 수정된 노트를 온전히 채택
       mergedNotes.push(sTime > pTime ? sNote : pNote);
     } else {
       mergedNotes.push(pNote);
@@ -519,12 +571,14 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   }
 
   for (const sNote of secondaryNotes) {
+    if (!sNote || !sNote.id || mergedDeletedNoteIds[sNote.id]) continue;
     if (!processedIds.has(sNote.id)) {
       mergedNotes.unshift(sNote);
       processedIds.add(sNote.id);
     }
   }
 
+  // 4. 폴더 병합
   const remoteFolderIds = new Set((remoteState.folders || []).map((f) => f.id));
   const mergedFolders = [...(remoteState.folders || [])];
   for (const lFolder of (state.folders || [])) {
@@ -533,11 +587,47 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     }
   }
 
+  // 5. 보안금고 항목(vaultItems) 양방향 안전 병합
+  const localVaultItems = Array.isArray(state.vaultItems) ? state.vaultItems : [];
+  const remoteVaultItems = Array.isArray(remoteState.vaultItems) ? remoteState.vaultItems : [];
+  const vaultItemsMap = new Map();
+
+  for (const item of localVaultItems) {
+    if (!item || !item.id || mergedDeletedVaultItemIds[item.id]) continue;
+    vaultItemsMap.set(item.id, item);
+  }
+
+  for (const item of remoteVaultItems) {
+    if (!item || !item.id || mergedDeletedVaultItemIds[item.id]) continue;
+    const existing = vaultItemsMap.get(item.id);
+    if (!existing) {
+      vaultItemsMap.set(item.id, item);
+    } else {
+      const existingTime = new Date(existing.createdAt || 0).getTime();
+      const itemTime = new Date(item.createdAt || 0).getTime();
+      if (itemTime > existingTime) {
+        vaultItemsMap.set(item.id, item);
+      }
+    }
+  }
+
+  const mergedVaultItems = Array.from(vaultItemsMap.values()).sort((a, b) => {
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+
   const latestMtime = Math.max(
     new Date(remoteState.lastSavedAt || 0).getTime(),
     new Date(state.lastSavedAt || 0).getTime()
   );
   const latestOrderTime = Math.max(rOrderTime, lOrderTime);
+
+  // 원격에 이미 삭제된 노트/금고항목이 포함되어 있거나 삭제장부가 누락되어 있는지 확인
+  const remoteHadDeletedNotes = (remoteState.notes || []).some((n) => mergedDeletedNoteIds[n.id]);
+  const remoteHadDeletedVault = (remoteState.vaultItems || []).some((v) => mergedDeletedVaultItemIds[v.id]);
+  const remoteMissingTombstones =
+    Object.keys(state.deletedNoteIds || {}).some((id) => !remoteState.deletedNoteIds?.[id]) ||
+    Object.keys(state.deletedVaultItemIds || {}).some((id) => !remoteState.deletedVaultItemIds?.[id]);
+  const needsRemotePurgePush = remoteHadDeletedNotes || remoteHadDeletedVault || remoteMissingTombstones;
 
   state = {
     ...createInitialState(),
@@ -545,6 +635,9 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     notes: mergedNotes,
     folders: mergedFolders.length > 0 ? mergedFolders : state.folders,
     settings: mergedSettings,
+    vaultItems: mergedVaultItems,
+    deletedNoteIds: mergedDeletedNoteIds,
+    deletedVaultItemIds: mergedDeletedVaultItemIds,
     lastSavedAt: new Date(latestMtime).toISOString(),
     orderUpdatedAt: new Date(latestOrderTime || latestMtime).toISOString()
   };
@@ -554,9 +647,19 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     activeNoteId = state.notes.find((n) => !n.trashed)?.id || null;
   }
   await VaultStorage.saveState(state, false);
+
+  if (unlockedVaultPassword && activeNav === 'vault') {
+    renderSecureVaultView(true);
+  }
+
   renderAll(true);
   const indicator = document.getElementById('save-indicator');
   if (indicator) indicator.textContent = label;
+
+  if (needsRemotePurgePush) {
+    scheduleSave(true, true);
+  }
+
   return true;
 }
 
@@ -581,8 +684,8 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
     flushPendingCloudSyncIfAny();
   }
 
-  // 로컬에서 삭제/수정이 발생한 직후 2.5초간은 아직 업로드 완료되지 않은 과거 클라우드 데이터 수신 차단
-  if (!isInitial && Date.now() - lastLocalMutationTime < 2500) {
+  // 로컬에서 삭제/수정이 발생한 직후 3초간은 아직 업로드 완료되지 않은 과거 클라우드 데이터 수신 차단
+  if (!isInitial && Date.now() - lastLocalMutationTime < 3000) {
     return false;
   }
   isSyncingLive = true;
@@ -599,8 +702,9 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
           const localTime = new Date(state.lastSavedAt || 0).getTime();
           const rOrderTime = new Date(remoteGD.orderUpdatedAt || 0).getTime();
           const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
-          const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes, remoteGD.orderUpdatedAt, state.orderUpdatedAt);
-          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
+          const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes, remoteGD.orderUpdatedAt, state.orderUpdatedAt, remoteGD.deletedNoteIds);
+          const hasVaultUpdates = hasVaultItemChanges(remoteGD.vaultItems, state.vaultItems, remoteGD.deletedVaultItemIds, state.deletedVaultItemIds);
+          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
             await applyRemoteSyncedState(remoteGD, 'Google Drive 자동 동기화됨');
             return true;
           }
@@ -619,8 +723,9 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
           const localTime = new Date(state.lastSavedAt || 0).getTime();
           const rOrderTime = new Date(remoteOD.orderUpdatedAt || 0).getTime();
           const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
-          const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes, remoteOD.orderUpdatedAt, state.orderUpdatedAt);
-          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
+          const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes, remoteOD.orderUpdatedAt, state.orderUpdatedAt, remoteOD.deletedNoteIds);
+          const hasVaultUpdates = hasVaultItemChanges(remoteOD.vaultItems, state.vaultItems, remoteOD.deletedVaultItemIds, state.deletedVaultItemIds);
+          if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
             await applyRemoteSyncedState(remoteOD, 'OneDrive 자동 동기화됨');
             return true;
           }
@@ -636,8 +741,9 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         const localTime = new Date(state.lastSavedAt || 0).getTime();
         const rOrderTime = new Date(folderState.orderUpdatedAt || 0).getTime();
         const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
-        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes, folderState.orderUpdatedAt, state.orderUpdatedAt);
-        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates) {
+        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes, folderState.orderUpdatedAt, state.orderUpdatedAt, folderState.deletedNoteIds);
+        const hasVaultUpdates = hasVaultItemChanges(folderState.vaultItems, state.vaultItems, folderState.deletedVaultItemIds, state.deletedVaultItemIds);
+        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
           await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
           return true;
         }
@@ -676,6 +782,7 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
 }
 
 function scheduleSave(triggerCloud = true, immediate = false) {
+  lastLocalMutationTime = Date.now();
   const indicator = document.getElementById('save-indicator');
   if (indicator && triggerCloud) indicator.textContent = '저장 중...';
 
@@ -706,8 +813,9 @@ function scheduleSave(triggerCloud = true, immediate = false) {
       }
 
       // If OneDrive or Google Drive API Token is saved, automatically upload on every edit
+      const cloudPromises = [];
       if ((state.settings.onedriveToken || '').trim()) {
-        VaultStorage.syncOneDriveAPI(state.settings.onedriveToken, state, 'save')
+        const odPromise = VaultStorage.syncOneDriveAPI(state.settings.onedriveToken, state, 'save')
           .then(() => {
             hasPendingCloudSync = false;
             try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
@@ -722,9 +830,10 @@ function scheduleSave(triggerCloud = true, immediate = false) {
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = '오프라인 (동기화 대기)';
           });
+        cloudPromises.push(odPromise);
       }
       if ((state.settings.gdriveToken || '').trim()) {
-        VaultStorage.syncGoogleDriveAPI(state.settings.gdriveToken, state, 'save')
+        const gdPromise = VaultStorage.syncGoogleDriveAPI(state.settings.gdriveToken, state, 'save')
           .then(() => {
             hasPendingCloudSync = false;
             try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
@@ -739,12 +848,17 @@ function scheduleSave(triggerCloud = true, immediate = false) {
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = '오프라인 (동기화 대기)';
           });
+        cloudPromises.push(gdPromise);
+      }
+
+      if (immediate && cloudPromises.length > 0) {
+        await Promise.allSettled(cloudPromises);
       }
     }
   };
 
   if (immediate) {
-    executeSave();
+    return executeSave();
   } else {
     saveDebounceTimer = setTimeout(executeSave, 1000); // 1000ms(1초) 타이핑 안정 디바운스
   }
@@ -1370,6 +1484,9 @@ function createMainNoteItemElement(note, folderMap, query, isTrash) {
     e.stopPropagation();
     lastLocalMutationTime = Date.now();
     note.trashed = false;
+    if (state.deletedNoteIds && state.deletedNoteIds[note.id]) {
+      delete state.deletedNoteIds[note.id];
+    }
     note.updatedAt = new Date().toISOString();
     scheduleSave(true, true);
     renderAll();
@@ -1379,6 +1496,8 @@ function createMainNoteItemElement(note, folderMap, query, isTrash) {
   item.querySelector('.btn-row-del')?.addEventListener('click', (e) => {
     e.stopPropagation();
     lastLocalMutationTime = Date.now();
+    if (!state.deletedNoteIds) state.deletedNoteIds = {};
+    state.deletedNoteIds[note.id] = Date.now();
     state.notes = state.notes.filter((n) => n.id !== note.id);
     if (activeNoteId === note.id) {
       const remaining = getFilteredNotes();
@@ -3402,6 +3521,7 @@ function performRedo() {
  */
 function touchNote(note, updatedBlocks = null) {
   if (!note || note.trashed) return;
+  lastLocalMutationTime = Date.now();
   pushUndoSnapshot(false);
   note.updatedAt = new Date().toISOString();
   if (note.isEncrypted && updatedBlocks && unlockedVaultPassword) {
@@ -4119,9 +4239,12 @@ function attachVaultItemRowEvents(el, item) {
 
   el.querySelector('[data-del]')?.addEventListener('click', () => {
     if (!confirm(`'${item.title}' 보안 항목을 삭제하시겠습니까?`)) return;
+    lastLocalMutationTime = Date.now();
+    if (!state.deletedVaultItemIds) state.deletedVaultItemIds = {};
+    state.deletedVaultItemIds[item.id] = Date.now();
     state.vaultItems = state.vaultItems.filter((v) => v.id !== item.id);
     decryptedVaultItemsCache = decryptedVaultItemsCache.filter((v) => v.id !== item.id);
-    scheduleSave();
+    scheduleSave(true, true);
     renderVaultItemsFromCache();
     showToast('보안 항목이 삭제되었습니다.');
   });
@@ -6592,6 +6715,13 @@ async function initApp() {
       ...saved,
       settings: { ...createInitialState().settings, ...(saved.settings || {}), theme: localTheme }
     };
+    if (!state.deletedNoteIds) state.deletedNoteIds = {};
+    if (!state.deletedVaultItemIds) state.deletedVaultItemIds = {};
+    // Sanitize any notes or vault items that were marked as deleted in tombstone
+    state.notes = state.notes.filter((n) => !state.deletedNoteIds[n.id]);
+    if (Array.isArray(state.vaultItems)) {
+      state.vaultItems = state.vaultItems.filter((v) => !state.deletedVaultItemIds[v.id]);
+    }
     state.folders.forEach((f) => {
       delete f.icon;
       f.name = stripLeadingEmojis(f.name);
@@ -6726,7 +6856,7 @@ async function initApp() {
       if (isUpdatePromptShown) return;
       isUpdatePromptShown = true;
       showToast(
-        '✨ 새 버전이 준비되었습니다.',
+        '새 버전이 준비되었습니다.',
         15000,
         '지금 적용',
         () => {
@@ -7241,6 +7371,13 @@ function bindEvents() {
   document.getElementById('btn-empty-trash').addEventListener('click', () => {
     if (!confirm('휴지통의 모든 노트를 영구 삭제하시겠습니까?')) return;
     lastLocalMutationTime = Date.now();
+    if (!state.deletedNoteIds) state.deletedNoteIds = {};
+    const now = Date.now();
+    state.notes.forEach((n) => {
+      if (n.trashed) {
+        state.deletedNoteIds[n.id] = now;
+      }
+    });
     state.notes = state.notes.filter((n) => !n.trashed);
     activeNoteId = state.notes[0]?.id || null;
     activeViewMode = 'list';
@@ -7732,6 +7869,9 @@ function bindEvents() {
     if (!note) return;
     lastLocalMutationTime = Date.now();
     note.trashed = false;
+    if (state.deletedNoteIds && state.deletedNoteIds[note.id]) {
+      delete state.deletedNoteIds[note.id];
+    }
     note.updatedAt = new Date().toISOString();
     scheduleSave(true, true);
     renderAll();
@@ -7744,13 +7884,15 @@ function bindEvents() {
     const deletedId = note.id;
     lastLocalMutationTime = Date.now();
     if (note.trashed) {
+      if (!state.deletedNoteIds) state.deletedNoteIds = {};
+      state.deletedNoteIds[note.id] = Date.now();
       state.notes = state.notes.filter((n) => n.id !== note.id);
       showToast('영구 삭제되었습니다.');
     } else {
       note.trashed = true;
       note.updatedAt = new Date().toISOString();
       lastTrashedNoteIds.push(note.id);
-      showToast('휴지통으로 이동되었습니다.', 5000, '↩ 되돌리기', () => {
+      showToast('휴지통으로 이동되었습니다.', 5000, '되돌리기', () => {
         undoLastNoteTrash();
       });
     }
@@ -8031,16 +8173,26 @@ function bindEvents() {
 
   document.getElementById('vault-item-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!unlockedVaultPassword) return;
+    if (!unlockedVaultPassword) {
+      showToast('보안금고 마스터 암호로 먼저 잠금을 해제해야 항목을 저장할 수 있습니다.');
+      return;
+    }
+    const title = document.getElementById('vi-title').value.trim();
+    if (!title) {
+      showToast('제목을 입력해주세요.');
+      return;
+    }
+    lastLocalMutationTime = Date.now();
     const payload = {
       category: document.getElementById('vi-category').value,
-      title: document.getElementById('vi-title').value.trim(),
+      title,
       username: document.getElementById('vi-username').value.trim(),
       secret: document.getElementById('vi-secret').value,
       url: document.getElementById('vi-url').value.trim(),
       notes: document.getElementById('vi-notes').value.trim()
     };
     const encryptedPayload = await VaultCrypto.encryptData(payload, unlockedVaultPassword);
+    if (!Array.isArray(state.vaultItems)) state.vaultItems = [];
     state.vaultItems.unshift({
       id: uid('vi'),
       createdAt: new Date().toISOString(),
@@ -8052,8 +8204,9 @@ function bindEvents() {
     if (secInp) secInp.type = 'password';
     if (toggleBtn) toggleBtn.textContent = '보기';
     document.getElementById('vault-item-modal').classList.add('hidden');
-    scheduleSave();
+    scheduleSave(true, true);
     renderSecureVaultView(true);
+    showToast('보안 항목이 안전하게 저장되었습니다.');
   });
 
   // Graph Controls & Canvas Click
