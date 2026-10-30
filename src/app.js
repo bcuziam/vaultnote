@@ -7797,16 +7797,16 @@ async function initApp() {
     await VaultStorage.saveState(state);
   }
 
-  // 첫 화면: 맨 마지막에 편집하던(가장 최신 updatedAt) 노트로 에디터 자동 열기
+  // 첫 화면: 프라이버시 보호 및 다중 기기 안정성을 위해 최신 수정순 '전체 목록 뷰(list)'를 기본으로 열기
   const validNotes = (state.notes || []).filter((n) => !n.trashed);
   if (validNotes.length > 0) {
     validNotes.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
     activeNoteId = validNotes[0].id;
-    activeViewMode = 'editor';
   } else {
     activeNoteId = null;
-    activeViewMode = 'list';
   }
+  activeNav = 'all';
+  activeViewMode = 'list';
 
   document.getElementById('scratchpad-textarea').value = state.scratchpad || '';
   const geminiKeyEl = document.getElementById('gemini-api-key-input');
