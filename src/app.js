@@ -6523,7 +6523,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
     initialBlocks.push({
       id: loadingBlockId,
       type: 'callout',
-      text: `AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 15~25초 소요)... 다른 노트를 작성하거나 열람하셔도 작업이 안전하게 유지됩니다.`
+      text: `[안내] AI가 영상의 전체 맥락과 세부 내용을 심층 분석하고 있습니다.\n• 예상 소요 시간: 영상 길이에 따라 약 30초 ~ 2분 소요\n• 앱 내 작업 유지: 요약 중에도 창을 닫지 마시고 다른 노트를 자유롭게 작성/열람하셔도 작업이 안전하게 유지됩니다.\n• 주의: 브라우저 탭을 닫거나 스마트폰 앱을 최소화할 경우 기기 절전 정책에 의해 작업이 중단될 수 있습니다.`
     });
   }
 
@@ -9989,7 +9989,7 @@ async function runDirectYouTubeVideoSummarize(note, ytBlock, ytVideoId, sourceBl
   const loadingBlock = {
     id: loadingBlockId,
     type: 'callout',
-    text: '[안내] AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 20~40초 소요)... 잠시만 기다려주세요.'
+    text: `[안내] AI가 영상의 전체 맥락과 세부 내용을 심층 분석하고 있습니다.\n• 예상 소요 시간: 영상 길이에 따라 약 30초 ~ 2분 소요\n• 앱 내 작업 유지: 요약 중에도 창을 닫지 마시고 다른 노트를 자유롭게 작성/열람하셔도 작업이 안전하게 유지됩니다.\n• 주의: 브라우저 탭을 닫거나 스마트폰 앱을 최소화할 경우 기기 절전 정책에 의해 작업이 중단될 수 있습니다.`
   };
 
   const baseBlocks = [];
@@ -10029,7 +10029,7 @@ async function runDirectYouTubeVideoSummarize(note, ytBlock, ytVideoId, sourceBl
     return;
   }
 
-  showToast('Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 20~40초)...');
+  showToast('Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (영상 길이에 따라 약 30초~2분 소요, 창을 닫지 마세요)...', 5000);
   try {
     const aiResult = await summarizeYouTubeWithGeminiAI(ytVideoId, note.title || '', apiKey);
     const newBlocks = convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, ytVideoId, note.title, ytBlock?.channelTitle);
