@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css" />
+  <link rel="stylesheet" href="./src/styles.css?v=64" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,6 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v91</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -131,6 +130,8 @@
           <button type="button" id="btn-toggle-sidebar" class="icon-btn" title="사이드바 접기/펼치기 (Ctrl+\)">◧ 메뉴</button>
           <button type="button" id="btn-editor-undo" class="icon-btn" title="되돌리기 / 실행 취소 (Ctrl+Z)" style="font-weight:700;">↩</button>
           <button type="button" id="btn-editor-redo" class="icon-btn" title="다시 실행 (Ctrl+Y)" style="font-weight:700;">↪</button>
+          <button type="button" id="btn-nav-back" class="icon-btn" title="이전 페이지로 뒤로가기 (Alt+←)">←</button>
+          <button type="button" id="btn-nav-forward" class="icon-btn" title="다음 페이지로 앞으로가기 (Alt+→)">→</button>
           <span class="meta-sep">/</span>
           <span id="active-note-breadcrumb" class="breadcrumb">전체 노트</span>
           <span id="save-indicator" class="save-indicator">저장됨</span>
@@ -268,23 +269,8 @@
                 <span class="meta-sep">·</span>
                 <span id="note-dates-display" class="note-dates-display" style="color:var(--text-muted);font-size:11.5px;white-space:nowrap;"></span>
                 <span class="meta-sep">·</span>
-                <div class="tag-popover-wrap">
-                  <button type="button" id="btn-open-tag-popover" class="tag-add-btn" title="태그 추가">+ 태그</button>
-                  <div id="note-tag-popover" class="tag-popover hidden">
-                    <div class="tag-popover-inner">
-                      <input
-                        type="text"
-                        id="note-tag-popover-input"
-                        class="tag-popover-input"
-                        placeholder="태그 입력 (쉼표로 구분)"
-                        enterkeyhint="done"
-                        autocomplete="off"
-                      />
-                      <button type="button" id="btn-submit-tag-popover" class="tag-popover-submit-btn">추가</button>
-                    </div>
-                  </div>
-                </div>
                 <div id="note-tags-container" class="note-tags-container"></div>
+                <input type="text" id="note-tag-input" class="tag-inline-input" placeholder="+ 태그 추가 (Enter)" />
 
                 <div class="meta-actions-right">
                   <button type="button" id="btn-summarize-note" class="meta-btn" title="이 노트 본문을 요약하여 상단에 핵심 요약 표시">요약정리</button>
@@ -409,25 +395,14 @@
           </div>
 
           <div id="vault-unlocked-content" class="vault-unlocked-content hidden">
-            <div class="vault-toolbar">
-              <div class="vault-category-filter">
-                <button type="button" class="vault-cat-btn active" data-vcat="all">전체</button>
-                <button type="button" class="vault-cat-btn" data-vcat="account">계정/비밀번호</button>
-                <button type="button" class="vault-cat-btn" data-vcat="finance">금융/계좌</button>
-                <button type="button" class="vault-cat-btn" data-vcat="apikey">API/키</button>
-                <button type="button" class="vault-cat-btn" data-vcat="doc">보안 메모</button>
-              </div>
-              <div class="vault-search-wrap">
-                <input type="text" id="vault-search-input" placeholder="보안 항목 검색..." class="vault-search-input" autocomplete="off" />
-                <button type="button" id="btn-clear-vault-search" class="vault-search-clear hidden" title="검색어 지우기">✕</button>
-              </div>
-              <div class="vault-view-toggle">
-                <button type="button" id="btn-toggle-all-vault-secrets" class="vault-toggle-btn" title="모든 내용 보이기/숨기기" style="margin-right:6px;">전체 보기</button>
-                <button type="button" id="btn-vault-view-list" class="vault-toggle-btn active" title="목록형 뷰">목록형</button>
-                <button type="button" id="btn-vault-view-card" class="vault-toggle-btn" title="카드형 뷰">카드형</button>
-              </div>
+            <div class="vault-category-filter">
+              <button type="button" class="vault-cat-btn active" data-vcat="all">전체</button>
+              <button type="button" class="vault-cat-btn" data-vcat="account">계정/비밀번호</button>
+              <button type="button" class="vault-cat-btn" data-vcat="finance">금융/계좌</button>
+              <button type="button" class="vault-cat-btn" data-vcat="apikey">API/키</button>
+              <button type="button" class="vault-cat-btn" data-vcat="doc">보안 메모</button>
             </div>
-            <div id="vault-items-container"></div>
+            <div id="vault-cards-grid" class="vault-cards-grid"></div>
           </div>
         </div>
       </div>
@@ -467,13 +442,20 @@
             <div class="clipper-card">
               <h4>1. URL로 본문 추출 및 핵심 요약</h4>
               <div class="clipper-url-row">
-                <input type="url" id="clipper-url-input" placeholder="https://example.com/article" />
+                <input type="url" id="clipper-url-input" placeholder="https://example.com/article 또는 유튜브 URL" />
                 <button type="button" id="btn-fetch-url-clip" class="btn btn-primary">요약 및 가져오기</button>
               </div>
               <label class="checkbox-label mt-8" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:var(--text-secondary);">
                 <input type="checkbox" id="chk-clipper-summarize" checked style="width:auto;" />
                 <span>문서 상단에 핵심 요약(3~5줄) 및 자동 키워드 #태그 생성 포함</span>
               </label>
+              <label class="checkbox-label mt-6" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:var(--text-secondary);">
+                <input type="checkbox" id="chk-clipper-use-subtitles" style="width:auto;" />
+                <span>유튜브 자막 직접 붙여넣기로 요약 (1시간 이상 긴 영상 권장)</span>
+              </label>
+              <div id="clipper-subtitles-box" class="mt-8 hidden">
+                <textarea id="clipper-subtitles-input" placeholder="유튜브에서 복사한 자막(스크립트) 전체를 여기에 붙여넣으세요..." style="width:100%;height:110px;padding:8px 10px;font-size:12.5px;line-height:1.5;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text);resize:vertical;box-sizing:border-box;"></textarea>
+              </div>
             </div>
 
             <div class="clipper-card">
@@ -646,23 +628,16 @@
         <button type="button" id="btn-close-security-modal" class="icon-btn">✕</button>
       </div>
       <div class="modal-body">
-        <div class="sync-box" id="app-lock-setting-box">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <h4 style="margin-bottom:0;">1단계: 앱 진입 잠금</h4>
-            <span id="app-lock-status-badge" class="note-folder-badge" style="font-weight:600;">미사용</span>
-          </div>
-          <p id="app-lock-status-desc" class="text-muted mb-8" style="font-size:12.5px;line-height:1.5;">
-            앱 실행 시 화면을 보호할 비밀번호를 설정할 수 있습니다.
-          </p>
+        <div class="sync-box">
+          <h4>1단계: 앱 진입 잠금</h4>
           <div class="sync-row">
-            <input type="password" id="set-app-lock-pass" placeholder="비밀번호 입력" autocomplete="new-password" />
-            <button type="button" id="btn-toggle-app-lock-vis" class="btn btn-secondary btn-sm">보기</button>
+            <input type="password" id="set-app-lock-pass" placeholder="앱 잠금 비밀번호" />
             <button type="button" id="btn-save-app-lock" class="btn btn-primary btn-sm">설정</button>
-            <button type="button" id="btn-Remove-app-lock" class="btn btn-secondary btn-sm hidden">해제</button>
+            <button type="button" id="btn-Remove-app-lock" class="btn btn-secondary btn-sm">해제</button>
           </div>
-          <div class="sync-row mt-8" style="flex-wrap:wrap;">
-            <span class="text-muted" style="white-space:nowrap;font-size:13px;">자동 잠금:</span>
-            <select id="auto-lock-minutes" style="flex:1;min-width:110px;">
+          <div class="sync-row mt-8">
+            <span class="text-muted" style="white-space:nowrap;">자동 잠금:</span>
+            <select id="auto-lock-minutes">
               <option value="0">사용 안 함</option>
               <option value="1">1분 후</option>
               <option value="5" selected>5분 후</option>
@@ -672,22 +647,11 @@
           </div>
         </div>
 
-        <div class="sync-box" id="vault-master-setting-box">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <h4 style="margin-bottom:0;">2단계: 보안 금고 마스터 비밀번호 (AES-256)</h4>
-            <span id="vault-master-status-badge" class="note-folder-badge" style="font-weight:600;">미설정</span>
-          </div>
-          <p id="vault-master-status-desc" class="text-muted mb-8" style="font-size:12.5px;line-height:1.5;">
-            보안금고 항목과 개별 암호화 노트를 보호하는 마스터 비밀번호입니다.
-          </p>
-          <div id="vault-master-input-row" class="sync-row">
-            <input type="password" id="set-vault-master-pass" placeholder="새 마스터 비밀번호" autocomplete="new-password" />
-            <button type="button" id="btn-toggle-vault-master-vis" class="btn btn-secondary btn-sm">보기</button>
-            <button type="button" id="btn-save-vault-master" class="btn btn-primary btn-sm">설정</button>
-          </div>
-          <div id="vault-master-locked-row" class="hidden" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;">
-            <span id="vault-master-data-count-text" style="font-size:13px;color:var(--text-primary);">보안 데이터 보관 중</span>
-            <span style="font-size:12px;color:var(--text-muted);">변경 차단 보호 중</span>
+        <div class="sync-box">
+          <h4>2단계: 보안 금고 마스터 비밀번호 (AES-256)</h4>
+          <div class="sync-row">
+            <input type="password" id="set-vault-master-pass" placeholder="새 마스터 비밀번호" />
+            <button type="button" id="btn-save-vault-master" class="btn btn-primary btn-sm">설정/변경</button>
           </div>
         </div>
 
@@ -718,15 +682,14 @@
     </div>
   </div>
 
-  <!-- 보안 금고 항목 추가 및 수정 모달 -->
+  <!-- 보안 금고 항목 추가 모달 -->
   <div id="vault-item-modal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="vault-item-modal-title">보안 금고 항목 추가</h3>
+        <h3>보안 금고 항목 추가</h3>
         <button type="button" id="btn-close-vault-item-modal" class="icon-btn">✕</button>
       </div>
       <form id="vault-item-form" class="modal-body">
-        <input type="hidden" id="vi-edit-id" value="" />
         <select id="vi-category" class="mb-8" required>
           <option value="account">계정 / 비밀번호</option>
           <option value="finance">은행 / 계좌 / 금융</option>
@@ -735,14 +698,11 @@
         </select>
         <input type="text" id="vi-title" placeholder="항목 이름" class="mb-8" required />
         <input type="text" id="vi-username" placeholder="아이디 / 계좌번호" class="mb-8" />
-        <div class="input-with-btn-wrap mb-8">
-          <input type="password" id="vi-secret" placeholder="비밀번호 / 시크릿 값" autocomplete="new-password" />
-          <button type="button" id="btn-toggle-vi-secret" class="btn-input-inner">보기</button>
-        </div>
+        <input type="password" id="vi-secret" placeholder="비밀번호 / 시크릿 값" class="mb-8" />
         <input type="text" id="vi-url" placeholder="관련 URL (선택)" class="mb-8" />
         <textarea id="vi-notes" rows="4" placeholder="상세 메모"></textarea>
         <div class="modal-footer mt-12">
-          <button type="submit" id="vi-submit-btn" class="btn btn-primary btn-block">암호화 저장</button>
+          <button type="submit" class="btn btn-primary btn-block">암호화 저장</button>
         </div>
       </form>
     </div>
@@ -797,6 +757,64 @@
     </div>
   </div>
 
+  <!-- 유튜브 영상 요약 방식 선택 모달 (일반 영상 vs 자막 붙여넣기) -->
+  <div id="youtube-summary-choice-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>유튜브 영상 요약 방식 선택</h3>
+        <button type="button" id="btn-close-yt-choice-modal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13.5px;margin-bottom:12px;color:var(--text-secondary);">
+          영상의 길이나 네트워크 상태에 맞춰 가장 적합한 요약 방식을 선택해 주세요.
+        </p>
+
+        <div class="sync-box" style="background:var(--bg-sidebar);margin-bottom:12px;">
+          <h4 style="margin-bottom:6px;">1. 영상 직접 심층 분석 (기본 추천)</h4>
+          <p class="text-muted" style="line-height:1.55;font-size:12.5px;margin-bottom:10px;">
+            AI가 영상을 직접 시청하고 화면과 음성을 심층 분석합니다.<br/>
+            권장: 15~30분 내외 일반 영상 (약 20~40초 소요)
+          </p>
+          <button type="button" id="btn-choice-yt-direct" class="btn btn-primary btn-block">
+            영상 직접 분석 시작
+          </button>
+        </div>
+
+        <div class="sync-box">
+          <h4 style="margin-bottom:6px;">2. 자막 직접 붙여넣기로 요약 (긴 영상 추천)</h4>
+          <p class="text-muted" style="line-height:1.55;font-size:12.5px;margin-bottom:10px;">
+            유튜브에서 복사한 자막(스크립트)을 붙여넣어 3~5초 만에 초고속 요약합니다.<br/>
+            권장: 1~2시간 이상 긴 강의·세미나 영상 또는 타임아웃 발생 영상
+          </p>
+          <button type="button" id="btn-choice-yt-subtitles" class="btn btn-secondary btn-block">
+            자막 붙여넣기 창 열기
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 유튜브 자막 붙여넣기 전용 모달 -->
+  <div id="youtube-subtitles-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>유튜브 자막(스크립트) 붙여넣고 요약</h3>
+        <button type="button" id="btn-close-yt-subtitles-modal" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;line-height:1.5;">
+          유튜브 웹 또는 앱에서 복사한 스크립트(자막)를 아래에 붙여넣어 주세요.<br/>
+          타임스탬프([00:00])나 줄바꿈이 섞여 있어도 AI가 문맥에 맞추어 깔끔하게 정제 요약합니다.
+        </p>
+        <textarea id="modal-yt-subtitles-input" placeholder="유튜브 스크립트를 여기에 붙여넣으세요 (Ctrl + V)..." style="width:100%;height:180px;padding:10px;font-size:13px;line-height:1.5;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text);resize:vertical;box-sizing:border-box;"></textarea>
+        <div class="modal-footer mt-12" style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" id="btn-cancel-yt-subtitles" class="btn btn-secondary">취소</button>
+          <button type="button" id="btn-submit-yt-subtitles" class="btn btn-primary">자막으로 요약 시작</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 여러 줄 일괄 선택, 일괄 형태 변환 및 삭제 액션바 (Notion 스타일) -->
   <div id="multi-block-action-bar" class="multi-block-action-bar hidden">
     <span id="multi-block-count" class="multi-block-count">0개 줄 선택됨</span>
@@ -828,7 +846,6 @@
   <div id="floating-format-toolbar" class="floating-format-toolbar hidden">
     <button type="button" data-format="bold" title="굵게 (Ctrl+B)"><strong class="typo-b">B</strong></button>
     <button type="button" data-format="italic" title="기울임 (Ctrl+I)"><em class="typo-i">I</em></button>
-    <button type="button" data-format="underline" title="밑줄 (Ctrl+U)"><u class="typo-u">U</u></button>
     <button type="button" data-format="strike" title="취소선 (Ctrl+Shift+S)"><del class="typo-s">S</del></button>
     <button type="button" data-format="mark" title="형광펜"><span class="typo-h">H</span></button>
     <div class="color-picker-dropdown-wrap" style="position:relative;">
@@ -852,7 +869,6 @@
     <div class="mobile-format-inner">
       <button type="button" data-format="bold" title="굵게"><strong class="typo-b">B</strong></button>
       <button type="button" data-format="italic" title="기울임"><em class="typo-i">I</em></button>
-      <button type="button" data-format="underline" title="밑줄"><u class="typo-u">U</u></button>
       <button type="button" data-format="strike" title="취소선"><del class="typo-s">S</del></button>
       <button type="button" data-format="mark" title="형광펜"><span class="typo-h">H</span></button>
       <button type="button" id="btn-mobile-color" title="글자색"><span class="typo-a">A<span class="typo-a-bar"></span></span></button>
@@ -874,6 +890,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./src/app.js?v=64"></script>
 </body>
 </html>
