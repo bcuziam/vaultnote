@@ -6147,41 +6147,61 @@ async function summarizeYouTubeSubtitlesWithGeminiAI(subtitlesText, videoTitle =
   const cleanSubs = String(subtitlesText || '').trim();
   if (!cleanSubs || cleanSubs.length < 20) throw new Error('TOO_SHORT');
 
-  const promptText = `당신은 최고 수준의 콘텐츠 분석 및 문서화 전문가(전문 테크 라이터 및 위키 에디터)입니다.
+  const hasRealTitle = videoTitle && !videoTitle.startsWith('YouTube 동영상');
+  const promptText = `당신은 최고 수준의 영상 콘텐츠 분석 및 문서화 전문가(전문 테크 라이터 및 위키 에디터)입니다.
 제공된 텍스트는 유튜브 동영상의 스크립트(자막) 원문입니다.
 자막 특유의 오타, 음성 인식 오류, 말버릇, 불필요한 반복 어구를 문맥에 맞게 보정하고, 영상을 직접 보지 않고 이 문서만 읽더라도 영상의 전체 맥락, 세부 주장, 구체적 데이터, 핵심 원리, 주요 타임라인까지 100% 완벽하게 파악할 수 있는 LiveWiki 스타일의 고품질 심층 리포트를 작성해주세요.
 
-다음 JSON 포맷을 반드시 준수하여 응답하세요 (JSON 외의 다른 텍스트나 설명은 절대 출력하지 마세요):
+[작성 지침 - 필수 준수]
+1. 타임라인 전체 전수 커버리지 (누락 금지): 자막의 시작부터 맨 마지막 종료 시점까지 다뤄진 모든 사건, 논점, 핵심 논리를 단 하나도 빠뜨리지 말고 시간 순서(Timeline)대로 전수 기록하세요. 절대 앞부분 몇 개만 다루고 중간이나 후반부를 생략하거나 요약하여 버리지 마세요.
+2. 유연한 가변 섹션 구성 (Content-Adaptive Sections):
+   - 종합 뉴스, 매거진, 팟캐스트, 옴니버스 등 여러 주제를 다루는 영상: 다뤄진 모든 개별 뉴스 꼭지 및 사건마다 각각 독립된 섹션(heading)으로 분리하세요 (꼭지 수에 따라 5개, 8개, 12개 이상 유연하게 구성).
+   - 단일 주제 심층 탐구/강의/다큐멘터리 영상: 논리적 기승전결(도입 배경 -> 핵심 원인 -> 기술/경제적 메커니즘 -> 심층 사례 -> 반론 및 향후 전망)에 맞추어 빈틈없이 섹션을 구성하세요.
+   - 인위적으로 섹션 개수를 2~4개로 과도하게 축약하지 마세요.
+3. 구체적인 문장형 소제목: 각 섹션의 소제목(heading)은 해당 구간에서 다룬 핵심 알맹이가 한눈에 보이는 생생한 문장형/구문형 제목으로 작성하세요.
+4. 고밀도 팩트 서술: 본문(paragraphs)에는 단순 요약 대신 화자가 언급한 구체적인 사실(발언자, 직접 인용구, 상대방 주장, 배경 수치, 고유명사, 사건 전말)을 충실하게 서술하고, 자막에 타임스탬프(예: [03:14], [04:28])가 있다면 설명 문단 끝에 표기하세요. 단, 상단 'keyConclusions'에는 시간 표기를 넣지 마세요.
+5. 외국어 영상이라 하더라도 최종 문서는 자연스럽고 정갈한 한국어로 작성하세요.
+6. 태그(tags) 지침: '유튜브', '영상', '동영상', '요약' 같은 매체 형식이나 일반 명칭은 절대 태그에 넣지 마세요. 영상 본문에서 실제로 심도 있게 다룬 '핵심 고유명사, 기술/산업 분야, 핵심 주제 키워드'로 3~5개를 엄선하여 추출하세요.
+7. 제목(title) 지침: ${hasRealTitle ? `영상 원제인 "${videoTitle.replace(/"/g, '')}"를 활용하거나` : '자막 전체 내용을 종합하여'} 영상 전체 내용을 가장 직관적으로 대변하는 완성도 높고 세련된 한글 제목을 작성하세요. 절대로 'YouTube 동영상'이나 비디오 ID 같은 임시 문구를 제목으로 출력하지 마세요.
+8. 반드시 아래 지정된 JSON 규격으로만 응답해야 합니다.
+
 {
-  "title": "${videoTitle ? videoTitle.replace(/"/g, '') : '영상의 핵심 주제를 반영한 명확한 한국어 문서 제목'}",
-  "tags": ["핵심키워드1", "핵심키워드2", "핵심키워드3", "핵심키워드4", "핵심키워드5"],
-  "insights": "이 영상이 던지는 가장 중요한 본질적 질문과 핵심 통찰 2~3문장",
+  "title": "영상 원제 또는 전체 내용을 직관적으로 대변하는 세련된 한글 제목",
   "keyConclusions": [
-    "핵심 요점 1 (주어와 서술어를 갖춘 완성된 한국어 문장)",
-    "핵심 요점 2 (시간 표시 없이 핵심 내용만 서술)",
-    "핵심 요점 3",
-    "핵심 요점 4",
-    "핵심 요점 5"
+    "영상 전체를 관통하는 핵심 요약 1 (시간 표기 없이 완결된 문장으로 서술)",
+    "영상 전체를 관통하는 핵심 요약 2 (시간 표기 없이 완결된 문장으로 서술)",
+    "영상 전체를 관통하는 핵심 요약 3 (시간 표기 없이 완결된 문장으로 서술)"
   ],
   "sections": [
     {
-      "heading": "소주제 1 명확한 제목",
+      "heading": "1. 첫 번째 꼭지/주제에 대한 구체적 문장형 소제목",
       "paragraphs": [
-        "소주제 1의 맥락과 배경, 세부 논리를 설명하는 상세 문단 1",
-        "소주제 1에서 다룬 구체적 데이터나 근거를 설명하는 상세 문단 2"
+        "구체적인 맥락, 발언자, 배경 데이터가 충실히 담긴 상세 문단 [01:25]",
+        "상대방 입장, 관련 통계, 세부 전말이 서술된 상세 문단 [03:40]",
+        "결과 및 후속 영향에 대한 상세 문단 [04:12]"
       ]
     },
     {
-      "heading": "소주제 2 명확한 제목",
+      "heading": "2. 두 번째 꼭지/주제에 대한 구체적 문장형 소제목",
       "paragraphs": [
-        "소주제 2의 세부 내용 상세 설명 문단"
+        "사건의 발단과 핵심 인물들의 구체적 행보 [06:15]",
+        "현지 유권자/관계자 반응 및 전문가 평가 [07:30]"
+      ]
+    },
+    {
+      "heading": "3. 세 번째 꼭지/주제에 대한 구체적 문장형 소제목",
+      "paragraphs": [
+        "발생 원인과 피해 규모 및 주요 인과관계 [09:10]",
+        "당국의 대응 조치와 향후 전망 [10:45]"
       ]
     }
-  ]
+  ],
+  "insights": "이 영상이 시청자나 관련 사회/산업/실무에 주는 핵심 시사점 및 최종 결론 한 문단",
+  "tags": ["핵심주제1", "핵심주제2", "핵심주제3"]
 }
 
 [자막 스크립트 원문]:
-${cleanSubs.slice(0, 80000)}`;
+${cleanSubs.slice(0, 85000)}`;
 
   const videoModels = [
     'gemini-flash-latest',
@@ -6287,7 +6307,7 @@ async function clipAndSummarizeYouTubeWithSubtitles(videoId, rawUrl, subtitlesTe
     {
       id: loadingBlockId,
       type: 'callout',
-      text: '[안내] AI가 입력된 자막(스크립트)을 심층 분석하여 정리 중입니다 (약 3~5초 소요)...'
+      text: '[안내] AI가 입력된 자막(스크립트)을 심층 분석하여 정리 중입니다 (약 30~50초 소요)...'
     }
   ];
 
@@ -10067,7 +10087,7 @@ async function runSubtitlesYouTubeSummarize(note, ytBlock, ytVideoId, sourceBloc
   const loadingBlock = {
     id: loadingBlockId,
     type: 'callout',
-    text: '[안내] AI가 입력된 자막(스크립트)을 심층 분석하여 정리 중입니다 (약 3~5초 소요)...'
+    text: '[안내] AI가 입력된 자막(스크립트)을 심층 분석하여 정리 중입니다 (약 30~50초 소요)...'
   };
 
   const baseBlocks = [];
@@ -10107,7 +10127,7 @@ async function runSubtitlesYouTubeSummarize(note, ytBlock, ytVideoId, sourceBloc
     return;
   }
 
-  showToast('Gemini AI가 유튜브 자막을 초고속 분석 중입니다 (약 3~5초)...');
+  showToast('Gemini AI가 유튜브 자막을 정밀 분석 중입니다 (약 30~50초)...');
   try {
     const aiResult = await summarizeYouTubeSubtitlesWithGeminiAI(subtitlesText, note.title || '', apiKey);
     const newBlocks = convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, ytVideoId, note.title, ytBlock?.channelTitle);
