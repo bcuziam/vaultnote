@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v93" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v105" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v93" />
+  <link rel="stylesheet" href="./src/styles.css?v=v105" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v104</span>
+        <span class="app-version-badge" id="app-version-display">v105</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -290,7 +290,7 @@
                   <div class="split-btn-group" id="split-btn-summarize-group">
                     <button type="button" id="btn-summarize-note" class="meta-btn split-btn-main" title="이 노트 본문을 분석하여 상단에 맞춤 요약 생성">요약정리</button>
                     <button type="button" id="btn-summarize-mode-toggle" class="meta-btn split-btn-arrow" title="요약 형식 선택 (자동/3줄/심층/논문/회의록)">▾</button>
-                    <div id="summarize-mode-popover" class="summarize-popover-menu hidden">
+                    <div id="summarize-mode-popover" class="summarize-popover-menu hidden" style="background: var(--bg-card, #242424) !important; background-color: var(--bg-card, #242424) !important; border: 1px solid var(--border-strong, #404040) !important; z-index: 1000 !important;">
                       <button type="button" class="summarize-popover-item active" data-mode="auto">
                         <span class="item-title">자동 맞춤 (기본값)</span>
                         <span class="item-desc">원문 내용·성향 자동 분석</span>
@@ -965,6 +965,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=v93"></script>
+  <script type="module" src="./src/app.js?v=v105"></script>
 </body>
 </html>

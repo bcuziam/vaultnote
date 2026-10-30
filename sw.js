@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vaultnote-v104';
+const CACHE_NAME = 'vaultnote-v105';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   // 새 파일 다운로드 시 브라우저 디스크 캐시를 완전히 우회(cache: 'reload')하여 무조건 최신 서버 파일을 캐시에 저장
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -59,7 +60,7 @@ self.addEventListener('fetch', (event) => {
 
   // Stale-While-Revalidate (오프라인 우선 캐시 서빙 + 백그라운드 최신본 갱신)
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
       const fetchPromise = fetch(event.request)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
@@ -73,7 +74,7 @@ self.addEventListener('fetch', (event) => {
         .catch(() => {
           // 네트워크 실패(오프라인): 화면 이동 요청이면 캐시된 index.html 반환
           if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('./index.html') || caches.match('./');
+            return caches.match('./index.html', { ignoreSearch: true }) || caches.match('./', { ignoreSearch: true });
           }
           return cachedResponse;
         });
