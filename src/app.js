@@ -6092,7 +6092,8 @@ async function summarizeYouTubeWithGeminiAI(videoId, videoTitle = '', apiKey = '
           ],
           generationConfig: {
             responseMimeType: 'application/json',
-            temperature: 0.2
+            temperature: 0.2,
+            mediaResolution: 'MEDIA_RESOLUTION_LOW'
           }
         })
       });
@@ -6337,9 +6338,10 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
         let reason = 'AI 통신 실패';
         const msg = String(err?.message || '');
         if (msg.includes('NO_API_KEY')) reason = 'Gemini API 키가 설정되지 않음';
-        else if (msg.includes('TIMEOUT')) reason = 'AI 응답 시간 초과 (영상 분량 확인)';
-        else if (msg.includes('QUOTA') || msg.includes('429')) reason = 'API 할당량 초과';
-        else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) reason = 'API 키 불일치';
+        else if (msg.includes('TIMEOUT') || msg.includes('timeout') || err?.name === 'TimeoutError') reason = '영상 분량 초과로 인한 응답 시간 초과 (120초)';
+        else if (msg.includes('QUOTA') || msg.includes('429')) reason = '일일 비디오 처리 한도 초과 또는 분당 요청 제한';
+        else if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) reason = '구글 영상 분석 서버 일시 지연 (1~2분 후 재시도 권장)';
+        else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) reason = 'API 키 불일치 또는 권한 오류';
         else if (msg.includes('404')) reason = '일시적 모델 접근 불가';
 
         const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
@@ -6350,7 +6352,7 @@ async function clipAndSummarizeYouTube(videoId, rawUrl, options = {}) {
         if (activeNoteId === newNote.id) {
           renderActiveNoteEditor();
         }
-        showToast(`유튜브 AI 요약 실패: ${reason}`, 4000);
+        showToast(`유튜브 AI 요약 실패: ${reason}`, 4500);
       });
   }
 
@@ -9585,9 +9587,53 @@ async function runAISummarizeOnActiveNote() {
   const ytVideoId = ytBlock?.videoId || extractYouTubeVideoId(sourceUrl);
   if (ytVideoId) {
     document.getElementById('summarize-confirm-modal')?.classList.add('hidden');
-    showToast('Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 15~25초)...');
+
+    const loadingBlockId = uid('b');
+    const loadingBlock = {
+      id: loadingBlockId,
+      type: 'callout',
+      text: '[안내] AI가 영상의 전체 맥락과 세부 내용을 심층 분석 중입니다 (약 20~40초 소요)... 잠시만 기다려주세요.'
+    };
+
+    const baseBlocks = [];
+    if (ytBlock) {
+      baseBlocks.push(ytBlock);
+    } else {
+      baseBlocks.push({
+        id: uid('b'),
+        type: 'youtube',
+        videoId: ytVideoId,
+        title: note.title || 'YouTube 동영상',
+        channelTitle: '',
+        thumbnailUrl: `https://img.youtube.com/vi/${ytVideoId}/hqdefault.jpg`,
+        url: sourceUrl || `https://www.youtube.com/watch?v=${ytVideoId}`
+      });
+    }
+
+    const currentSource = sourceBlock || {
+      id: uid('b'),
+      type: 'callout',
+      text: `출처: ${sourceUrl || `https://www.youtube.com/watch?v=${ytVideoId}`}`
+    };
+    baseBlocks.push(currentSource);
+    baseBlocks.push(loadingBlock);
+
+    note.blocks = baseBlocks;
+    note.updatedAt = new Date().toISOString();
+    scheduleSave();
+    renderActiveNoteEditor();
+
+    const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+    if (!apiKey) {
+      loadingBlock.text = '[안내] Gemini API 키가 설정되지 않아 영상 심층 분석을 진행할 수 없습니다. [설정 > AI 키]를 등록하신 후 다시 시도해 주세요.';
+      scheduleSave();
+      renderActiveNoteEditor();
+      showToast('Gemini API 키가 설정되지 않았습니다. 설정에서 키를 등록해 주세요.', 4000);
+      return;
+    }
+
+    showToast('Gemini AI가 유튜브 영상을 심층 분석하는 중입니다 (약 20~40초)...');
     try {
-      const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
       const aiResult = await summarizeYouTubeWithGeminiAI(ytVideoId, note.title || '', apiKey);
       const newBlocks = convertYouTubeAiSummaryToBlocks(aiResult, sourceUrl, ytVideoId, note.title, ytBlock?.channelTitle);
       note.blocks = newBlocks;
@@ -9602,18 +9648,41 @@ async function runAISummarizeOnActiveNote() {
       }
       note.updatedAt = new Date().toISOString();
       scheduleSave();
-      renderActiveNoteEditor();
+      if (activeNoteId === note.id) {
+        renderActiveNoteEditor();
+      } else {
+        renderSidebar();
+      }
       showToast(`유튜브 영상 심층 요약이 완료되었습니다: ${(note.title || '').slice(0, 24)}`);
       return;
     } catch (err) {
       console.warn('[Gemini YouTube Summarize Error]:', err);
       let reason = 'AI 통신 실패';
       const msg = String(err?.message || '');
-      if (msg.includes('NO_API_KEY')) reason = 'Gemini API 키가 설정되지 않음';
-      else if (msg.includes('TIMEOUT')) reason = 'AI 서버 응답 시간 초과 (영상 길이 확인)';
-      else if (msg.includes('QUOTA') || msg.includes('429')) reason = 'API 할당량 초과';
-      else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) reason = 'API 키 불일치';
-      showToast(`유튜브 AI 분석 실패 (${reason})`, 4200);
+      if (msg.includes('NO_API_KEY')) {
+        reason = 'Gemini API 키가 설정되지 않음';
+      } else if (msg.includes('TIMEOUT') || msg.includes('timeout') || err?.name === 'TimeoutError') {
+        reason = '영상 분량 초과로 인한 응답 시간 초과 (120초)';
+      } else if (msg.includes('QUOTA') || msg.includes('429')) {
+        reason = '일일 비디오 처리 한도 초과 또는 분당 요청 제한';
+      } else if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
+        reason = '구글 영상 분석 서버 일시 지연 (1~2분 후 재시도 권장)';
+      } else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) {
+        reason = 'API 키 불일치 또는 권한 오류';
+      } else if (msg.includes('404')) {
+        reason = '일시적 모델 접근 불가';
+      }
+
+      const targetLoadBlock = note.blocks.find((b) => b.id === loadingBlockId);
+      if (targetLoadBlock) {
+        targetLoadBlock.text = `[안내] AI 영상 심층 분석을 완료하지 못했습니다 (${reason}). 상단 [AI 요약] 메뉴를 누르면 언제든 다시 시도할 수 있습니다.`;
+      }
+      note.updatedAt = new Date().toISOString();
+      scheduleSave();
+      if (activeNoteId === note.id) {
+        renderActiveNoteEditor();
+      }
+      showToast(`유튜브 AI 분석 실패: ${reason}`, 4500);
       return;
     }
   }
