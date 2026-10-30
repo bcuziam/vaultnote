@@ -921,7 +921,7 @@ function getFilteredNotes() {
   const sidebarQuery = (document.getElementById('inline-filter-input')?.value || '').trim().toLowerCase();
   const listViewQuery = (document.getElementById('list-view-search')?.value || '').trim().toLowerCase();
   const query = listViewQuery || sidebarQuery;
-  const sortMode = document.getElementById('sort-select')?.value || 'custom';
+  const sortMode = document.getElementById('sort-select')?.value || 'updated_desc';
 
   let list = state.notes.filter((n) => {
     if (activeNav === 'trash') return Boolean(n.trashed);
@@ -955,9 +955,9 @@ function getFilteredNotes() {
       }
       if (sortMode === 'fav_first') {
         if (Boolean(b.favorite) !== Boolean(a.favorite)) return b.favorite ? 1 : -1;
-        return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+        return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
       }
-      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+      return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
     });
   }
 
@@ -4439,7 +4439,8 @@ const KOREAN_STOPWORDS = new Set([
   '경우', '대해', '에서', '으로', '에게', '부터', '까지', '보다', '처럼', '만큼', '및', '등', '것', '수',
   '그', '이', '저', '우리', '기자', '뉴스', '사진', '제공', '무단', '배포', '금지', '시간', '오전', '오후',
   '말했다', '밝혔다', '전했다', '이어', '또한', '하지만', '그러나', '그리고', '가장', '다시', '함께', '모두',
-  '다른', '어떤', '이런', '그런', '저런', '때문'
+  '다른', '어떤', '이런', '그런', '저런', '때문',
+  '진짜', '이유', '회사', '생각', '방법', '경우', '사실', '내용', '부분', '사람', '위한', '정말', '과연'
 ]);
 
 const ENGLISH_STOPWORDS = new Set([
@@ -4511,7 +4512,7 @@ function sanitizeExistingNoteTags() {
 function extractSignificantTitleKeywords(title = '') {
   const words = String(title || '').match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [];
   return words
-    .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
+    .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테|보다|처럼|마저|조차)$/, ''))
     .filter((w) => {
       const lower = w.toLowerCase();
       if (/^[A-Za-z]+$/.test(w)) {
@@ -4541,14 +4542,6 @@ function getGraphEdgeInfo(noteA, noteB) {
   if (sharedTopicTags.length > 0) {
     const displayTag = sharedTopicTags[0].replace(/^#/, '');
     return { connected: true, type: 'tag', label: `#${displayTag}` };
-  }
-
-  // 3. Shared Distinctive Topic/Entity Keyword in Titles
-  const aKw = extractSignificantTitleKeywords(noteA.title);
-  const bKwSet = new Set(extractSignificantTitleKeywords(noteB.title).map((w) => w.toLowerCase()));
-  const sharedTitleKw = aKw.filter((w) => bKwSet.has(w.toLowerCase()));
-  if (sharedTitleKw.length > 0) {
-    return { connected: true, type: 'keyword', label: `주제: ${sharedTitleKw[0]}` };
   }
 
   return { connected: false };
@@ -4615,8 +4608,8 @@ function renderKnowledgeGraph() {
     if (subtitleEl) {
       subtitleEl.textContent =
         relatedEntries.length > 0
-          ? `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 직접 연관된 문서 ${relatedEntries.length}개만 표시 중입니다. (노드를 클릭하면 해당 문서가 바로 열립니다.)`
-          : `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 연관된 다른 문서가 없습니다.`;
+          ? `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 직접 연결된 문서 ${relatedEntries.length}개 표시 중 (실선: [[위키링크]], 점선: #공통태그 / 노드를 클릭하면 열립니다)`
+          : `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 연결된 다른 문서가 없습니다.`;
     }
 
     const radius = Math.min(w, h) * 0.33;
@@ -4644,42 +4637,58 @@ function renderKnowledgeGraph() {
       });
     });
 
-    // Draw edges from centerNote to related notes ( plus any secondary edges between related notes )
+    // Draw edges from centerNote to related notes (Solid for [[WikiLink]], Dashed for #Tag)
     for (let i = 1; i < graphNodePositions.length; i++) {
       const relNode = graphNodePositions[i];
       const edge = relNode.edge;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(relNode.x, relNode.y);
-      ctx.strokeStyle =
-        edge.type === 'wiki'
-          ? isDark ? 'rgba(255,255,255,0.75)' : 'rgba(20,20,20,0.7)'
-          : isDark ? 'rgba(210,210,210,0.45)' : 'rgba(70,70,70,0.4)';
-      ctx.lineWidth = edge.type === 'wiki' ? 2.4 : 1.5;
+      if (edge.type === 'wiki') {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(30, 30, 30, 0.75)';
+        ctx.lineWidth = 2.4;
+      } else {
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = isDark ? 'rgba(180, 180, 180, 0.5)' : 'rgba(100, 100, 100, 0.45)';
+        ctx.lineWidth = 1.6;
+      }
       ctx.stroke();
-
-      const mx = (cx + relNode.x) / 2;
-      const my = (cy + relNode.y) / 2;
-      ctx.fillStyle = isDark ? 'rgba(225,225,225,0.85)' : 'rgba(70,70,70,0.88)';
-      ctx.font = '500 11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(edge.label, mx, my - 6);
+      ctx.setLineDash([]);
     }
 
-    // Draw nodes
+    // Draw nodes & labels with background halo (zero overlap smudge)
     for (const node of graphNodePositions) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
       ctx.fillStyle = node.isCenter
         ? isDark ? '#ffffff' : '#1f1f1f'
-        : isDark ? '#666666' : '#888888';
+        : isDark ? '#71717a' : '#888888';
       ctx.fill();
 
-      ctx.fillStyle = isDark ? '#f0f0f0' : '#1f1f1f';
-      ctx.font = node.isCenter ? '700 13.5px sans-serif' : '500 12px sans-serif';
-      ctx.textAlign = 'center';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isDark ? '#27272a' : '#f4f4f5';
+      ctx.stroke();
+
       const label = (node.note.title || '제목 없음').slice(0, 22);
-      ctx.fillText(node.isCenter ? `[기준] ${label}` : label, node.x, node.y + node.r + 18);
+      const displayText = node.isCenter ? `[기준] ${label}` : label;
+      const textX = node.x;
+      const textY = node.y + node.r + 14;
+
+      ctx.font = node.isCenter ? '700 13px sans-serif' : '500 11.5px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      // Halo outline to protect text from intersecting lines
+      ctx.save();
+      ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(displayText, textX, textY);
+      ctx.restore();
+
+      ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#111827') : (isDark ? '#e4e4e7' : '#27272a');
+      ctx.fillText(displayText, textX, textY);
     }
 
     if (relatedEntries.length === 0) {
@@ -4698,7 +4707,7 @@ function renderKnowledgeGraph() {
   // Global Mode ('global'): Show all documents
   if (subtitleEl) {
     subtitleEl.textContent =
-      '전체 문서의 연결 관계를 한눈에 보여줍니다. 특정 문서와 연관된 문서만 집중해서 보려면 우측 상단 [선택 문서 중심]을 누르세요.';
+      '전체 문서의 지식 연결망을 보여줍니다. (실선: [[위키링크]], 점선: #공통태그 / 노드를 클릭하면 해당 문서가 열립니다)';
   }
 
   const radius = Math.min(w, h) * 0.34;
@@ -4723,19 +4732,17 @@ function renderKnowledgeGraph() {
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
-        ctx.strokeStyle =
-          edge.type === 'wiki'
-            ? isDark ? 'rgba(255,255,255,0.65)' : 'rgba(20,20,20,0.6)'
-            : isDark ? 'rgba(200,200,200,0.32)' : 'rgba(80,80,80,0.28)';
-        ctx.lineWidth = edge.type === 'wiki' ? 2.2 : 1.2;
+        if (edge.type === 'wiki') {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 30, 30, 0.7)';
+          ctx.lineWidth = 2.2;
+        } else {
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = isDark ? 'rgba(170, 170, 170, 0.4)' : 'rgba(100, 100, 100, 0.4)';
+          ctx.lineWidth = 1.4;
+        }
         ctx.stroke();
-
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        ctx.fillStyle = isDark ? 'rgba(210,210,210,0.75)' : 'rgba(90,90,90,0.8)';
-        ctx.font = '400 10.5px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(edge.label, mx, my - 4);
+        ctx.setLineDash([]);
       }
     }
   }
@@ -4743,13 +4750,31 @@ function renderKnowledgeGraph() {
   for (const node of graphNodePositions) {
     ctx.beginPath();
     ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
-    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#1f1f1f') : (isDark ? '#555555' : '#999999');
+    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#1f1f1f') : (isDark ? '#71717a' : '#888888');
     ctx.fill();
 
-    ctx.fillStyle = isDark ? '#ebebeb' : '#1f1f1f';
-    ctx.font = '500 12px sans-serif';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = isDark ? '#27272a' : '#f4f4f5';
+    ctx.stroke();
+
+    const label = (node.note.title || '제목 없음').slice(0, 20);
+    const textX = node.x;
+    const textY = node.y + node.r + 14;
+
+    ctx.font = node.isCenter ? '700 12.5px sans-serif' : '500 11.5px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText((node.note.title || '제목 없음').slice(0, 20), node.x, node.y + node.r + 16);
+    ctx.textBaseline = 'top';
+
+    // Halo outline
+    ctx.save();
+    ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, textX, textY);
+    ctx.restore();
+
+    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#111827') : (isDark ? '#e4e4e7' : '#27272a');
+    ctx.fillText(label, textX, textY);
   }
 }
 
@@ -5500,7 +5525,7 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
 
   const tokenize = (str) =>
     (cleanStrForTokens(str).match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
-      .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테)$/, ''))
+      .map((w) => w.replace(/(은|는|이|가|을|를|의|에|에서|으로|로|과|와|도|만|부터|까지|에게|한테|보다|처럼|마저|조차)$/, ''))
       .filter((w) => isMeaningfulTopicTag(w.toLowerCase()));
 
   const wordFreq = new Map();
@@ -8725,6 +8750,32 @@ function bindEvents() {
     const targetId = graphCenterNoteId || activeNoteId;
     if (targetId) openNoteInEditor(targetId);
   });
+
+  const graphCanvasEl = document.getElementById('knowledge-graph-canvas');
+  if (graphCanvasEl) {
+    graphCanvasEl.addEventListener('mousemove', (e) => {
+      const rect = graphCanvasEl.getBoundingClientRect();
+      const scaleX = graphCanvasEl.width / rect.width;
+      const scaleY = graphCanvasEl.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      let hoveredNode = null;
+      for (const node of graphNodePositions) {
+        if (Math.hypot(x - node.x, y - node.y) <= node.r + 8) {
+          hoveredNode = node;
+          break;
+        }
+      }
+      if (hoveredNode) {
+        graphCanvasEl.style.cursor = 'pointer';
+        const edgeDesc = hoveredNode.edge ? ` (${hoveredNode.edge.type === 'wiki' ? '[[위키링크]]' : hoveredNode.edge.label})` : '';
+        graphCanvasEl.title = `${hoveredNode.note.title || '제목 없음'}${edgeDesc} - 클릭하여 열기`;
+      } else {
+        graphCanvasEl.style.cursor = 'default';
+        graphCanvasEl.title = '';
+      }
+    });
+  }
 
   document.getElementById('knowledge-graph-canvas').addEventListener('click', (e) => {
     const rect = e.target.getBoundingClientRect();

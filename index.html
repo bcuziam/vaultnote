@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v96</span>
+        <span class="app-version-badge" id="app-version-display">v98</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -192,8 +192,8 @@
                 <button type="button" id="btn-clear-list-search" class="search-clear-btn hidden" title="검색어 지우기">✕</button>
               </div>
               <select id="sort-select" class="select-sm" title="정렬 기준">
-                <option value="custom" selected>사용자 지정 순서 (드래그 이동)</option>
-                <option value="updated_desc">최근 수정순</option>
+                <option value="updated_desc" selected>최근 수정순</option>
+                <option value="custom">사용자 지정 순서 (드래그 이동)</option>
                 <option value="created_desc">최근 생성순</option>
                 <option value="title_asc">제목 가나다순</option>
                 <option value="fav_first">중요 표시 우선</option>
@@ -438,7 +438,7 @@
           <div class="list-view-header" style="margin-bottom:14px;">
             <div>
               <h3 style="font-size:20px;margin-bottom:4px;">문서 연결 그래프</h3>
-              <p id="graph-view-subtitle" class="text-muted">선택한 기준 문서와 연관된([[링크]], 공통 #주제태그, 핵심어) 문서만 중심으로 보여줍니다. 노드를 클릭하면 해당 노트가 열립니다.</p>
+              <p id="graph-view-subtitle" class="text-muted">선택한 기준 문서와 직접 연결된([[링크]], 공통 #태그) 문서만 중심으로 보여줍니다. (실선: [[위키링크]], 점선: #공통태그 / 노드를 클릭하면 열립니다)</p>
             </div>
             <div class="list-view-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <div class="view-Segment">
