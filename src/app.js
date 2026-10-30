@@ -4468,6 +4468,7 @@ const ENGLISH_STOPWORDS = new Set([
 const GENERIC_GRAPH_TAGS = new Set([
   '클리핑', '요약', '웹스크랩', '스크랩', '메모', '노트', '가이드', '일반', '기타', '뉴스', '기사', '링크',
   '유튜브', 'youtube', '영상', '영상요약', '동영상', '비디오', 'video',
+  '자막요약', '자막', '스크립트', 'subtitle', 'subtitles', 'transcript', 'transcripts',
   'clip', 'note', 'summary', 'memo', 'news', 'article'
 ]);
 
@@ -4572,6 +4573,40 @@ let graphViewMode = 'local'; // 'local' (선택 문서 중심) | 'global' (전�
 let graphCenterNoteId = null;
 let selectedGraphNodeId = null;
 
+function getBadgeMetrics(ctx, text, isMobile = false) {
+  const fontSize = isMobile ? '9.5px' : '10.5px';
+  ctx.font = `600 ${fontSize} sans-serif`;
+  const textW = ctx.measureText(text).width;
+  const padX = isMobile ? 6 : 8;
+  const w = textW + padX * 2;
+  const h = isMobile ? 17 : 19;
+  return { w, h };
+}
+
+function resolveBadgePosition(p1, p2, baseDist, placedBadges, badgeW, badgeH) {
+  const candidates = [baseDist, baseDist + 0.12, baseDist - 0.12, baseDist + 0.22, baseDist - 0.22]
+    .map((d) => Math.max(0.35, Math.min(0.80, d)));
+
+  for (const dist of candidates) {
+    const bx = p1.x + (p2.x - p1.x) * dist;
+    const by = p1.y + (p2.y - p1.y) * dist;
+    let collision = false;
+    for (const pb of placedBadges) {
+      if (Math.abs(bx - pb.x) < (badgeW + pb.w) / 2 + 6 && Math.abs(by - pb.y) < (badgeH + pb.h) / 2 + 4) {
+        collision = true;
+        break;
+      }
+    }
+    if (!collision) {
+      return { x: bx, y: by };
+    }
+  }
+  return {
+    x: p1.x + (p2.x - p1.x) * baseDist,
+    y: p1.y + (p2.y - p1.y) * baseDist
+  };
+}
+
 function drawEdgeBadge(ctx, text, x, y, isDark, isSelected = false, isMobile = false) {
   if (!text) return;
   ctx.save();
@@ -4615,6 +4650,66 @@ function drawEdgeBadge(ctx, text, x, y, isDark, isSelected = false, isMobile = f
     : (isDark ? '#f4f4f5' : '#18181b');
   ctx.fillText(text, x, y + 0.5);
   ctx.restore();
+}
+
+function drawNodeLabel(ctx, text, node, cx, cy, isDark, isSelected, isCenter, isDimmed, isMobile) {
+  const maxChars = isMobile ? 12 : 18;
+  const displayText = isCenter && node.isCenter ? `[기준] ${text.slice(0, maxChars)}` : text.slice(0, maxChars);
+
+  let textX, textY;
+  let align = 'center';
+  let baseline = 'top';
+
+  if (node.isCenter) {
+    textX = node.x;
+    textY = node.y + node.r + (isMobile ? 10 : 13);
+    align = 'center';
+    baseline = 'top';
+  } else {
+    const dx = node.x - cx;
+    const dy = node.y - cy;
+    const dist = Math.hypot(dx, dy);
+    const cos = dist > 0 ? dx / dist : 0;
+    const sin = dist > 0 ? dy / dist : 1;
+    const offset = node.r + (isMobile ? 8 : 10);
+    textX = node.x + cos * offset;
+    textY = node.y + sin * offset;
+
+    if (Math.abs(cos) > 0.35) {
+      align = cos > 0 ? 'left' : 'right';
+    } else {
+      align = 'center';
+    }
+
+    if (Math.abs(sin) > 0.45) {
+      baseline = sin > 0 ? 'top' : 'bottom';
+    } else {
+      baseline = 'middle';
+    }
+  }
+
+  ctx.font = isSelected || (isCenter && node.isCenter)
+    ? (isMobile ? '700 11.5px sans-serif' : '700 12.5px sans-serif')
+    : (isMobile ? '500 10.5px sans-serif' : '500 11.5px sans-serif');
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+
+  // Background halo outline to prevent line or circle intersection
+  ctx.save();
+  ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
+  ctx.lineWidth = 3.5;
+  ctx.lineJoin = 'round';
+  ctx.strokeText(displayText, textX, textY);
+  ctx.restore();
+
+  ctx.fillStyle = isSelected
+    ? (isDark ? '#93c5fd' : '#1d4ed8')
+    : (isDimmed
+      ? (isDark ? '#52525b' : '#a1a1aa')
+      : (isCenter && node.isCenter
+        ? (isDark ? '#ffffff' : '#111827')
+        : (isDark ? '#e4e4e7' : '#27272a')));
+  ctx.fillText(displayText, textX, textY);
 }
 
 function renderKnowledgeGraph() {
@@ -4687,13 +4782,18 @@ function renderKnowledgeGraph() {
     }
 
     if (subtitleEl) {
-      subtitleEl.textContent =
-        relatedEntries.length > 0
-          ? `'${(centerNote.title || '제목 없음').slice(0, 24)}' 연결 문서 ${relatedEntries.length}개 (실선: [[위키링크]], 점선: #공통태그 / 노드를 터치하면 열립니다)`
-          : `'${(centerNote.title || '제목 없음').slice(0, 24)}' 문서와 연결된 다른 문서가 없습니다.`;
+      if (selectedGraphNodeId) {
+        const selNote = notes.find((n) => n.id === selectedGraphNodeId);
+        subtitleEl.textContent = `'${(selNote?.title || '제목 없음').slice(0, 20)}' 연결선 강조 중 (다시 탭하면 문서 열기, 빈 곳 탭하면 해제)`;
+      } else {
+        subtitleEl.textContent =
+          relatedEntries.length > 0
+            ? `'${(centerNote.title || '제목 없음').slice(0, 24)}' 연결 문서 ${relatedEntries.length}개 (실선: [[위키링크]], 점선: #공통태그 / 노드를 탭하면 강조됩니다)`
+            : `'${(centerNote.title || '제목 없음').slice(0, 24)}' 문서와 연결된 다른 문서가 없습니다.`;
+      }
     }
 
-    const radius = Math.min(w, h) * (isMobile ? 0.35 : 0.36);
+    const radius = Math.min(w, h) * (isMobile ? 0.32 : 0.34);
     const centerR = isMobile ? 18 : 22;
     const neighborR = isMobile ? 12 : 14;
 
@@ -4703,7 +4803,8 @@ function renderKnowledgeGraph() {
         x: cx,
         y: cy,
         r: centerR,
-        isCenter: true
+        isCenter: true,
+        angle: 0
       }
     ];
 
@@ -4717,77 +4818,94 @@ function renderKnowledgeGraph() {
         y: ny,
         r: neighborR,
         isCenter: false,
+        angle,
         edge: entry.edge
       });
     });
 
-    // 1. Draw connecting lines from centerNote to related notes
+    const placedBadges = [];
+
+    // Layer 1: Edges
     for (let i = 1; i < graphNodePositions.length; i++) {
       const relNode = graphNodePositions[i];
+      const isSelected = selectedGraphNodeId === relNode.note.id;
+      const isDimmed = selectedGraphNodeId && !isSelected && selectedGraphNodeId !== centerNote.id;
       const edge = relNode.edge;
+
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(relNode.x, relNode.y);
+
       if (edge.type === 'wiki') {
         ctx.setLineDash([]);
-        ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(30, 30, 30, 0.75)';
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = isSelected ? 3.0 : 2.2;
+        ctx.strokeStyle = isSelected
+          ? (isDark ? '#60a5fa' : '#2563eb')
+          : (isDimmed ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.10)') : (isDark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(30, 30, 30, 0.75)'));
       } else {
         ctx.setLineDash([5, 4]);
-        ctx.strokeStyle = isDark ? 'rgba(180, 180, 180, 0.5)' : 'rgba(100, 100, 100, 0.45)';
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = isSelected ? 2.4 : 1.6;
+        ctx.strokeStyle = isSelected
+          ? (isDark ? '#93c5fd' : '#3b82f6')
+          : (isDimmed ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)') : (isDark ? 'rgba(180, 180, 180, 0.5)' : 'rgba(100, 100, 100, 0.45)'));
       }
       ctx.stroke();
       ctx.setLineDash([]);
-
-      // Draw connection keyword badge at 68% distance (부채꼴 외곽 배치로 겹침 원천 차단)
-      const badgeDist = isMobile ? 0.65 : 0.68;
-      const bx = cx + (relNode.x - cx) * badgeDist;
-      const by = cy + (relNode.y - cy) * badgeDist;
-      drawEdgeBadge(ctx, edge.label, bx, by, isDark, false, isMobile);
     }
 
-    // 2. Draw nodes & labels with background halo
+    // Layer 2: All Node Circles
     for (const node of graphNodePositions) {
+      const isSelected = selectedGraphNodeId === node.note.id;
+      const isDimmed = selectedGraphNodeId && !isSelected && (node.isCenter ? false : true);
+
       ctx.beginPath();
-      ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
-      ctx.fillStyle = node.isCenter
-        ? isDark ? '#ffffff' : '#1f1f1f'
-        : isDark ? '#71717a' : '#888888';
+      const currentR = isSelected ? node.r + 3 : node.r;
+      ctx.arc(node.x, node.y, currentR, 0, Math.PI * 2);
+
+      if (isSelected) {
+        ctx.fillStyle = isDark ? '#60a5fa' : '#2563eb';
+      } else if (node.isCenter) {
+        ctx.fillStyle = isDark ? '#ffffff' : '#1f1f1f';
+      } else {
+        ctx.fillStyle = isDimmed ? (isDark ? '#3f3f46' : '#d4d4d8') : (isDark ? '#71717a' : '#888888');
+      }
       ctx.fill();
 
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = isDark ? '#27272a' : '#f4f4f5';
+      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.strokeStyle = isSelected
+        ? (isDark ? '#ffffff' : '#1d4ed8')
+        : (isDark ? '#27272a' : '#f4f4f5');
       ctx.stroke();
+    }
 
-      const maxChars = isMobile ? 14 : 20;
-      const label = (node.note.title || '제목 없음').slice(0, maxChars);
-      const displayText = node.isCenter ? `[기준] ${label}` : label;
-      const textX = node.x;
-      const textY = node.y + node.r + (isMobile ? 10 : 13);
+    // Layer 3: Edge Badges with dynamic anti-collision & alternating stagger
+    for (let i = 1; i < graphNodePositions.length; i++) {
+      const relNode = graphNodePositions[i];
+      const isSelected = selectedGraphNodeId === relNode.note.id;
+      const isDimmed = selectedGraphNodeId && !isSelected && selectedGraphNodeId !== centerNote.id;
+      if (isDimmed) continue;
 
-      ctx.font = node.isCenter
-        ? (isMobile ? '700 11.5px sans-serif' : '700 13px sans-serif')
-        : (isMobile ? '500 10.5px sans-serif' : '500 11.5px sans-serif');
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      const edge = relNode.edge;
+      const baseDist = i % 2 === 0 ? 0.72 : 0.52;
+      const bMetric = getBadgeMetrics(ctx, edge.label, isMobile);
+      const bPos = resolveBadgePosition({ x: cx, y: cy }, { x: relNode.x, y: relNode.y }, baseDist, placedBadges, bMetric.w, bMetric.h);
+      placedBadges.push({ x: bPos.x, y: bPos.y, w: bMetric.w, h: bMetric.h });
 
-      // Halo outline to protect text from intersecting lines
-      ctx.save();
-      ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
-      ctx.lineWidth = 3.5;
-      ctx.lineJoin = 'round';
-      ctx.strokeText(displayText, textX, textY);
-      ctx.restore();
+      drawEdgeBadge(ctx, edge.label, bPos.x, bPos.y, isDark, isSelected, isMobile);
+    }
 
-      ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#111827') : (isDark ? '#e4e4e7' : '#27272a');
-      ctx.fillText(displayText, textX, textY);
+    // Layer 4: Node Text Labels (ALWAYS drawn in front of circles)
+    for (const node of graphNodePositions) {
+      const isSelected = selectedGraphNodeId === node.note.id;
+      const isDimmed = selectedGraphNodeId && !isSelected && (node.isCenter ? false : true);
+      drawNodeLabel(ctx, node.note.title || '제목 없음', node, cx, cy, isDark, isSelected, node.isCenter, isDimmed, isMobile);
     }
 
     if (relatedEntries.length === 0) {
       ctx.fillStyle = isDark ? 'rgba(180,180,180,0.8)' : 'rgba(110,110,110,0.85)';
       ctx.font = '400 13px sans-serif';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText(
         '이 문서와 연결된 연관 문서가 없습니다. (본문에 [[문서 제목]]이나 공통 #태그를 입력하면 연결됩니다)',
         cx,
@@ -4800,7 +4918,7 @@ function renderKnowledgeGraph() {
   // ==========================================================================
   // Mode 2: Global View (전체 문서 연결망 & 탭 하이라이트)
   // ==========================================================================
-  const radius = Math.min(w, h) * (isMobile ? 0.35 : 0.36);
+  const radius = Math.min(w, h) * (isMobile ? 0.30 : 0.32);
   graphNodePositions = notes.map((n, i) => {
     const angle = (2 * Math.PI * i) / notes.length - Math.PI / 2;
     const isSelected = n.id === selectedGraphNodeId;
@@ -4809,9 +4927,10 @@ function renderKnowledgeGraph() {
       note: n,
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
-      r: isSelected ? (isMobile ? 16 : 19) : (isCenter ? (isMobile ? 15 : 17) : (isMobile ? 11 : 13)),
+      r: isSelected ? (isMobile ? 15 : 18) : (isCenter ? (isMobile ? 14 : 16) : (isMobile ? 11 : 13)),
       isCenter,
-      isSelected
+      isSelected,
+      angle
     };
   });
 
@@ -4840,47 +4959,35 @@ function renderKnowledgeGraph() {
     }
   }
 
-  // Draw edges
+  // Layer 1: Background Edges
   for (const item of allEdges) {
     const { a, b, edge } = item;
     const isConnToSelected = selectedGraphNodeId && (a.note.id === selectedGraphNodeId || b.note.id === selectedGraphNodeId);
-    const isDimmed = selectedGraphNodeId && !isConnToSelected;
+    if (isConnToSelected) continue;
 
+    const isDimmed = !!selectedGraphNodeId;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
 
     if (edge.type === 'wiki') {
       ctx.setLineDash([]);
-      ctx.lineWidth = isConnToSelected ? 2.8 : 2.0;
-      ctx.strokeStyle = isConnToSelected
-        ? (isDark ? '#60a5fa' : '#2563eb')
-        : (isDimmed ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : (isDark ? 'rgba(255,255,255,0.65)' : 'rgba(30,30,30,0.65)'));
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = isDimmed
+        ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)')
+        : (isDark ? 'rgba(255,255,255,0.60)' : 'rgba(30,30,30,0.60)');
     } else {
       ctx.setLineDash([4, 4]);
-      ctx.lineWidth = isConnToSelected ? 2.0 : 1.4;
-      ctx.strokeStyle = isConnToSelected
-        ? (isDark ? '#93c5fd' : '#3b82f6')
-        : (isDimmed ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : (isDark ? 'rgba(180,180,180,0.45)' : 'rgba(90,90,90,0.45)'));
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = isDimmed
+        ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')
+        : (isDark ? 'rgba(180,180,180,0.40)' : 'rgba(90,90,90,0.40)');
     }
     ctx.stroke();
     ctx.setLineDash([]);
-
-    // Draw badge: when connected to selected node, or when few edges exist
-    if (isConnToSelected) {
-      const otherNode = a.note.id === selectedGraphNodeId ? b : a;
-      const thisNode = a.note.id === selectedGraphNodeId ? a : b;
-      const bx = thisNode.x + (otherNode.x - thisNode.x) * 0.65;
-      const by = thisNode.y + (otherNode.y - thisNode.y) * 0.65;
-      drawEdgeBadge(ctx, edge.label, bx, by, isDark, true, isMobile);
-    } else if (!selectedGraphNodeId && allEdges.length <= 6) {
-      const bx = (a.x + b.x) / 2;
-      const by = (a.y + b.y) / 2;
-      drawEdgeBadge(ctx, edge.label, bx, by, isDark, false, isMobile);
-    }
   }
 
-  // Draw nodes & labels
+  // Layer 2: All Node Circles (drawn before any text)
   for (const node of graphNodePositions) {
     const isConnToSelected = selectedGraphNodeId && allEdges.some((e) => (e.a.note.id === selectedGraphNodeId && e.b.note.id === node.note.id) || (e.b.note.id === selectedGraphNodeId && e.a.note.id === node.note.id));
     const isDimmed = selectedGraphNodeId && node.note.id !== selectedGraphNodeId && !isConnToSelected;
@@ -4902,30 +5009,96 @@ function renderKnowledgeGraph() {
     ctx.lineWidth = node.isSelected ? 3 : 2;
     ctx.strokeStyle = node.isSelected ? (isDark ? '#ffffff' : '#1d4ed8') : (isDark ? '#27272a' : '#f4f4f5');
     ctx.stroke();
+  }
 
-    const maxChars = isMobile ? 12 : 18;
-    const label = (node.note.title || '제목 없음').slice(0, maxChars);
-    const textX = node.x;
-    const textY = node.y + node.r + (isMobile ? 10 : 13);
+  // Layer 3: Background Node Text Labels
+  for (const node of graphNodePositions) {
+    const isConnToSelected = selectedGraphNodeId && allEdges.some((e) => (e.a.note.id === selectedGraphNodeId && e.b.note.id === node.note.id) || (e.b.note.id === selectedGraphNodeId && e.a.note.id === node.note.id));
+    const isDimmed = selectedGraphNodeId && node.note.id !== selectedGraphNodeId && !isConnToSelected;
+    if (node.isSelected || isConnToSelected) continue;
 
-    ctx.font = node.isSelected || node.isCenter
-      ? (isMobile ? '700 11.5px sans-serif' : '700 12.5px sans-serif')
-      : (isMobile ? '500 10.5px sans-serif' : '500 11.5px sans-serif');
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
+    drawNodeLabel(ctx, node.note.title || '제목 없음', node, cx, cy, isDark, false, node.isCenter, isDimmed, isMobile);
+  }
 
-    // Halo outline
-    ctx.save();
-    ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
-    ctx.lineWidth = 3.5;
-    ctx.lineJoin = 'round';
-    ctx.strokeText(label, textX, textY);
-    ctx.restore();
+  // Layer 4: Highlighted Lines & Badges with dynamic anti-collision
+  const globalPlacedBadges = [];
+  const selectedEdges = selectedGraphNodeId
+    ? allEdges.filter((e) => e.a.note.id === selectedGraphNodeId || e.b.note.id === selectedGraphNodeId)
+    : [];
 
-    ctx.fillStyle = node.isSelected
-      ? (isDark ? '#93c5fd' : '#1d4ed8')
-      : (isDimmed ? (isDark ? '#71717a' : '#a1a1aa') : (isDark ? '#e4e4e7' : '#27272a'));
-    ctx.fillText(label, textX, textY);
+  if (selectedGraphNodeId) {
+    selectedEdges.sort((e1, e2) => {
+      const o1 = e1.a.note.id === selectedGraphNodeId ? e1.b : e1.a;
+      const o2 = e2.a.note.id === selectedGraphNodeId ? e2.b : e2.a;
+      return o1.angle - o2.angle;
+    });
+
+    selectedEdges.forEach((item, k) => {
+      const { a, b, edge } = item;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+
+      if (edge.type === 'wiki') {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 3.0;
+        ctx.strokeStyle = isDark ? '#60a5fa' : '#2563eb';
+      } else {
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = isDark ? '#93c5fd' : '#3b82f6';
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const baseDistFactors = [0.52, 0.73, 0.62];
+      const baseDist = baseDistFactors[k % baseDistFactors.length];
+
+      const thisNode = a.note.id === selectedGraphNodeId ? a : b;
+      const otherNode = a.note.id === selectedGraphNodeId ? b : a;
+
+      const bMetric = getBadgeMetrics(ctx, edge.label, isMobile);
+      const bPos = resolveBadgePosition(thisNode, otherNode, baseDist, globalPlacedBadges, bMetric.w, bMetric.h);
+      globalPlacedBadges.push({ x: bPos.x, y: bPos.y, w: bMetric.w, h: bMetric.h });
+
+      drawEdgeBadge(ctx, edge.label, bPos.x, bPos.y, isDark, true, isMobile);
+    });
+  } else if (allEdges.length <= 6) {
+    allEdges.forEach((item, k) => {
+      const { a, b, edge } = item;
+      const baseDist = k % 2 === 0 ? 0.65 : 0.50;
+      const bMetric = getBadgeMetrics(ctx, edge.label, isMobile);
+      const bPos = resolveBadgePosition(a, b, baseDist, globalPlacedBadges, bMetric.w, bMetric.h);
+      globalPlacedBadges.push({ x: bPos.x, y: bPos.y, w: bMetric.w, h: bMetric.h });
+      drawEdgeBadge(ctx, edge.label, bPos.x, bPos.y, isDark, false, isMobile);
+    });
+  }
+
+  // Layer 5 (Absolute Top): Selected node and connected nodes' labels & accent
+  if (selectedGraphNodeId) {
+    const selNode = graphNodePositions.find((n) => n.note.id === selectedGraphNodeId);
+    const connectedNodes = graphNodePositions.filter((n) =>
+      allEdges.some((e) =>
+        (e.a.note.id === selectedGraphNodeId && e.b.note.id === n.note.id) ||
+        (e.b.note.id === selectedGraphNodeId && e.a.note.id === n.note.id)
+      )
+    );
+
+    for (const cn of connectedNodes) {
+      drawNodeLabel(ctx, cn.note.title || '제목 없음', cn, cx, cy, isDark, false, cn.isCenter, false, isMobile);
+    }
+
+    if (selNode) {
+      ctx.beginPath();
+      ctx.arc(selNode.x, selNode.y, selNode.r, 0, Math.PI * 2);
+      ctx.fillStyle = isDark ? '#3b82f6' : '#2563eb';
+      ctx.fill();
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = isDark ? '#ffffff' : '#dbeafe';
+      ctx.stroke();
+
+      drawNodeLabel(ctx, selNode.note.title || '제목 없음', selNode, cx, cy, isDark, true, selNode.isCenter, false, isMobile);
+    }
   }
 }
 
@@ -6501,7 +6674,7 @@ async function clipAndSummarizeYouTubeWithSubtitles(videoId, rawUrl, subtitlesTe
     favorite: activeNav === 'favorites',
     trashed: false,
     isEncrypted: false,
-    tags: ['유튜브', '클리핑', '요약', '자막요약'],
+    tags: ['유튜브', '클리핑', '요약'],
     createdAt: now,
     updatedAt: now,
     blocks: initialBlocks
@@ -8884,17 +9057,20 @@ function bindEvents() {
   // Graph Controls & Canvas Click
   document.getElementById('btn-graph-mode-local')?.addEventListener('click', () => {
     graphViewMode = 'local';
+    selectedGraphNodeId = null;
     if (!graphCenterNoteId && activeNoteId) graphCenterNoteId = activeNoteId;
     renderKnowledgeGraph();
   });
   document.getElementById('btn-graph-mode-global')?.addEventListener('click', () => {
     graphViewMode = 'global';
+    selectedGraphNodeId = null;
     renderKnowledgeGraph();
   });
   document.getElementById('graph-center-note-select')?.addEventListener('change', (e) => {
     graphCenterNoteId = e.target.value;
     activeNoteId = e.target.value;
     graphViewMode = 'local';
+    selectedGraphNodeId = null;
     renderKnowledgeGraph();
   });
   document.getElementById('btn-graph-open-center')?.addEventListener('click', () => {
@@ -8942,25 +9118,19 @@ function bindEvents() {
         }
       }
 
-      if (graphViewMode === 'local') {
-        if (clickedNode) {
+      // Tap once to highlight line & badge (brings text/badge to front), tap again to open note
+      if (clickedNode) {
+        if (selectedGraphNodeId === clickedNode.note.id) {
+          selectedGraphNodeId = null;
           openNoteInEditor(clickedNode.note.id);
+        } else {
+          selectedGraphNodeId = clickedNode.note.id;
+          renderKnowledgeGraph();
         }
       } else {
-        // Global Mode: tap once to highlight node & badges, tap again to open note
-        if (clickedNode) {
-          if (selectedGraphNodeId === clickedNode.note.id) {
-            selectedGraphNodeId = null;
-            openNoteInEditor(clickedNode.note.id);
-          } else {
-            selectedGraphNodeId = clickedNode.note.id;
-            renderKnowledgeGraph();
-          }
-        } else {
-          if (selectedGraphNodeId) {
-            selectedGraphNodeId = null;
-            renderKnowledgeGraph();
-          }
+        if (selectedGraphNodeId) {
+          selectedGraphNodeId = null;
+          renderKnowledgeGraph();
         }
       }
     });
