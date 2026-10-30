@@ -4530,21 +4530,38 @@ function getGraphEdgeInfo(noteA, noteB) {
   const aLinks = new Set((noteA.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
   const bLinks = new Set((noteB.blocks || []).flatMap((blk) => extractWikiLinks(blk.text).map((t) => t.toLowerCase())));
 
-  // 1. Direct [[WikiLink]] reference (Obsidian style - highest fidelity connection)
-  if ((bTitle && aLinks.has(bTitle)) || (aTitle && bLinks.has(aTitle))) {
-    return { connected: true, type: 'wiki', label: '[[링크]]' };
-  }
+  const hasWiki = (bTitle && aLinks.has(bTitle)) || (aTitle && bLinks.has(aTitle));
 
-  // 2. Shared Meaningful Topic Tag (non-generic, non-stopword)
   const aTopicTags = (noteA.tags || []).filter(isMeaningfulTopicTag);
   const bTopicTagsSet = new Set((noteB.tags || []).filter(isMeaningfulTopicTag).map((t) => t.toLowerCase()));
   const sharedTopicTags = aTopicTags.filter((t) => bTopicTagsSet.has(t.toLowerCase()));
-  if (sharedTopicTags.length > 0) {
-    const displayTag = sharedTopicTags[0].replace(/^#/, '');
-    return { connected: true, type: 'tag', label: `#${displayTag}` };
+
+  if (!hasWiki && sharedTopicTags.length === 0) {
+    return { connected: false };
   }
 
-  return { connected: false };
+  const items = [];
+  if (hasWiki) items.push('[[링크]]');
+  for (const t of sharedTopicTags) {
+    const clean = '#' + t.replace(/^#/, '');
+    if (!items.includes(clean)) items.push(clean);
+  }
+
+  let label = '';
+  if (items.length === 1) {
+    label = items[0];
+  } else if (items.length === 2) {
+    label = `${items[0]} · ${items[1]}`;
+  } else {
+    label = `${items[0]} · ${items[1]} (+${items.length - 2})`;
+  }
+
+  return {
+    connected: true,
+    type: hasWiki ? 'wiki' : 'tag',
+    items,
+    label
+  };
 }
 
 // ============================================================================
@@ -4553,20 +4570,81 @@ function getGraphEdgeInfo(noteA, noteB) {
 let graphNodePositions = [];
 let graphViewMode = 'local'; // 'local' (선택 문서 중심) | 'global' (전체 문서 보기)
 let graphCenterNoteId = null;
+let selectedGraphNodeId = null;
+
+function drawEdgeBadge(ctx, text, x, y, isDark, isSelected = false, isMobile = false) {
+  if (!text) return;
+  ctx.save();
+  const fontSize = isMobile ? '9.5px' : '10.5px';
+  ctx.font = `600 ${fontSize} sans-serif`;
+  const metrics = ctx.measureText(text);
+  const textW = metrics.width;
+  const padX = isMobile ? 6 : 8;
+  const badgeW = textW + padX * 2;
+  const badgeH = isMobile ? 17 : 19;
+  const badgeX = x - badgeW / 2;
+  const badgeY = y - badgeH / 2;
+  const radius = badgeH / 2;
+
+  // Background pill box
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, radius);
+  } else {
+    ctx.arc(badgeX + radius, badgeY + radius, radius, Math.PI / 2, Math.PI * 1.5);
+    ctx.arc(badgeX + badgeW - radius, badgeY + radius, radius, -Math.PI / 2, Math.PI / 2);
+    ctx.closePath();
+  }
+
+  if (isSelected) {
+    ctx.fillStyle = isDark ? '#1d4ed8' : '#2563eb';
+    ctx.strokeStyle = isDark ? '#93c5fd' : '#1e40af';
+  } else {
+    ctx.fillStyle = isDark ? 'rgba(39, 39, 42, 0.96)' : 'rgba(255, 255, 255, 0.96)';
+    ctx.strokeStyle = isDark ? 'rgba(113, 113, 122, 0.8)' : 'rgba(212, 212, 216, 0.9)';
+  }
+  ctx.lineWidth = 1.2;
+  ctx.fill();
+  ctx.stroke();
+
+  // Text inside pill
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = isSelected
+    ? '#ffffff'
+    : (isDark ? '#f4f4f5' : '#18181b');
+  ctx.fillText(text, x, y + 0.5);
+  ctx.restore();
+}
 
 function renderKnowledgeGraph() {
   sanitizeExistingNoteTags();
   const canvas = document.getElementById('knowledge-graph-canvas');
   if (!canvas) return;
+
+  const wrap = canvas.parentElement;
+  const wrapW = wrap ? wrap.clientWidth : 0;
+  const winW = window.innerWidth;
+  const isMobile = winW <= 640;
+  const isTablet = winW > 640 && winW <= 1024;
+
+  const targetW = Math.max(300, wrapW || (isMobile ? 360 : 900));
+  const targetH = isMobile ? 460 : (isTablet ? 500 : 560);
+
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+  }
+  const w = targetW;
+  const h = targetH;
+
   const ctx = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
   const notes = state.notes.filter((n) => !n.trashed);
   if (notes.length === 0) return;
 
-  // Ensure graphCenterNoteId points to a valid note (prefer activeNoteId)
+  // Ensure graphCenterNoteId points to a valid note
   if (!graphCenterNoteId || !notes.some((n) => n.id === graphCenterNoteId)) {
     graphCenterNoteId = activeNoteId && notes.some((n) => n.id === activeNoteId) ? activeNoteId : notes[0].id;
   }
@@ -4594,6 +4672,9 @@ function renderKnowledgeGraph() {
   const cx = w / 2;
   const cy = h / 2;
 
+  // ==========================================================================
+  // Mode 1: Local View (선택 문서 중심 방사형 연결도)
+  // ==========================================================================
   if (graphViewMode === 'local') {
     const centerNote = notes.find((n) => n.id === graphCenterNoteId) || notes[0];
     const relatedEntries = [];
@@ -4608,17 +4689,20 @@ function renderKnowledgeGraph() {
     if (subtitleEl) {
       subtitleEl.textContent =
         relatedEntries.length > 0
-          ? `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 직접 연결된 문서 ${relatedEntries.length}개 표시 중 (실선: [[위키링크]], 점선: #공통태그 / 노드를 클릭하면 열립니다)`
-          : `'${(centerNote.title || '제목 없음').slice(0, 28)}' 문서와 연결된 다른 문서가 없습니다.`;
+          ? `'${(centerNote.title || '제목 없음').slice(0, 24)}' 연결 문서 ${relatedEntries.length}개 (실선: [[위키링크]], 점선: #공통태그 / 노드를 터치하면 열립니다)`
+          : `'${(centerNote.title || '제목 없음').slice(0, 24)}' 문서와 연결된 다른 문서가 없습니다.`;
     }
 
-    const radius = Math.min(w, h) * 0.33;
+    const radius = Math.min(w, h) * (isMobile ? 0.35 : 0.36);
+    const centerR = isMobile ? 18 : 22;
+    const neighborR = isMobile ? 12 : 14;
+
     graphNodePositions = [
       {
         note: centerNote,
         x: cx,
         y: cy,
-        r: 21,
+        r: centerR,
         isCenter: true
       }
     ];
@@ -4631,13 +4715,13 @@ function renderKnowledgeGraph() {
         note: entry.note,
         x: nx,
         y: ny,
-        r: 14,
+        r: neighborR,
         isCenter: false,
         edge: entry.edge
       });
     });
 
-    // Draw edges from centerNote to related notes (Solid for [[WikiLink]], Dashed for #Tag)
+    // 1. Draw connecting lines from centerNote to related notes
     for (let i = 1; i < graphNodePositions.length; i++) {
       const relNode = graphNodePositions[i];
       const edge = relNode.edge;
@@ -4655,9 +4739,15 @@ function renderKnowledgeGraph() {
       }
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Draw connection keyword badge at 68% distance (부채꼴 외곽 배치로 겹침 원천 차단)
+      const badgeDist = isMobile ? 0.65 : 0.68;
+      const bx = cx + (relNode.x - cx) * badgeDist;
+      const by = cy + (relNode.y - cy) * badgeDist;
+      drawEdgeBadge(ctx, edge.label, bx, by, isDark, false, isMobile);
     }
 
-    // Draw nodes & labels with background halo (zero overlap smudge)
+    // 2. Draw nodes & labels with background halo
     for (const node of graphNodePositions) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
@@ -4670,19 +4760,22 @@ function renderKnowledgeGraph() {
       ctx.strokeStyle = isDark ? '#27272a' : '#f4f4f5';
       ctx.stroke();
 
-      const label = (node.note.title || '제목 없음').slice(0, 22);
+      const maxChars = isMobile ? 14 : 20;
+      const label = (node.note.title || '제목 없음').slice(0, maxChars);
       const displayText = node.isCenter ? `[기준] ${label}` : label;
       const textX = node.x;
-      const textY = node.y + node.r + 14;
+      const textY = node.y + node.r + (isMobile ? 10 : 13);
 
-      ctx.font = node.isCenter ? '700 13px sans-serif' : '500 11.5px sans-serif';
+      ctx.font = node.isCenter
+        ? (isMobile ? '700 11.5px sans-serif' : '700 13px sans-serif')
+        : (isMobile ? '500 10.5px sans-serif' : '500 11.5px sans-serif');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
       // Halo outline to protect text from intersecting lines
       ctx.save();
       ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3.5;
       ctx.lineJoin = 'round';
       ctx.strokeText(displayText, textX, textY);
       ctx.restore();
@@ -4696,7 +4789,7 @@ function renderKnowledgeGraph() {
       ctx.font = '400 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(
-        '이 문서와 연결된 연관 문서가 아직 없습니다. (본문에 [[문서 제목]]을 쓰거나 공통 #태그를 추가하면 연결됩니다)',
+        '이 문서와 연결된 연관 문서가 없습니다. (본문에 [[문서 제목]]이나 공통 #태그를 입력하면 연결됩니다)',
         cx,
         cy + 75
       );
@@ -4704,76 +4797,134 @@ function renderKnowledgeGraph() {
     return;
   }
 
-  // Global Mode ('global'): Show all documents
-  if (subtitleEl) {
-    subtitleEl.textContent =
-      '전체 문서의 지식 연결망을 보여줍니다. (실선: [[위키링크]], 점선: #공통태그 / 노드를 클릭하면 해당 문서가 열립니다)';
-  }
-
-  const radius = Math.min(w, h) * 0.34;
+  // ==========================================================================
+  // Mode 2: Global View (전체 문서 연결망 & 탭 하이라이트)
+  // ==========================================================================
+  const radius = Math.min(w, h) * (isMobile ? 0.35 : 0.36);
   graphNodePositions = notes.map((n, i) => {
     const angle = (2 * Math.PI * i) / notes.length - Math.PI / 2;
+    const isSelected = n.id === selectedGraphNodeId;
+    const isCenter = n.id === graphCenterNoteId;
     return {
       note: n,
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
-      r: n.id === graphCenterNoteId ? 18 : 13,
-      isCenter: n.id === graphCenterNoteId
+      r: isSelected ? (isMobile ? 16 : 19) : (isCenter ? (isMobile ? 15 : 17) : (isMobile ? 11 : 13)),
+      isCenter,
+      isSelected
     };
   });
 
+  // Collect all valid connected edges between document pairs
+  const allEdges = [];
   for (let i = 0; i < graphNodePositions.length; i++) {
     for (let j = i + 1; j < graphNodePositions.length; j++) {
       const a = graphNodePositions[i];
       const b = graphNodePositions[j];
       const edge = getGraphEdgeInfo(a.note, b.note);
-
       if (edge.connected) {
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        if (edge.type === 'wiki') {
-          ctx.setLineDash([]);
-          ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 30, 30, 0.7)';
-          ctx.lineWidth = 2.2;
-        } else {
-          ctx.setLineDash([4, 4]);
-          ctx.strokeStyle = isDark ? 'rgba(170, 170, 170, 0.4)' : 'rgba(100, 100, 100, 0.4)';
-          ctx.lineWidth = 1.4;
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
+        allEdges.push({ a, b, edge });
       }
     }
   }
 
+  if (subtitleEl) {
+    if (selectedGraphNodeId) {
+      const selNote = notes.find((n) => n.id === selectedGraphNodeId);
+      const connCount = allEdges.filter((e) => e.a.note.id === selectedGraphNodeId || e.b.note.id === selectedGraphNodeId).length;
+      subtitleEl.textContent = `'${(selNote?.title || '제목 없음').slice(0, 20)}' 연결선 ${connCount}개 강조 중 (다시 탭하면 문서 열기, 빈 곳 탭하면 해제)`;
+    } else {
+      subtitleEl.textContent = isMobile
+        ? '전체 문서 연결망입니다. (노트를 탭하면 연결선과 키워드 뱃지가 강조됩니다)'
+        : '전체 문서 지식 연결망입니다. (노트를 클릭/탭하면 연결선과 키워드 뱃지가 강조됩니다)';
+    }
+  }
+
+  // Draw edges
+  for (const item of allEdges) {
+    const { a, b, edge } = item;
+    const isConnToSelected = selectedGraphNodeId && (a.note.id === selectedGraphNodeId || b.note.id === selectedGraphNodeId);
+    const isDimmed = selectedGraphNodeId && !isConnToSelected;
+
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+
+    if (edge.type === 'wiki') {
+      ctx.setLineDash([]);
+      ctx.lineWidth = isConnToSelected ? 2.8 : 2.0;
+      ctx.strokeStyle = isConnToSelected
+        ? (isDark ? '#60a5fa' : '#2563eb')
+        : (isDimmed ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : (isDark ? 'rgba(255,255,255,0.65)' : 'rgba(30,30,30,0.65)'));
+    } else {
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = isConnToSelected ? 2.0 : 1.4;
+      ctx.strokeStyle = isConnToSelected
+        ? (isDark ? '#93c5fd' : '#3b82f6')
+        : (isDimmed ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : (isDark ? 'rgba(180,180,180,0.45)' : 'rgba(90,90,90,0.45)'));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw badge: when connected to selected node, or when few edges exist
+    if (isConnToSelected) {
+      const otherNode = a.note.id === selectedGraphNodeId ? b : a;
+      const thisNode = a.note.id === selectedGraphNodeId ? a : b;
+      const bx = thisNode.x + (otherNode.x - thisNode.x) * 0.65;
+      const by = thisNode.y + (otherNode.y - thisNode.y) * 0.65;
+      drawEdgeBadge(ctx, edge.label, bx, by, isDark, true, isMobile);
+    } else if (!selectedGraphNodeId && allEdges.length <= 6) {
+      const bx = (a.x + b.x) / 2;
+      const by = (a.y + b.y) / 2;
+      drawEdgeBadge(ctx, edge.label, bx, by, isDark, false, isMobile);
+    }
+  }
+
+  // Draw nodes & labels
   for (const node of graphNodePositions) {
+    const isConnToSelected = selectedGraphNodeId && allEdges.some((e) => (e.a.note.id === selectedGraphNodeId && e.b.note.id === node.note.id) || (e.b.note.id === selectedGraphNodeId && e.a.note.id === node.note.id));
+    const isDimmed = selectedGraphNodeId && node.note.id !== selectedGraphNodeId && !isConnToSelected;
+
     ctx.beginPath();
     ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
-    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#1f1f1f') : (isDark ? '#71717a' : '#888888');
+
+    if (node.isSelected) {
+      ctx.fillStyle = isDark ? '#60a5fa' : '#2563eb';
+    } else if (isConnToSelected) {
+      ctx.fillStyle = isDark ? '#93c5fd' : '#3b82f6';
+    } else if (node.isCenter) {
+      ctx.fillStyle = isDark ? '#ffffff' : '#1f1f1f';
+    } else {
+      ctx.fillStyle = isDimmed ? (isDark ? '#3f3f46' : '#d4d4d8') : (isDark ? '#71717a' : '#888888');
+    }
     ctx.fill();
 
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = isDark ? '#27272a' : '#f4f4f5';
+    ctx.lineWidth = node.isSelected ? 3 : 2;
+    ctx.strokeStyle = node.isSelected ? (isDark ? '#ffffff' : '#1d4ed8') : (isDark ? '#27272a' : '#f4f4f5');
     ctx.stroke();
 
-    const label = (node.note.title || '제목 없음').slice(0, 20);
+    const maxChars = isMobile ? 12 : 18;
+    const label = (node.note.title || '제목 없음').slice(0, maxChars);
     const textX = node.x;
-    const textY = node.y + node.r + 14;
+    const textY = node.y + node.r + (isMobile ? 10 : 13);
 
-    ctx.font = node.isCenter ? '700 12.5px sans-serif' : '500 11.5px sans-serif';
+    ctx.font = node.isSelected || node.isCenter
+      ? (isMobile ? '700 11.5px sans-serif' : '700 12.5px sans-serif')
+      : (isMobile ? '500 10.5px sans-serif' : '500 11.5px sans-serif');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
     // Halo outline
     ctx.save();
     ctx.strokeStyle = isDark ? '#18181b' : '#ffffff';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.5;
     ctx.lineJoin = 'round';
     ctx.strokeText(label, textX, textY);
     ctx.restore();
 
-    ctx.fillStyle = node.isCenter ? (isDark ? '#ffffff' : '#111827') : (isDark ? '#e4e4e7' : '#27272a');
+    ctx.fillStyle = node.isSelected
+      ? (isDark ? '#93c5fd' : '#1d4ed8')
+      : (isDimmed ? (isDark ? '#71717a' : '#a1a1aa') : (isDark ? '#e4e4e7' : '#27272a'));
     ctx.fillText(label, textX, textY);
   }
 }
@@ -8768,26 +8919,57 @@ function bindEvents() {
       }
       if (hoveredNode) {
         graphCanvasEl.style.cursor = 'pointer';
-        const edgeDesc = hoveredNode.edge ? ` (${hoveredNode.edge.type === 'wiki' ? '[[위키링크]]' : hoveredNode.edge.label})` : '';
-        graphCanvasEl.title = `${hoveredNode.note.title || '제목 없음'}${edgeDesc} - 클릭하여 열기`;
+        const edgeDesc = hoveredNode.edge ? ` (${hoveredNode.edge.label})` : '';
+        graphCanvasEl.title = `${hoveredNode.note.title || '제목 없음'}${edgeDesc}`;
       } else {
         graphCanvasEl.style.cursor = 'default';
         graphCanvasEl.title = '';
       }
     });
+
+    graphCanvasEl.addEventListener('click', (e) => {
+      const rect = graphCanvasEl.getBoundingClientRect();
+      const scaleX = graphCanvasEl.width / rect.width;
+      const scaleY = graphCanvasEl.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      let clickedNode = null;
+      for (const node of graphNodePositions) {
+        if (Math.hypot(x - node.x, y - node.y) <= node.r + 12) {
+          clickedNode = node;
+          break;
+        }
+      }
+
+      if (graphViewMode === 'local') {
+        if (clickedNode) {
+          openNoteInEditor(clickedNode.note.id);
+        }
+      } else {
+        // Global Mode: tap once to highlight node & badges, tap again to open note
+        if (clickedNode) {
+          if (selectedGraphNodeId === clickedNode.note.id) {
+            selectedGraphNodeId = null;
+            openNoteInEditor(clickedNode.note.id);
+          } else {
+            selectedGraphNodeId = clickedNode.note.id;
+            renderKnowledgeGraph();
+          }
+        } else {
+          if (selectedGraphNodeId) {
+            selectedGraphNodeId = null;
+            renderKnowledgeGraph();
+          }
+        }
+      }
+    });
   }
 
-  document.getElementById('knowledge-graph-canvas').addEventListener('click', (e) => {
-    const rect = e.target.getBoundingClientRect();
-    const scaleX = e.target.width / rect.width;
-    const scaleY = e.target.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    for (const node of graphNodePositions) {
-      if (Math.hypot(x - node.x, y - node.y) <= node.r + 12) {
-        openNoteInEditor(node.note.id);
-        break;
-      }
+  // Automatic responsive redraw on window resize (rotation between portrait/landscape)
+  window.addEventListener('resize', () => {
+    if (activeNav === 'graph') {
+      renderKnowledgeGraph();
     }
   });
 
