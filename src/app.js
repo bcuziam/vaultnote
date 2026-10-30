@@ -7864,7 +7864,7 @@ async function initApp() {
       );
     };
 
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
       // 0. 앱 시작 즉시 서버의 최신 sw.js를 명시적으로 체크
       reg.update().catch(() => {});
 
