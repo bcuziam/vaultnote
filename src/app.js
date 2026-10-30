@@ -6077,19 +6077,47 @@ async function testGeminiApiKey(rawKey) {
   }
 }
 
+let currentSummarizeMode = 'auto'; // 'auto' | 'short' | 'deep' | 'academic' | 'business'
+
 /**
  * Analyzes document length and characteristic keywords (O(1) lightweight scanner)
- * Tiers:
- * - 'short': under 600 chars (breaking news, brief memo)
- * - 'medium': 600 ~ 2500 chars (standard news article, blog post, general note)
- * - 'deep': 2500+ chars (academic paper, in-depth report, extensive documentation)
- * Genres: 'academic', 'news', 'business', 'general'
+ * Priority 1: Content & Genre (academic/research, business/meeting, news)
+ * Priority 2: Document length
+ * Supports manual override via forcedMode
  */
-function detectDocumentProfile(title = '', text = '', sourceUrl = '') {
+function detectDocumentProfile(title = '', text = '', sourceUrl = '', forcedMode = 'auto') {
   const clean = String(text || '').trim();
   const len = clean.length;
   const sample = (String(title || '') + ' ' + String(sourceUrl || '') + ' ' + clean.slice(0, 3000)).toLowerCase();
 
+  // Manual Mode Override
+  if (forcedMode === 'short') {
+    return { tier: 'short', genre: 'general', length: len };
+  }
+  if (forcedMode === 'deep') {
+    return { tier: 'deep', genre: 'general', length: len };
+  }
+  if (forcedMode === 'academic') {
+    return { tier: 'deep', genre: 'academic', length: len };
+  }
+  if (forcedMode === 'business') {
+    return { tier: 'deep', genre: 'business', length: len };
+  }
+
+  // Auto Mode: Content & Structure takes first priority!
+  const isAcademic = /(abstract|introduction|methodology|experiments?|benchmark|dataset|arxiv|doi:|et al\.|논문|연구|가설|실험|방법론|검증|아키텍처)/i.test(sample);
+  const isBusiness = /(회의록|안건|회의|참석자|아젠다|action items?|결정사항|추진계획|보고서|기획서)/i.test(sample);
+  const isNews = /(기자|특파원|보도에 따르면|전언이다|뉴시스|연합뉴스|뉴스1|조선일보|중앙일보|동아일보|매일경제|한국경제|한겨레|경향신문|reuters|apnews|bloomberg|wsj|cnn|bbc)/i.test(sample) || /news|article|press/i.test(sourceUrl);
+
+  if (isAcademic) {
+    return { tier: 'deep', genre: 'academic', length: len };
+  }
+
+  if (isBusiness) {
+    return { tier: 'deep', genre: 'business', length: len };
+  }
+
+  // For news and general content, length determines tier:
   let tier = 'medium';
   if (len < 600) {
     tier = 'short';
@@ -6097,22 +6125,14 @@ function detectDocumentProfile(title = '', text = '', sourceUrl = '') {
     tier = 'deep';
   }
 
-  let genre = 'general';
-  if (/(abstract|introduction|methodology|experiments?|benchmark|dataset|arxiv|doi:|et al\.|논문|연구|가설|실험|방법론|검증|아키텍처)/i.test(sample)) {
-    genre = 'academic';
-  } else if (/(기자|특파원|보도에 따르면|전언이다|뉴시스|연합뉴스|뉴스1|조선일보|중앙일보|동아일보|매일경제|한국경제|한겨레|경향신문|reuters|apnews|bloomberg|wsj|cnn|bbc)/i.test(sample) || /news|article|press/i.test(sourceUrl)) {
-    genre = 'news';
-  } else if (/(회의록|안건|회의|참석자|아젠다|action items?|결정사항|추진계획|보고서|기획서)/i.test(sample)) {
-    genre = 'business';
-  }
-
+  const genre = isNews ? 'news' : 'general';
   return { tier, genre, length: len };
 }
 
 /**
  * High-Quality Content-Adaptive Summarizer using Google Gemini API (with Automatic Sensitive-Data Masking)
  */
-async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '', isUserNote = false) {
+async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '', isUserNote = false, forcedMode = 'auto') {
   const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
     throw new Error('NO_API_KEY');
@@ -6134,8 +6154,8 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
   const hangulCount = hangulMatches ? hangulMatches.length : 0;
   const isForeignDoc = hangulCount < 18 && safeBody.length >= 35;
 
-  // Detect length tier and document genre
-  const profile = detectDocumentProfile(safeTitle, safeBody, sourceUrl);
+  // Detect length tier and document genre (content & structure prioritized)
+  const profile = detectDocumentProfile(safeTitle, safeBody, sourceUrl, forcedMode);
   const docBodySample = safeBody.slice(0, 32000);
 
   let promptText = '';
@@ -6517,7 +6537,8 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     summaryCount: Math.max(2, generatedCount),
     autoTags,
     totalMasked,
-    usedAI: true
+    usedAI: true,
+    profile
   };
 }
 
@@ -8684,7 +8705,33 @@ function bindEvents() {
   document.getElementById('blocks-container')?.addEventListener('keydown', clearSearchHighlights);
 
   document.getElementById('btn-summarize-note')?.addEventListener('click', () => {
-    summarizeCurrentActiveNote();
+    summarizeCurrentActiveNote(currentSummarizeMode);
+  });
+
+  document.getElementById('btn-summarize-mode-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const popover = document.getElementById('summarize-mode-popover');
+    if (popover) {
+      popover.classList.toggle('hidden');
+    }
+  });
+
+  document.querySelectorAll('.summarize-popover-item').forEach((itemBtn) => {
+    itemBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const mode = itemBtn.dataset.mode || 'auto';
+      currentSummarizeMode = mode;
+      document.querySelectorAll('.summarize-popover-item').forEach((b) => b.classList.toggle('active', b === itemBtn));
+      document.getElementById('summarize-mode-popover')?.classList.add('hidden');
+      summarizeCurrentActiveNote(mode);
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    const group = document.getElementById('split-btn-summarize-group');
+    if (group && !group.contains(e.target)) {
+      document.getElementById('summarize-mode-popover')?.classList.add('hidden');
+    }
   });
 
   document.getElementById('btn-open-note-graph')?.addEventListener('click', () => {
@@ -10512,11 +10559,19 @@ async function runAISummarizeOnActiveNote() {
   }
 
   try {
-    const aiResult = await summarizeWithGeminiAI(note.title || '', cleanBlocks, sourceUrl, true);
+    const aiResult = await summarizeWithGeminiAI(note.title || '', cleanBlocks, sourceUrl, true, pendingSummarizeMode);
     const maskNotice = aiResult.totalMasked > 0 ? ` (민감정보 ${aiResult.totalMasked}건 자동 보호됨)` : '';
+    let modeDesc = '문서 맞춤형 AI 요약 리포트';
+    if (aiResult.profile?.genre === 'academic') {
+      modeDesc = '학술/기술 심층 분석 리포트';
+    } else if (aiResult.profile?.genre === 'business') {
+      modeDesc = '업무/회의록 요약 리포트';
+    } else if (aiResult.profile?.tier === 'short') {
+      modeDesc = '3줄 퀵 팩트 요약';
+    }
     applySummaryResultToActiveNote(
       aiResult,
-      `문서 맞춤형 AI 요약 리포트가 상단에 정리되었습니다.${maskNotice}`
+      `${modeDesc}가 상단에 정리되었습니다.${maskNotice}`
     );
   } catch (err) {
     console.warn('[Gemini AI Summarize Error]:', err);
@@ -10751,7 +10806,10 @@ async function runSubtitlesYouTubeSummarize(note, ytBlock, ytVideoId, sourceBloc
   }
 }
 
-function summarizeCurrentActiveNote() {
+let pendingSummarizeMode = 'auto';
+
+function summarizeCurrentActiveNote(forcedMode = 'auto') {
+  pendingSummarizeMode = forcedMode;
   const note = getActiveNote();
   const blocks = getEditableBlocksForNote(note);
   if (!note || !blocks) return;

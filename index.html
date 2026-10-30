@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v101</span>
+        <span class="app-version-badge" id="app-version-display">v103</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -287,7 +287,32 @@
                 <div id="note-tags-container" class="note-tags-container"></div>
 
                 <div class="meta-actions-right">
-                  <button type="button" id="btn-summarize-note" class="meta-btn" title="이 노트 본문을 요약하여 상단에 핵심 요약 표시">요약정리</button>
+                  <div class="split-btn-group" id="split-btn-summarize-group">
+                    <button type="button" id="btn-summarize-note" class="meta-btn split-btn-main" title="이 노트 본문을 분석하여 상단에 맞춤 요약 생성">요약정리</button>
+                    <button type="button" id="btn-summarize-mode-toggle" class="meta-btn split-btn-arrow" title="요약 형식 선택 (자동/3줄/심층/논문/회의록)">▾</button>
+                    <div id="summarize-mode-popover" class="summarize-popover-menu hidden">
+                      <button type="button" class="summarize-popover-item active" data-mode="auto">
+                        <span class="item-title">자동 맞춤 (기본값)</span>
+                        <span class="item-desc">원문 내용·성향 자동 분석</span>
+                      </button>
+                      <button type="button" class="summarize-popover-item" data-mode="short">
+                        <span class="item-title">3줄 퀵 요약</span>
+                        <span class="item-desc">핵심 사실 위주 간결 압축</span>
+                      </button>
+                      <button type="button" class="summarize-popover-item" data-mode="deep">
+                        <span class="item-title">심층 심화 리포트</span>
+                        <span class="item-desc">소제목별 상세 전개 (LiveWiki)</span>
+                      </button>
+                      <button type="button" class="summarize-popover-item" data-mode="academic">
+                        <span class="item-title">학술/논문 분석</span>
+                        <span class="item-desc">가설, 방법론, 수치 성과</span>
+                      </button>
+                      <button type="button" class="summarize-popover-item" data-mode="business">
+                        <span class="item-title">업무/회의록 정리</span>
+                        <span class="item-desc">결정사항 및 액션아이템</span>
+                      </button>
+                    </div>
+                  </div>
                   <button type="button" id="btn-open-note-graph" class="meta-btn" title="이 문서를 중심으로 연관된 문서 연결 그래프 보기">연결도</button>
                   <button type="button" id="btn-toggle-fav" class="meta-btn" title="중요 표시">☆ 중요</button>
                   <button type="button" id="btn-relock-note" class="meta-btn hidden" title="열려 있는 암호화 노트를 다시 화면에서 잠그기">다시 잠그기</button>
