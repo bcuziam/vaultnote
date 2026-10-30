@@ -5665,26 +5665,33 @@ function stripExistingSummaryBlocks(rawBlocks = []) {
     const b = rawBlocks[i];
     const txt = (b.text || '').trim();
 
-    if (!skippingSummary && (b.type === 'h1' || b.type === 'h2' || b.type === 'h3') && (txt === '핵심 요약' || txt === 'AI 핵심 요약')) {
-      skippingSummary = true;
-      continue;
+    const isSummaryHeader = (b.type === 'h1' || b.type === 'h2' || b.type === 'h3') &&
+      (/^(AI\s*)?핵심\s*요약$/i.test(txt) || /심층\s*(요약\s*)?리포트/i.test(txt) || txt.includes('핵심 요약'));
+
+    if (!skippingSummary && isSummaryHeader) {
+      const hasBodyMarker = rawBlocks.slice(i + 1).some((nb) =>
+        (nb.type === 'h2' || nb.type === 'h3') && (nb.text || '').includes('본문 내용')
+      );
+      if (hasBodyMarker) {
+        skippingSummary = true;
+        continue;
+      }
     }
 
     if (skippingSummary) {
-      if (b.type === 'bullet' || (b.type === 'callout' && txt.startsWith('핵심 요지:'))) continue;
       if (b.type === 'divider') {
         const nextB = rawBlocks[i + 1];
-        if (nextB && (nextB.type === 'h2' || nextB.type === 'h3') && (nextB.text || '').trim() === '본문 내용') {
+        if (nextB && (nextB.type === 'h2' || nextB.type === 'h3') && (nextB.text || '').includes('본문 내용')) {
           i += 1;
+          skippingSummary = false;
+          continue;
         }
+      }
+      if ((b.type === 'h2' || b.type === 'h3') && txt.includes('본문 내용')) {
         skippingSummary = false;
         continue;
       }
-      if ((b.type === 'h2' || b.type === 'h3') && txt === '본문 내용') {
-        skippingSummary = false;
-        continue;
-      }
-      skippingSummary = false;
+      continue;
     }
 
     cleaned.push(b);
@@ -6071,7 +6078,39 @@ async function testGeminiApiKey(rawKey) {
 }
 
 /**
- * High-Quality Abstractive Summarizer using Google Gemini API (with Automatic Sensitive-Data Masking)
+ * Analyzes document length and characteristic keywords (O(1) lightweight scanner)
+ * Tiers:
+ * - 'short': under 600 chars (breaking news, brief memo)
+ * - 'medium': 600 ~ 2500 chars (standard news article, blog post, general note)
+ * - 'deep': 2500+ chars (academic paper, in-depth report, extensive documentation)
+ * Genres: 'academic', 'news', 'business', 'general'
+ */
+function detectDocumentProfile(title = '', text = '', sourceUrl = '') {
+  const clean = String(text || '').trim();
+  const len = clean.length;
+  const sample = (String(title || '') + ' ' + String(sourceUrl || '') + ' ' + clean.slice(0, 3000)).toLowerCase();
+
+  let tier = 'medium';
+  if (len < 600) {
+    tier = 'short';
+  } else if (len >= 2500) {
+    tier = 'deep';
+  }
+
+  let genre = 'general';
+  if (/(abstract|introduction|methodology|experiments?|benchmark|dataset|arxiv|doi:|et al\.|논문|연구|가설|실험|방법론|검증|아키텍처)/i.test(sample)) {
+    genre = 'academic';
+  } else if (/(기자|특파원|보도에 따르면|전언이다|뉴시스|연합뉴스|뉴스1|조선일보|중앙일보|동아일보|매일경제|한국경제|한겨레|경향신문|reuters|apnews|bloomberg|wsj|cnn|bbc)/i.test(sample) || /news|article|press/i.test(sourceUrl)) {
+    genre = 'news';
+  } else if (/(회의록|안건|회의|참석자|아젠다|action items?|결정사항|추진계획|보고서|기획서)/i.test(sample)) {
+    genre = 'business';
+  }
+
+  return { tier, genre, length: len };
+}
+
+/**
+ * High-Quality Content-Adaptive Summarizer using Google Gemini API (with Automatic Sensitive-Data Masking)
  */
 async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '', isUserNote = false) {
   const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
@@ -6090,44 +6129,129 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     throw new Error('TOO_SHORT');
   }
 
-  // Detect whether the document is primarily in a foreign language (e.g. English, Japanese, etc.)
+  // Detect whether the document is primarily in a foreign language
   const hangulMatches = safeBody.match(/[가-힣]/g);
   const hangulCount = hangulMatches ? hangulMatches.length : 0;
   const isForeignDoc = hangulCount < 18 && safeBody.length >= 35;
 
-  const promptText = isForeignDoc
-    ? [
-        '당신은 전문 이중언어 문서 요약 정리 도우미입니다. 아래 외국어(영어 등) 문서를 정밀 분석하여 두 가지 요약을 작성해주세요.',
-        '1) 문서 원어로 된 핵심 요약 (originalSummary)',
-        '2) 자연스럽고 유려한 한국어 번역 요약 (koreanSummary)',
-        '반드시 아래 JSON 형식으로만 응답하세요:',
-        JSON.stringify({
-          isForeign: true,
-          originalLangName: 'English',
-          koreanSummary: {
-            oneLine: '한국어로 번역된 한 줄 핵심 결론 (40~90자)',
-            bullets: ['한국어 핵심 요점 1', '한국어 핵심 요점 2', '한국어 핵심 요점 3']
+  // Detect length tier and document genre
+  const profile = detectDocumentProfile(safeTitle, safeBody, sourceUrl);
+  const docBodySample = safeBody.slice(0, 32000);
+
+  let promptText = '';
+
+  if (isForeignDoc) {
+    promptText = [
+      '당신은 전문 이중언어 문서 요약 정리 도우미입니다. 아래 외국어(영어 등) 문서를 정밀 분석하여 두 가지 요약을 작성해주세요.',
+      '1) 문서 원어로 된 핵심 요약 (originalSummary)',
+      '2) 자연스럽고 유려한 한국어 번역 요약 (koreanSummary)',
+      '반드시 아래 JSON 형식으로만 응답하세요:',
+      JSON.stringify({
+        isForeign: true,
+        originalLangName: 'English',
+        koreanSummary: {
+          oneLine: '한국어로 번역된 한 줄 핵심 결론 (40~90자)',
+          bullets: ['한국어 핵심 요점 1', '한국어 핵심 요점 2', '한국어 핵심 요점 3']
+        },
+        originalSummary: {
+          oneLine: 'One-line core conclusion in the original language',
+          bullets: ['Key bullet point 1 in original language', 'Key bullet point 2 in original language', 'Key bullet point 3 in original language']
+        },
+        tags: ['한국어키워드1', '한국어키워드2', '한국어키워드3']
+      }),
+      '',
+      `문서 제목: ${safeTitle || 'No Title'}`,
+      '문서 본문:',
+      docBodySample
+    ].join('\n');
+  } else if (profile.tier === 'short') {
+    promptText = [
+      '당신은 전문 문서 요약 정리 도우미입니다. 아래 짧은 단문/속보 문서를 분석하여 군더더기 없이 가장 핵심적인 사실만을 간결하게 요약해주세요.',
+      '짧은 기사이므로 과도하게 늘리지 말고 핵심 팩트 위주로 간결하게 정리하세요.',
+      '반드시 아래 JSON 형식으로만 응답하세요:',
+      JSON.stringify({
+        isForeign: false,
+        tier: 'short',
+        oneLine: '핵심 팩트 한 줄 결론 (30~60자)',
+        bullets: ['핵심 사실 1 (완결된 문장)', '핵심 사실 2 (완결된 문장)'],
+        tags: ['키워드1', '키워드2']
+      }),
+      '',
+      `문서 제목: ${safeTitle || '제목 없음'}`,
+      '문서 본문:',
+      docBodySample
+    ].join('\n');
+  } else if (profile.tier === 'medium') {
+    promptText = [
+      '당신은 전문 문서 요약 정리 도우미입니다. 아래 문서의 전체 맥락(서론·본론·결론)을 파악하여 한국어로 명확하게 핵심만 요약해주세요.',
+      '반드시 아래 JSON 형식으로만 응답하세요:',
+      JSON.stringify({
+        isForeign: false,
+        tier: 'medium',
+        oneLine: '문서 전체를 관통하는 한 줄 핵심 결론 (40~80자)',
+        takeaway: '배경 및 인과관계, 주요 파급효과 요약 (1~2문장)',
+        bullets: [
+          '핵심 요점 1 (완결된 문장)',
+          '핵심 요점 2 (완결된 문장)',
+          '핵심 요점 3 (완결된 문장)'
+        ],
+        tags: ['키워드1', '키워드2', '키워드3']
+      }),
+      '',
+      `문서 제목: ${safeTitle || '제목 없음'}`,
+      '문서 본문:',
+      docBodySample
+    ].join('\n');
+  } else {
+    // Tier 3: Deep In-Depth Report (LiveWiki Style)
+    const reportTitleGuide = profile.genre === 'academic'
+      ? '학술/기술 심층 분석 리포트'
+      : (profile.genre === 'business' ? '업무 기획/회의 요약 리포트' : '심층 요약 리포트');
+
+    promptText = [
+      '당신은 최고 수준의 테크니컬 라이터이자 위키 에디터입니다. 아래 긴 전문 문서를 정밀 분석하여, 원문을 다 읽지 않아도 문서의 전체 논리, 핵심 데이터, 세부 쟁점을 100% 파악할 수 있는 고품질 심층 리포트를 작성해주세요.',
+      '[작성 지침]',
+      '1. 문서 전체의 기승전결과 핵심 논리를 누락 없이 체계적으로 구성하세요.',
+      '2. sections에는 문서의 흐름에 따라 3~6개의 구체적인 문장형 소제목(heading)과 상세 문단(paragraphs)들을 작성하세요.',
+      '3. 구체적인 수치, 통계, 고유명사, 인용구, 주요 방법론을 충실하게 포함하세요.',
+      '4. 태그에는 요약, 기사, 문서 같은 일반적인 단어 대신 구체적인 주제 키워드 3~5개를 넣으세요.',
+      '반드시 아래 JSON 형식으로만 응답하세요:',
+      JSON.stringify({
+        isForeign: false,
+        tier: 'deep',
+        reportTitle: reportTitleGuide,
+        oneLine: '문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)',
+        takeaway: '이 문서가 시사하는 핵심 시사점 및 결론 (1~2문장)',
+        keyConclusions: [
+          '핵심 결론 및 발견 1 (구체적 사실 포함)',
+          '핵심 결론 및 발견 2 (구체적 사실 포함)',
+          '핵심 결론 및 발견 3 (구체적 사실 포함)'
+        ],
+        sections: [
+          {
+            heading: '1. 첫 번째 핵심 주제 소제목',
+            paragraphs: ['상세 사실과 데이터가 담긴 문단 1', '상세 문단 2']
           },
-          originalSummary: {
-            oneLine: 'One-line core conclusion in the original language',
-            bullets: ['Key bullet point 1 in original language', 'Key bullet point 2 in original language', 'Key bullet point 3 in original language']
+          {
+            heading: '2. 두 번째 핵심 주제 소제목',
+            paragraphs: ['상세 사실과 데이터가 담긴 문단 1']
           },
-          tags: ['한국어키워드1', '한국어키워드2', '한국어키워드3']
-        }),
-        '',
-        `문서 제목: ${safeTitle || 'No Title'}`,
-        '문서 본문:',
-        safeBody.slice(0, 12000)
-      ].join('\n')
-    : [
-        '당신은 전문 문서 요약 정리 도우미입니다. 아래 문서의 전체 맥락(서론·본론·결론)을 파악하여 한국어로 명확하게 핵심만 요약해주세요.',
-        '반드시 아래 JSON 형식으로만 응답하세요:',
-        '{"isForeign":false,"oneLine":"문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)","bullets":["핵심 요점 1 (완결된 문장)","핵심 요점 2 (완결된 문장)","핵심 요점 3 (완결된 문장)","핵심 요점 4 (필요시)"],"tags":["키워드1","키워드2","키워드3"]}',
-        '',
-        `문서 제목: ${safeTitle || '제목 없음'}`,
-        '문서 본문:',
-        safeBody.slice(0, 12000)
-      ].join('\n');
+          {
+            heading: '3. 세 번째 핵심 주제 소제목',
+            paragraphs: ['상세 사실과 데이터가 담긴 문단 1']
+          }
+        ],
+        glossary: [
+          { term: '핵심용어/약어', desc: '간결한 설명' }
+        ],
+        tags: ['키워드1', '키워드2', '키워드3']
+      }),
+      '',
+      `문서 제목: ${safeTitle || '제목 없음'}`,
+      '문서 본문:',
+      docBodySample
+    ].join('\n');
+  }
 
   // Standard Google Gemini Flash models with resilient multi-tier fallback order
   const models = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-flash-lite-latest', 'gemini-1.5-flash'];
@@ -6143,7 +6267,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
 
   for (const model of models) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 22000);
+    const timer = setTimeout(() => controller.abort(), 26000);
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(endpoint, {
@@ -6166,7 +6290,6 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
         try { errJson = await res.json(); } catch {}
         const serverMsg = errJson?.error?.message || '';
 
-        // If auth or quota fails, stop retrying models with the same key
         if (res.status === 400 || res.status === 403) {
           throw new Error(`API_KEY_INVALID: ${serverMsg || 'API 키가 올바르지 않거나 권한이 없습니다.'}`);
         }
@@ -6201,7 +6324,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     } catch (err) {
       clearTimeout(timer);
       if (err.name === 'AbortError') {
-        lastErr = new Error('TIMEOUT: AI 서버 응답 시간(22초)이 초과되었습니다.');
+        lastErr = new Error('TIMEOUT: AI 서버 응답 시간 초과');
         continue;
       }
       if (
@@ -6215,7 +6338,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     }
   }
 
-  if (!parsedJson || (!parsedJson.oneLine && !parsedJson.koreanSummary && !parsedJson.korean && !Array.isArray(parsedJson.bullets))) {
+  if (!parsedJson || (!parsedJson.oneLine && !parsedJson.koreanSummary && !parsedJson.korean && !Array.isArray(parsedJson.bullets) && !Array.isArray(parsedJson.keyConclusions))) {
     throw lastErr || new Error('AI_PARSE_FAILED');
   }
 
@@ -6248,7 +6371,6 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     (parsedJson.original && typeof parsedJson.original === 'object' ? parsedJson.original : null);
 
   if (kSum || oSum) {
-    // 1. Korean Translated Summary
     if (kSum) {
       const kOneLine = String(kSum.oneLine || kSum.summary || '').trim();
       const kBullets = Array.isArray(kSum.bullets)
@@ -6260,7 +6382,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       structuredBlocks.push({
         id: uid('b'),
         type: 'h2',
-        text: '📌 한국어 핵심 요약 (번역)'
+        text: '[한국어 핵심 요약 (번역)]'
       });
       if (kOneLine) {
         structuredBlocks.push({
@@ -6274,7 +6396,6 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       }
     }
 
-    // 2. Native Original Language Summary
     if (oSum) {
       const origLangName = parsedJson.originalLangName || 'English';
       const oOneLine = String(oSum.oneLine || oSum.summary || '').trim();
@@ -6287,7 +6408,7 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       structuredBlocks.push({
         id: uid('b'),
         type: 'h2',
-        text: `🌐 원문 핵심 요약 (${origLangName})`
+        text: `[원문 핵심 요약 (${origLangName})]`
       });
       if (oOneLine) {
         structuredBlocks.push({
@@ -6301,29 +6422,82 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
       }
     }
   } else {
-    // B. Standard Korean Summary
-    const oneLine = String(parsedJson.oneLine || '').trim();
-    const bullets = Array.isArray(parsedJson.bullets)
-      ? parsedJson.bullets.map((s) => String(s || '').trim()).filter(Boolean).slice(0, 5)
-      : [];
+    // B. Standard / In-Depth Korean Adaptive Summary
+    const reportTitle = parsedJson.reportTitle || (profile.tier === 'deep'
+      ? (profile.genre === 'academic' ? '학술/기술 심층 분석 리포트' : (profile.genre === 'business' ? '업무 기획/회의 요약 리포트' : '심층 요약 리포트'))
+      : '핵심 요약');
 
     structuredBlocks.push({
       id: uid('b'),
       type: 'h2',
-      text: '핵심 요약'
+      text: reportTitle
     });
-    if (oneLine) {
+
+    const takeaway = parsedJson.takeaway || parsedJson.insights || '';
+    if (takeaway && String(takeaway).trim()) {
+      structuredBlocks.push({
+        id: uid('b'),
+        type: 'callout',
+        text: `시사점: ${String(takeaway).trim()}`
+      });
+    }
+
+    const oneLine = String(parsedJson.oneLine || '').trim();
+    if (oneLine && !takeaway) {
       structuredBlocks.push({
         id: uid('b'),
         type: 'callout',
         text: `핵심 요지: ${oneLine}`
       });
     }
+
+    const bullets = Array.isArray(parsedJson.keyConclusions)
+      ? parsedJson.keyConclusions
+      : (Array.isArray(parsedJson.bullets) ? parsedJson.bullets : []);
+
     for (const line of bullets) {
-      structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      if (line && String(line).trim()) {
+        structuredBlocks.push({ id: uid('b'), type: 'bullet', text: String(line).trim() });
+      }
+    }
+
+    // In-Depth Sections (LiveWiki style) for Deep Summaries
+    if (Array.isArray(parsedJson.sections) && parsedJson.sections.length > 0) {
+      structuredBlocks.push({ id: uid('b'), type: 'divider', text: '' });
+      for (const sec of parsedJson.sections) {
+        if (sec.heading) {
+          structuredBlocks.push({ id: uid('b'), type: 'h2', text: String(sec.heading).trim() });
+        }
+        const paras = Array.isArray(sec.paragraphs)
+          ? sec.paragraphs
+          : (Array.isArray(sec.bullets) ? sec.bullets : (sec.content ? [sec.content] : []));
+        for (const p of paras) {
+          if (p && String(p).trim()) {
+            structuredBlocks.push({ id: uid('b'), type: 'p', text: String(p).trim() });
+          }
+        }
+      }
+    }
+
+    // Glossary of Terms for Deep Summaries
+    if (Array.isArray(parsedJson.glossary) && parsedJson.glossary.length > 0) {
+      const validGlossary = parsedJson.glossary.filter((g) => g && g.term && String(g.term).trim());
+      if (validGlossary.length > 0) {
+        structuredBlocks.push({ id: uid('b'), type: 'divider', text: '' });
+        structuredBlocks.push({ id: uid('b'), type: 'h3', text: '주요 핵심 용어 정리' });
+        for (const g of validGlossary) {
+          const desc = g.desc ? `: ${String(g.desc).trim()}` : '';
+          structuredBlocks.push({
+            id: uid('b'),
+            type: 'callout',
+            text: `[${String(g.term).trim()}]${desc}`
+          });
+        }
+      }
     }
   }
 
+  // Divider and original body blocks
   structuredBlocks.push({
     id: uid('b'),
     type: 'divider',
@@ -6336,9 +6510,11 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
   });
   structuredBlocks.push(...bodyBlocks);
 
+  const generatedCount = structuredBlocks.length - bodyBlocks.length;
+
   return {
-    blocks: structuredBlocks.slice(0, 240),
-    summaryCount: 6,
+    blocks: structuredBlocks.slice(0, 300),
+    summaryCount: Math.max(2, generatedCount),
     autoTags,
     totalMasked,
     usedAI: true
@@ -10340,7 +10516,7 @@ async function runAISummarizeOnActiveNote() {
     const maskNotice = aiResult.totalMasked > 0 ? ` (민감정보 ${aiResult.totalMasked}건 자동 보호됨)` : '';
     applySummaryResultToActiveNote(
       aiResult,
-      `AI 고품질 핵심 요약이 상단에 정리되었습니다.${maskNotice}`
+      `문서 맞춤형 AI 요약 리포트가 상단에 정리되었습니다.${maskNotice}`
     );
   } catch (err) {
     console.warn('[Gemini AI Summarize Error]:', err);
