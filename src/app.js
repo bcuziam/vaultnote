@@ -7388,54 +7388,119 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
         : parseMarkdownToBlocks(readerMarkdown, finalUrl);
 
       const noteTitle = parsed.title || newNote.title || (domain ? `${domain} 기사` : '웹 클리핑');
-      let finalBlocks = parsed.blocks;
-      let tags = ['클리핑'];
-
-      if (summarize) {
-        const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
-        finalBlocks = localSum.blocks;
-        tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
-      }
+      newNote.title = noteTitle;
 
       if (newNote.trashed || newNote.isEncrypted) return;
 
-      newNote.title = noteTitle;
-      newNote.blocks = finalBlocks;
-      newNote.tags = tags;
-      newNote.updatedAt = new Date().toISOString();
+      if (!summarize) {
+        // 요약 옵션이 꺼진 경우: 본문만 그대로 저장
+        newNote.blocks = parsed.blocks;
+        newNote.tags = ['클리핑'];
+        newNote.updatedAt = new Date().toISOString();
+        scheduleSave();
+        if (activeNoteId === newNote.id) renderActiveNoteEditor();
+        else renderSidebar();
+        showToast(`본문 클리핑이 완료되었습니다: ${noteTitle.slice(0, 24)}`);
+        return;
+      }
+
+      // 요약 옵션이 켜진 경우:
+      const apiKey = (state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
+
+      // 1. API 키가 없거나 네트워크 오프라인인 경우: 대기 없이 즉시 로컬 기본 요약 적용
+      if (!apiKey || !navigator.onLine) {
+        const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
+        const fallbackBlocks = [...localSum.blocks];
+        const srcIdx = fallbackBlocks.findIndex((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+        const reasonCallout = !apiKey
+          ? "[안내] Gemini API 키가 설정되지 않아 자체 '로컬 기본 요약'이 적용되었습니다.\n• [보안 설정 > AI 키]를 등록하신 후 상단 [요약정리] 버튼을 누르시면 고품질 AI 요약을 이용하실 수 있습니다."
+          : "[안내] 네트워크 오프라인 상태로 인해 자체 '로컬 기본 요약'이 적용되었습니다.\n• 인터넷이 연결된 후 상단 [요약정리] 버튼을 누르시면 AI 맞춤 요약으로 갱신됩니다.";
+
+        fallbackBlocks.splice(srcIdx !== -1 ? srcIdx + 1 : 0, 0, {
+          id: uid('b'),
+          type: 'callout',
+          text: reasonCallout
+        });
+
+        newNote.blocks = fallbackBlocks;
+        newNote.tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
+        newNote.updatedAt = new Date().toISOString();
+        scheduleSave();
+
+        if (activeNoteId === newNote.id) renderActiveNoteEditor();
+        else renderSidebar();
+
+        showToast(`로컬 기본 요약이 완성되었습니다: ${noteTitle.slice(0, 24)}`);
+        return;
+      }
+
+      // 2. API 키가 정상 등록된 경우: 로딩 상태를 명확히 유지하며 AI 심층 요약 직접 호출
+      const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
+      if (loadBlock) {
+        loadBlock.text = '[안내] AI가 본문 내용과 맥락을 심층 분석하여 맞춤 요약을 생성하고 있습니다 (약 5~15초 소요)...';
+      }
       scheduleSave();
+      if (activeNoteId === newNote.id) renderActiveNoteEditor();
 
-      if (activeNoteId === newNote.id) {
-        renderActiveNoteEditor();
-      } else {
-        renderSidebar();
-      }
+      summarizeWithGeminiAI(noteTitle, parsed.blocks, finalUrl, false)
+        .then((aiSum) => {
+          if (!aiSum || !aiSum.blocks || newNote.trashed || newNote.isEncrypted) return;
 
-      showToast(
-        summarize
-          ? `핵심 요약 노트가 완성되었습니다: ${noteTitle.slice(0, 24)}`
-          : `본문 클리핑이 완료되었습니다: ${noteTitle.slice(0, 24)}`
-      );
-
-      // Upgrade with Gemini AI summary if configured
-      if (summarize && (state.settings.geminiApiKey || '').trim()) {
-        summarizeWithGeminiAI(noteTitle, parsed.blocks, finalUrl, false)
-          .then((aiSum) => {
-            if (aiSum && aiSum.blocks && !newNote.trashed && !newNote.isEncrypted) {
-              newNote.blocks = aiSum.blocks;
-              for (const kw of aiSum.autoTags || []) {
-                if (isMeaningfulTopicTag(kw) && !newNote.tags.includes(kw)) newNote.tags.push(kw);
-              }
-              newNote.updatedAt = new Date().toISOString();
-              scheduleSave();
-              if (activeNoteId === newNote.id) renderActiveNoteEditor();
-              showToast(`AI 고품질 핵심 요약이 반영되었습니다: ${noteTitle.slice(0, 24)}`);
-            }
-          })
-          .catch((err) => {
-            console.warn('[Gemini Auto-Summarize Failed]:', err);
+          const aiBlocks = [...aiSum.blocks];
+          const srcIdx = aiBlocks.findIndex((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+          aiBlocks.splice(srcIdx !== -1 ? srcIdx + 1 : 0, 0, {
+            id: uid('b'),
+            type: 'callout',
+            text: '[안내] Gemini AI가 본문 전체를 분석한 맞춤형 심층 요약입니다.'
           });
-      }
+
+          newNote.blocks = aiBlocks;
+          newNote.tags = ['요약', '클리핑', ...(aiSum.autoTags || []).filter(isMeaningfulTopicTag)];
+          newNote.updatedAt = new Date().toISOString();
+          scheduleSave();
+
+          if (activeNoteId === newNote.id) renderActiveNoteEditor();
+          else renderSidebar();
+
+          showToast(`AI 맞춤 핵심 요약이 완성되었습니다: ${noteTitle.slice(0, 24)}`);
+        })
+        .catch((err) => {
+          console.warn('[Gemini Summarize Failed, fallback to local]:', err);
+          if (newNote.trashed || newNote.isEncrypted) return;
+
+          let failNotice = '';
+          const msg = String(err?.message || '');
+          if (msg.includes('QUOTA') || msg.includes('429')) {
+            failNotice = "[안내] Gemini API 호출 한도(할당량 초과)로 인해 자체 '로컬 기본 요약'이 대체 적용되었습니다.\n• 잠시 후 상단 [요약정리] 버튼을 누르시면 AI 심층 요약을 다시 받으실 수 있습니다.";
+          } else if (msg.includes('TIMEOUT') || msg.includes('timeout') || err?.name === 'TimeoutError') {
+            failNotice = "[안내] AI 서버 응답 시간 초과로 인해 자체 '로컬 기본 요약'이 대체 적용되었습니다.\n• 상단 [요약정리] 버튼을 누르시면 언제든 AI 요약을 다시 시도할 수 있습니다.";
+          } else if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403')) {
+            failNotice = "[안내] Gemini API 키가 유효하지 않아 자체 '로컬 기본 요약'이 적용되었습니다.\n• [보안 설정 > AI 키]를 확인하신 후 상단 [요약정리] 버튼을 누르시면 고품질 AI 요약을 이용하실 수 있습니다.";
+          } else if (msg.includes('TOO_SHORT')) {
+            failNotice = "[안내] 본문 분량이 짧아 자체 '로컬 기본 요약'이 적용되었습니다.";
+          } else {
+            failNotice = "[안내] AI 서버의 일시적인 오류로 인해 자체 '로컬 기본 요약'이 대체 적용되었습니다.\n• 상단 [요약정리] 버튼을 통해 언제든 다시 시도하실 수 있습니다.";
+          }
+
+          const localSum = summarizeExtractedArticle(noteTitle, parsed.blocks, finalUrl);
+          const fallbackBlocks = [...localSum.blocks];
+          const srcIdx = fallbackBlocks.findIndex((b) => b.type === 'callout' && (b.text || '').startsWith('출처:'));
+          fallbackBlocks.splice(srcIdx !== -1 ? srcIdx + 1 : 0, 0, {
+            id: uid('b'),
+            type: 'callout',
+            text: failNotice
+          });
+
+          newNote.blocks = fallbackBlocks;
+          newNote.tags = ['요약', '클리핑', ...localSum.autoTags.filter(isMeaningfulTopicTag)];
+          newNote.updatedAt = new Date().toISOString();
+          scheduleSave();
+
+          if (activeNoteId === newNote.id) renderActiveNoteEditor();
+          else renderSidebar();
+
+          showToast('AI 지연으로 로컬 기본 요약이 대체 적용되었습니다.', 4000);
+        });
     } catch (err) {
       console.warn('[clipAndSummarizeUrl background error]:', err);
       const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
