@@ -1106,14 +1106,18 @@ select:focus {
 }
 
 /* Secondary Split Note Rich Document Viewer */
-.secondary-note-viewer {
+.secondary-note-viewer,
+#secondary-note-viewer {
   color: var(--text-main);
   line-height: 1.65;
   font-size: 15px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  height: auto !important;
+  max-height: none !important;
   word-break: break-word;
   overflow-wrap: anywhere;
 }

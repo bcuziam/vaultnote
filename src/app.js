@@ -3792,6 +3792,12 @@ function renderSecondarySplitPane() {
   }
 
   const viewer = document.getElementById('secondary-note-viewer');
+  if (viewer) {
+    viewer.style.setProperty('overflow-y', 'visible', 'important');
+    viewer.style.setProperty('height', 'auto', 'important');
+    viewer.style.setProperty('max-height', 'none', 'important');
+    viewer.style.setProperty('overflow-x', 'hidden', 'important');
+  }
   if (!secNote) {
     viewer.innerHTML = `
       <div class="split-view-empty">
