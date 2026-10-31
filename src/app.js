@@ -9040,20 +9040,21 @@ function sanitizeFileName(rawTitle, defaultName = '노트') {
   return clean || defaultName;
 }
 
-function exportNoteAsHtml(note) {
-  if (!note) return;
-  const blocks = getEditableBlocksForNote(note);
-  if (note.isEncrypted && !blocks) {
-    showToast('비밀번호를 입력하여 노트를 연 후 내보낼 수 있습니다.');
-    return;
-  }
+function buildStaticNoteDocumentHtml(note, isForDownload = false) {
+  if (!note) return '';
+  const blocks = getEditableBlocksForNote(note) || [];
   const folder = (state.folders || []).find((f) => f.id === note.folderId);
   const folderName = folder ? folder.name : '기본 폴더';
   const updatedDateStr = formatDate(note.updatedAt || note.createdAt);
   const title = note.title || '제목 없음';
-  const bodyHtml = renderBlocksToStaticHtml(blocks || []);
+  const bodyHtml = renderBlocksToStaticHtml(blocks);
 
-  const html = `<!DOCTYPE html>
+  const downloadBarHtml = isForDownload ? `
+  <div class="no-print-bar">
+    <button type="button" class="print-btn" onclick="window.print()">인쇄 / PDF 저장</button>
+  </div>` : '';
+
+  return `<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -9061,22 +9062,27 @@ function exportNoteAsHtml(note) {
   <title>${escapeHtml(title)} - VaultNote</title>
   <style>
     * { box-sizing: border-box; }
+    :root, html {
+      color-scheme: only light !important;
+      background: #ffffff !important;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       color: #1f2937;
-      background: #fdfdfc;
+      background: #ffffff;
       margin: 0;
-      padding: 36px 16px;
+      padding: ${isForDownload ? '36px 16px' : '0'};
       line-height: 1.65;
+      color-scheme: only light !important;
     }
     .doc-container {
-      max-width: 820px;
+      max-width: ${isForDownload ? '820px' : '100%'};
       margin: 0 auto;
       background: #ffffff;
-      padding: 44px;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      border: 1px solid #e5e7eb;
+      padding: ${isForDownload ? '44px' : '0'};
+      border-radius: ${isForDownload ? '8px' : '0'};
+      box-shadow: ${isForDownload ? '0 4px 20px rgba(0, 0, 0, 0.05)' : 'none'};
+      border: ${isForDownload ? '1px solid #e5e7eb' : 'none'};
     }
     .doc-header {
       margin-bottom: 24px;
@@ -9128,6 +9134,67 @@ function exportNoteAsHtml(note) {
       font-family: Consolas, monospace;
       font-size: 0.9em;
     }
+    .print-block-p { margin-bottom: 11px; }
+    .print-block-h1 { font-size: 21pt; font-weight: 700; margin: 20px 0 10px; }
+    .print-block-h2 { font-size: 16pt; font-weight: 600; margin: 16px 0 8px; }
+    .print-block-h3 { font-size: 13pt; font-weight: 600; margin: 12px 0 6px; }
+    .print-block-list { margin: 6px 0 6px 24px; padding: 0; }
+    .print-block-list li { margin-bottom: 4px; }
+    .print-block-todo { list-style: none; margin: 4px 0; }
+    .print-todo-box { margin-right: 8px; }
+    .print-block-callout {
+      border-left: 4px solid #3b82f6;
+      background: #f0f7ff;
+      padding: 12px 14px;
+      margin: 12px 0;
+      border-radius: 0 4px 4px 0;
+    }
+    .print-callout-badge {
+      display: inline-block;
+      font-weight: 700;
+      color: #1d4ed8;
+      margin-bottom: 4px;
+      font-size: 10pt;
+    }
+    .print-block-quote {
+      border-left: 3px solid #9ca3af;
+      padding-left: 14px;
+      margin: 12px 0;
+      color: #4b5563;
+      font-style: italic;
+    }
+    .print-block-code {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      padding: 12px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: 9.5pt;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+    .print-block-divider {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 20px 0;
+    }
+    .print-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+    }
+    .print-table th, .print-table td {
+      border: 1px solid #d1d5db;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .print-table th { background: #f3f4f6; }
+    .print-block-img {
+      max-width: 100%;
+      height: auto;
+      margin: 12px 0;
+      border-radius: 4px;
+    }
     .no-print-bar {
       position: fixed;
       bottom: 24px;
@@ -9150,10 +9217,21 @@ function exportNoteAsHtml(note) {
       background: #1d4ed8;
     }
     @media print {
-      body {
+      @page {
+        size: A4 portrait;
+        margin: 15mm;
         background: #ffffff !important;
+      }
+      :root, html, body {
+        color-scheme: only light !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #111111 !important;
         padding: 0 !important;
+        margin: 0 !important;
         font-size: 11pt !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
       .doc-container {
         max-width: 100% !important;
@@ -9161,21 +9239,16 @@ function exportNoteAsHtml(note) {
         padding: 0 !important;
         border: none !important;
         box-shadow: none !important;
+        background: #ffffff !important;
       }
       .no-print-bar {
         display: none !important;
-      }
-      @page {
-        size: A4;
-        margin: 15mm;
       }
     }
   </style>
 </head>
 <body>
-  <div class="no-print-bar">
-    <button type="button" class="print-btn" onclick="window.print()">인쇄 / PDF 저장</button>
-  </div>
+  ${downloadBarHtml}
   <article class="doc-container">
     <header class="doc-header">
       <h1 class="doc-title">${escapeHtml(title)}</h1>
@@ -9191,7 +9264,17 @@ function exportNoteAsHtml(note) {
   </article>
 </body>
 </html>`;
+}
 
+function exportNoteAsHtml(note) {
+  if (!note) return;
+  const blocks = getEditableBlocksForNote(note);
+  if (note.isEncrypted && !blocks) {
+    showToast('비밀번호를 입력하여 노트를 연 후 내보낼 수 있습니다.');
+    return;
+  }
+  const title = note.title || '제목 없음';
+  const html = buildStaticNoteDocumentHtml(note, true);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -9249,6 +9332,92 @@ function clearPrintContainer() {
   }
 }
 
+function printCleanSandbox(note) {
+  if (!note) return;
+  const blocks = getEditableBlocksForNote(note);
+  if (note.isEncrypted && !blocks) {
+    showToast('비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.');
+    return;
+  }
+
+  const cleanTitle = sanitizeFileName(note.title, 'VaultNote_노트');
+  originalDocTitle = document.title || 'VaultNote';
+  document.title = cleanTitle;
+
+  const html = buildStaticNoteDocumentHtml(note, false);
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = 'none';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.tabIndex = -1;
+
+  document.body.appendChild(iframe);
+
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    document.title = originalDocTitle || 'VaultNote';
+    try {
+      if (iframe && iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    } catch (_) {}
+  };
+
+  try {
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (!doc) {
+      cleanup();
+      updatePrintContainer();
+      window.print();
+      return;
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    if (iframe.contentDocument) {
+      iframe.contentDocument.title = cleanTitle;
+    }
+
+    const triggerWindowPrint = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (err) {
+        console.warn('Sandbox iframe print failed, falling back to direct print:', err);
+        updatePrintContainer();
+        window.print();
+      } finally {
+        setTimeout(cleanup, 2500);
+      }
+    };
+
+    if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+      setTimeout(triggerWindowPrint, 80);
+    } else {
+      iframe.onload = () => {
+        setTimeout(triggerWindowPrint, 80);
+      };
+      setTimeout(triggerWindowPrint, 350);
+    }
+  } catch (err) {
+    console.warn('Sandbox print setup error, fallback:', err);
+    cleanup();
+    updatePrintContainer();
+    window.print();
+  }
+}
+
 function triggerPrintActiveNote() {
   const note = getActiveNote();
   if (!note) return;
@@ -9256,8 +9425,7 @@ function triggerPrintActiveNote() {
     showToast('비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.');
     return;
   }
-  updatePrintContainer();
-  window.print();
+  printCleanSandbox(note);
 }
 
   const exportToggleBtn = document.getElementById('btn-export-menu-toggle');

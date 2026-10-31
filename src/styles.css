@@ -3720,7 +3720,7 @@ mark.search-highlight {
   html,
   html[data-theme="dark"],
   body {
-    color-scheme: light !important;
+    color-scheme: only light !important;
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111111 !important;
@@ -3733,6 +3733,16 @@ mark.search-highlight {
     line-height: 1.65 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  html[data-theme="dark"] {
+    --bg-app: #ffffff !important;
+    --bg-sidebar: #ffffff !important;
+    --bg-pane: #ffffff !important;
+    --bg-card: #ffffff !important;
+    --text-main: #111111 !important;
+    --text-secondary: #4b5563 !important;
+    --border: #e5e7eb !important;
   }
 
   /* Completely eliminate the interactive application shell and any popups from print output */
