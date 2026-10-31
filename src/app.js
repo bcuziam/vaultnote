@@ -9040,7 +9040,7 @@ function sanitizeFileName(rawTitle, defaultName = '노트') {
   return clean || defaultName;
 }
 
-function buildStaticNoteDocumentHtml(note, isForDownload = false) {
+function buildStaticNoteDocumentHtml(note, isForDownload = false, autoPrint = false) {
   if (!note) return '';
   const blocks = getEditableBlocksForNote(note) || [];
   const folder = (state.folders || []).find((f) => f.id === note.folderId);
@@ -9054,6 +9054,15 @@ function buildStaticNoteDocumentHtml(note, isForDownload = false) {
     <button type="button" class="print-btn" onclick="window.print()">인쇄 / PDF 저장</button>
   </div>` : '';
 
+  const autoPrintScript = autoPrint ? `
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        window.print();
+      }, 150);
+    });
+  </script>` : '';
+
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -9062,10 +9071,6 @@ function buildStaticNoteDocumentHtml(note, isForDownload = false) {
   <title>${escapeHtml(title)} - VaultNote</title>
   <style>
     * { box-sizing: border-box; }
-    :root, html {
-      color-scheme: only light !important;
-      background: #ffffff !important;
-    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       color: #1f2937;
@@ -9073,7 +9078,6 @@ function buildStaticNoteDocumentHtml(note, isForDownload = false) {
       margin: 0;
       padding: ${isForDownload ? '36px 16px' : '0'};
       line-height: 1.65;
-      color-scheme: only light !important;
     }
     .doc-container {
       max-width: ${isForDownload ? '820px' : '100%'};
@@ -9217,21 +9221,10 @@ function buildStaticNoteDocumentHtml(note, isForDownload = false) {
       background: #1d4ed8;
     }
     @media print {
-      @page {
-        size: A4 portrait;
-        margin: 15mm;
+      body {
         background: #ffffff !important;
-      }
-      :root, html, body {
-        color-scheme: only light !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        color: #111111 !important;
         padding: 0 !important;
-        margin: 0 !important;
         font-size: 11pt !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
       }
       .doc-container {
         max-width: 100% !important;
@@ -9244,8 +9237,13 @@ function buildStaticNoteDocumentHtml(note, isForDownload = false) {
       .no-print-bar {
         display: none !important;
       }
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
     }
   </style>
+  ${autoPrintScript}
 </head>
 <body>
   ${downloadBarHtml}
@@ -9274,7 +9272,7 @@ function exportNoteAsHtml(note) {
     return;
   }
   const title = note.title || '제목 없음';
-  const html = buildStaticNoteDocumentHtml(note, true);
+  const html = buildStaticNoteDocumentHtml(note, true, false);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -9332,92 +9330,6 @@ function clearPrintContainer() {
   }
 }
 
-function printCleanSandbox(note) {
-  if (!note) return;
-  const blocks = getEditableBlocksForNote(note);
-  if (note.isEncrypted && !blocks) {
-    showToast('비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.');
-    return;
-  }
-
-  const cleanTitle = sanitizeFileName(note.title, 'VaultNote_노트');
-  originalDocTitle = document.title || 'VaultNote';
-  document.title = cleanTitle;
-
-  const html = buildStaticNoteDocumentHtml(note, false);
-
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = 'none';
-  iframe.style.opacity = '0';
-  iframe.style.pointerEvents = 'none';
-  iframe.setAttribute('aria-hidden', 'true');
-  iframe.tabIndex = -1;
-
-  document.body.appendChild(iframe);
-
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    document.title = originalDocTitle || 'VaultNote';
-    try {
-      if (iframe && iframe.parentNode) {
-        iframe.parentNode.removeChild(iframe);
-      }
-    } catch (_) {}
-  };
-
-  try {
-    const doc = iframe.contentWindow?.document || iframe.contentDocument;
-    if (!doc) {
-      cleanup();
-      updatePrintContainer();
-      window.print();
-      return;
-    }
-
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    if (iframe.contentDocument) {
-      iframe.contentDocument.title = cleanTitle;
-    }
-
-    const triggerWindowPrint = () => {
-      try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } catch (err) {
-        console.warn('Sandbox iframe print failed, falling back to direct print:', err);
-        updatePrintContainer();
-        window.print();
-      } finally {
-        setTimeout(cleanup, 2500);
-      }
-    };
-
-    if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
-      setTimeout(triggerWindowPrint, 80);
-    } else {
-      iframe.onload = () => {
-        setTimeout(triggerWindowPrint, 80);
-      };
-      setTimeout(triggerWindowPrint, 350);
-    }
-  } catch (err) {
-    console.warn('Sandbox print setup error, fallback:', err);
-    cleanup();
-    updatePrintContainer();
-    window.print();
-  }
-}
-
 function triggerPrintActiveNote() {
   const note = getActiveNote();
   if (!note) return;
@@ -9425,7 +9337,29 @@ function triggerPrintActiveNote() {
     showToast('비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.');
     return;
   }
-  printCleanSandbox(note);
+
+  originalDocTitle = document.title || 'VaultNote';
+  const cleanTitle = sanitizeFileName(note.title, 'VaultNote_노트');
+  document.title = cleanTitle;
+
+  updatePrintContainer();
+
+  try {
+    const html = buildStaticNoteDocumentHtml(note, false, true);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    const printWin = window.open(blobUrl, '_blank');
+    if (!printWin) {
+      window.print();
+    } else {
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 60000);
+    }
+  } catch (err) {
+    console.warn('Popup print fallback:', err);
+    window.print();
+  }
 }
 
   const exportToggleBtn = document.getElementById('btn-export-menu-toggle');

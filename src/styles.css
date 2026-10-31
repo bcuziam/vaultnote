@@ -3720,7 +3720,6 @@ mark.search-highlight {
   html,
   html[data-theme="dark"],
   body {
-    color-scheme: only light !important;
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111111 !important;
@@ -3731,8 +3730,6 @@ mark.search-highlight {
     padding: 0 !important;
     font-size: 11pt !important;
     line-height: 1.65 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 
   html[data-theme="dark"] {
