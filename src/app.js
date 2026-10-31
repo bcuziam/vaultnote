@@ -9031,11 +9031,20 @@ function renderBlocksToStaticHtml(blocks) {
   }).join('\n');
 }
 
+function sanitizeFileName(rawTitle, defaultName = '노트') {
+  if (!rawTitle || typeof rawTitle !== 'string') return defaultName;
+  let clean = rawTitle.replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').trim();
+  clean = clean.replace(/\s+/g, ' ');
+  clean = clean.replace(/^[.\s]+|[.\s]+$/g, '');
+  if (clean.length > 100) clean = clean.slice(0, 100).trim();
+  return clean || defaultName;
+}
+
 function exportNoteAsHtml(note) {
   if (!note) return;
   const blocks = getEditableBlocksForNote(note);
   if (note.isEncrypted && !blocks) {
-    showToast('암호화 노트를 해제한 후 내보낼 수 있습니다.');
+    showToast('비밀번호를 입력하여 노트를 연 후 내보낼 수 있습니다.');
     return;
   }
   const folder = (state.folders || []).find((f) => f.id === note.folderId);
@@ -9186,9 +9195,11 @@ function exportNoteAsHtml(note) {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${title}.html`;
+  a.download = `${sanitizeFileName(title, '노트')}.html`;
   a.click();
 }
+
+let originalDocTitle = 'VaultNote';
 
 function updatePrintContainer() {
   const container = document.getElementById('print-container');
@@ -9200,9 +9211,13 @@ function updatePrintContainer() {
   }
   const blocks = getEditableBlocksForNote(note);
   if (note.isEncrypted && !blocks) {
-    container.innerHTML = '<div style="padding:20px;text-align:center;">암호화된 노트입니다. 잠금을 해제한 후 인쇄하세요.</div>';
+    container.innerHTML = '<div style="padding:20px;text-align:center;">비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.</div>';
     return;
   }
+  originalDocTitle = document.title || 'VaultNote';
+  const cleanTitle = sanitizeFileName(note.title, 'VaultNote_노트');
+  document.title = cleanTitle;
+
   const folder = (state.folders || []).find((f) => f.id === note.folderId);
   const folderName = folder ? folder.name : '기본 폴더';
   const updatedDateStr = formatDate(note.updatedAt || note.createdAt);
@@ -9227,6 +9242,7 @@ function updatePrintContainer() {
 }
 
 function clearPrintContainer() {
+  document.title = originalDocTitle || 'VaultNote';
   const container = document.getElementById('print-container');
   if (container) {
     container.innerHTML = '';
@@ -9237,7 +9253,7 @@ function triggerPrintActiveNote() {
   const note = getActiveNote();
   if (!note) return;
   if (note.isEncrypted && !getEditableBlocksForNote(note)) {
-    showToast('암호화 노트를 해제한 후 인쇄하거나 내보낼 수 있습니다.');
+    showToast('비밀번호를 입력하여 노트를 연 후 인쇄할 수 있습니다.');
     return;
   }
   updatePrintContainer();
@@ -9271,7 +9287,7 @@ function triggerPrintActiveNote() {
     const note = getActiveNote();
     if (!note) return;
     if (note.isEncrypted && !getEditableBlocksForNote(note)) {
-      showToast('암호화 노트를 해제한 후 내보낼 수 있습니다.');
+      showToast('비밀번호를 입력하여 노트를 연 후 내보낼 수 있습니다.');
       return;
     }
     const files = VaultStorage.notesToMarkdownFiles([note], state.folders);
@@ -9279,7 +9295,7 @@ function triggerPrintActiveNote() {
     const blob = new Blob([files[0].content], { type: 'text/markdown;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${note.title || 'note'}.md`;
+    a.download = `${sanitizeFileName(note.title, 'note')}.md`;
     a.click();
   });
 

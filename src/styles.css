@@ -3713,10 +3713,16 @@ mark.search-highlight {
   @page {
     size: A4 portrait;
     margin: 15mm;
+    background: #ffffff !important;
   }
 
-  html, body {
+  :root,
+  html,
+  html[data-theme="dark"],
+  body {
+    color-scheme: light !important;
     background: #ffffff !important;
+    background-color: #ffffff !important;
     color: #111111 !important;
     height: auto !important;
     min-height: auto !important;
