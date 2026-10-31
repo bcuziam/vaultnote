@@ -8947,9 +8947,289 @@ function bindEvents() {
     }
   });
 
-  document.getElementById('btn-export-md').addEventListener('click', () => {
+function renderBlocksToStaticHtml(blocks) {
+  let listNumberCounter = 0;
+  return (blocks || []).map((b) => {
+    if (b.type !== 'number') {
+      listNumberCounter = 0;
+    }
+    const indent = b.indent || 0;
+    const indentPx = indent * 20;
+
+    switch (b.type) {
+      case 'h1':
+        return `<h1 style="font-size:22px;font-weight:700;margin:18px 0 8px;color:#111;">${renderMarkdownInlineHtml(b.text || '')}</h1>`;
+      case 'h2':
+        return `<h2 style="font-size:18px;font-weight:600;margin:14px 0 6px;color:#222;">${renderMarkdownInlineHtml(b.text || '')}</h2>`;
+      case 'h3':
+        return `<h3 style="font-size:15px;font-weight:600;margin:10px 0 4px;color:#333;">${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      case 'callout':
+        return `
+          <div style="background:#f8f9fa;border-left:4px solid #3b82f6;padding:10px 14px;border-radius:4px;margin:8px 0;display:flex;gap:8px;">
+            <span style="font-size:14px;color:#2563eb;font-weight:600;">[안내]</span>
+            <div style="flex:1;line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</div>
+          </div>`;
+      case 'quote':
+        return `<blockquote style="border-left:3px solid #9ca3af;padding:4px 0 4px 12px;margin:8px 0;color:#4b5563;font-style:italic;line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</blockquote>`;
+      case 'todo':
+        return `
+          <div style="display:flex;align-items:flex-start;gap:8px;margin:4px 0 ${indentPx ? `padding-left:${indentPx}px;` : ''}">
+            <input type="checkbox" ${b.checked ? 'checked' : ''} disabled style="margin-top:4px;" />
+            <span style="${b.checked ? 'text-decoration:line-through;color:#9ca3af;' : 'color:#1f2937;'};line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      case 'bullet': {
+        const bulletChar = indent === 1 ? '◦' : (indent >= 2 ? '▪' : '•');
+        return `
+          <div style="display:flex;align-items:flex-start;gap:8px;margin:4px 0;padding-left:${indentPx}px;">
+            <span style="color:#6b7280;line-height:1.6;">${bulletChar}</span>
+            <span style="flex:1;line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      }
+      case 'number': {
+        listNumberCounter += 1;
+        return `
+          <div style="display:flex;align-items:flex-start;gap:8px;margin:4px 0;padding-left:${indentPx}px;">
+            <span style="color:#6b7280;line-height:1.6;font-weight:500;">${listNumberCounter}.</span>
+            <span style="flex:1;line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</span>
+          </div>`;
+      }
+      case 'code':
+        return `
+          <div style="margin:8px 0;background:#f8f9fa;border:1px solid #e5e7eb;border-radius:6px;padding:12px;overflow-x:auto;">
+            <pre style="margin:0;font-family:Consolas,monospace;font-size:13px;line-height:1.5;color:#1f2937;"><code>${escapeHtml(b.text || '')}</code></pre>
+          </div>`;
+      case 'toggle':
+        return `
+          <details style="margin:8px 0;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;" ${b.open ? 'open' : ''}>
+            <summary style="cursor:pointer;font-weight:600;color:#1f2937;">${renderMarkdownInlineHtml(b.text || '상세 보기')}</summary>
+            <div style="margin-top:8px;line-height:1.6;color:#374151;">${renderMarkdownInlineHtml(b.details || '')}</div>
+          </details>`;
+      case 'divider':
+        return `<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />`;
+      case 'image':
+        return `
+          <figure style="margin:12px 0;text-align:center;">
+            <img src="${b.dataUrl || ''}" alt="${escapeHtml(b.text || '참조 이미지')}" style="${b.width ? `width:${b.width};` : ''}max-width:100%;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" loading="lazy" />
+            ${b.text ? `<figcaption style="font-size:12px;color:#6b7280;margin-top:6px;">${renderMarkdownInlineHtml(b.text)}</figcaption>` : ''}
+          </figure>`;
+      case 'youtube': {
+        const videoId = b.videoId || extractYouTubeVideoId(b.url || '');
+        const thumbUrl = b.thumbnailUrl || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+        const videoUrl = b.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+        return `
+          <div style="margin:12px 0;border:1px solid #e5e7eb;border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center;">
+            ${thumbUrl ? `<img src="${thumbUrl}" alt="YouTube Thumbnail" style="width:120px;height:70px;object-fit:cover;border-radius:4px;" />` : ''}
+            <div>
+              <div style="font-weight:600;font-size:14px;color:#1f2937;">${escapeHtml(b.title || 'YouTube 영상')}</div>
+              <a href="${videoUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#2563eb;text-decoration:none;">영상 보기</a>
+            </div>
+          </div>`;
+      }
+      default:
+        return `<p style="margin:4px 0;line-height:1.65;color:#1f2937;">${renderMarkdownInlineHtml(b.text || '')}</p>`;
+    }
+  }).join('\n');
+}
+
+function exportNoteAsHtml(note) {
+  if (!note) return;
+  const blocks = getEditableBlocksForNote(note);
+  if (note.isEncrypted && !blocks) {
+    showToast('암호화 노트를 해제한 후 내보낼 수 있습니다.');
+    return;
+  }
+  const folder = (state.folders || []).find((f) => f.id === note.folderId);
+  const folderName = folder ? folder.name : '기본 폴더';
+  const updatedDateStr = formatDate(note.updatedAt || note.createdAt);
+  const title = note.title || '제목 없음';
+  const bodyHtml = renderBlocksToStaticHtml(blocks || []);
+
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)} - VaultNote</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      color: #1f2937;
+      background: #fdfdfc;
+      margin: 0;
+      padding: 36px 16px;
+      line-height: 1.65;
+    }
+    .doc-container {
+      max-width: 820px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 44px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      border: 1px solid #e5e7eb;
+    }
+    .doc-header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #111827;
+    }
+    .doc-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: #111827;
+      margin: 0 0 10px 0;
+      line-height: 1.3;
+    }
+    .doc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      font-size: 12.5px;
+      color: #6b7280;
+    }
+    .tag-badge {
+      display: inline-block;
+      background: #f3f4f6;
+      color: #4b5563;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      border: 1px solid #e5e7eb;
+    }
+    .wikilink-pill {
+      background: rgba(59, 130, 246, 0.1);
+      color: #2563eb;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.95em;
+      border-bottom: 1px dashed #3b82f6;
+    }
+    .inline-highlight {
+      background-color: #fef08a;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    .inline-code {
+      background: #f3f4f6;
+      color: #b91c1c;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-size: 0.9em;
+    }
+    .no-print-bar {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+    }
+    .print-btn {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+      transition: background 0.15s ease;
+    }
+    .print-btn:hover {
+      background: #1d4ed8;
+    }
+    @media print {
+      body {
+        background: #ffffff !important;
+        padding: 0 !important;
+        font-size: 11pt !important;
+      }
+      .doc-container {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      .no-print-bar {
+        display: none !important;
+      }
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print-bar">
+    <button type="button" class="print-btn" onclick="window.print()">인쇄 / PDF 저장</button>
+  </div>
+  <article class="doc-container">
+    <header class="doc-header">
+      <h1 class="doc-title">${escapeHtml(title)}</h1>
+      <div class="doc-meta">
+        <span>폴더: ${escapeHtml(folderName)}</span>
+        <span>수정: ${escapeHtml(updatedDateStr)}</span>
+        ${(note.tags && note.tags.length > 0) ? `<span>태그: ${note.tags.map(t => `<span class="tag-badge">#${escapeHtml(t)}</span>`).join(' ')}</span>` : ''}
+      </div>
+    </header>
+    <div class="doc-body">
+      ${bodyHtml}
+    </div>
+  </article>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${title}.html`;
+  a.click();
+}
+
+function triggerPrintActiveNote() {
+  const note = getActiveNote();
+  if (!note) return;
+  if (note.isEncrypted && !getEditableBlocksForNote(note)) {
+    showToast('암호화 노트를 해제한 후 인쇄하거나 내보낼 수 있습니다.');
+    return;
+  }
+  window.print();
+}
+
+  const exportToggleBtn = document.getElementById('btn-export-menu-toggle');
+  const exportPopover = document.getElementById('export-menu-popover');
+
+  exportToggleBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportPopover?.classList.toggle('hidden');
+  });
+
+  document.getElementById('btn-action-print')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportPopover?.classList.add('hidden');
+    triggerPrintActiveNote();
+  });
+
+  document.getElementById('btn-action-export-html')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportPopover?.classList.add('hidden');
+    const note = getActiveNote();
+    if (note) exportNoteAsHtml(note);
+  });
+
+  document.getElementById('btn-action-export-md')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportPopover?.classList.add('hidden');
     const note = getActiveNote();
     if (!note) return;
+    if (note.isEncrypted && !getEditableBlocksForNote(note)) {
+      showToast('암호화 노트를 해제한 후 내보낼 수 있습니다.');
+      return;
+    }
     const files = VaultStorage.notesToMarkdownFiles([note], state.folders);
     if (!files[0]) return;
     const blob = new Blob([files[0].content], { type: 'text/markdown;charset=utf-8' });
@@ -8957,6 +9237,23 @@ function bindEvents() {
     a.href = URL.createObjectURL(blob);
     a.download = `${note.title || 'note'}.md`;
     a.click();
+  });
+
+  document.addEventListener('click', (e) => {
+    const group = document.getElementById('split-btn-export-group');
+    if (group && !group.contains(e.target)) {
+      exportPopover?.classList.add('hidden');
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      const activeNote = getActiveNote();
+      if (activeNote && activeViewMode === 'editor') {
+        e.preventDefault();
+        triggerPrintActiveNote();
+      }
+    }
   });
 
   document.getElementById('btn-restore-note').addEventListener('click', () => {

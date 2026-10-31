@@ -1738,6 +1738,46 @@ select:focus {
   color: var(--text-muted);
 }
 
+.export-popover-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  left: auto;
+  z-index: 1000;
+  min-width: 220px;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  padding: 5px 0;
+  display: flex;
+  flex-direction: column;
+}
+.export-popover-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 0.12s;
+}
+.export-popover-item:hover {
+  background: var(--bg-hover);
+}
+.export-popover-item .item-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.export-popover-item .item-desc {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
 /* 블록 에디터 */
 .blocks-container {
   display: flex;
@@ -3659,6 +3699,209 @@ mark.search-highlight {
     width: 100%;
     justify-content: flex-end;
     margin-top: 4px;
+  }
+}
+
+/* ============================================================================
+   Print Stylesheet (@media print) - Zero Bloat, High-Fidelity A4 Print & PDF
+   ============================================================================ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  /* Force pure white background and dark text for clean, ink-efficient print */
+  html, body {
+    background: #ffffff !important;
+    color: #111111 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .app-layout,
+  .main-content,
+  .editor-container,
+  #editor-view,
+  #note-editor-content,
+  .blocks-container {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Hide UI Chrome, sidebars, interactive controls, toolbars, and modals */
+  .sidebar,
+  .sidebar-backdrop,
+  .workspace-topbar,
+  .meta-actions-right,
+  .meta-select,
+  .meta-sep,
+  .tag-popover-wrap,
+  .block-handle-container,
+  .block-handle,
+  .block-btn-add,
+  .block-btn-drag,
+  #editor-bottom-pad,
+  .editor-bottom-pad,
+  .toast-container,
+  .toast,
+  .floating-format-toolbar,
+  .mobile-format-accessory-bar,
+  .summarize-popover-menu,
+  .export-popover-menu,
+  .tag-popover,
+  .modal,
+  .modal-backdrop,
+  .app-modal-overlay,
+  .workspace-split-pane,
+  #split-doc-pane,
+  .note-list-view,
+  .trash-view,
+  #workspace-vault-view,
+  #btn-toggle-sidebar,
+  #note-empty-state,
+  #note-title-preview {
+    display: none !important;
+  }
+
+  /* Header & Title Layout */
+  .note-header-row {
+    margin-bottom: 8px !important;
+    padding-bottom: 8px !important;
+    border-bottom: 2px solid #222222 !important;
+  }
+  #note-title-input {
+    display: block !important;
+    width: 100% !important;
+    border: none !important;
+    outline: none !important;
+    resize: none !important;
+    font-size: 22pt !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+    background: transparent !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-family: inherit !important;
+  }
+
+  /* Metadata row (Date, Tags) */
+  .note-meta-bar {
+    display: flex !important;
+    align-items: center !important;
+    padding: 4px 0 12px 0 !important;
+    margin-bottom: 14px !important;
+    border-bottom: 1px solid #e0e0e0 !important;
+  }
+  #note-dates-display {
+    display: inline-block !important;
+    color: #555555 !important;
+    font-size: 9.5pt !important;
+  }
+  #note-tags-container {
+    display: inline-flex !important;
+    gap: 4px !important;
+    margin-left: 8px !important;
+  }
+  .tag-pill {
+    background: #f0f0f0 !important;
+    color: #333333 !important;
+    border: 1px solid #d0d0d0 !important;
+    font-size: 8.5pt !important;
+    padding: 1px 6px !important;
+  }
+  .tag-del-btn {
+    display: none !important;
+  }
+
+  /* Blocks formatting & Page Breaks */
+  .block-row {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 6px !important;
+    padding: 2px 0 !important;
+    outline: none !important;
+    background: transparent !important;
+  }
+  .block-editable {
+    color: #111111 !important;
+    font-size: 11pt !important;
+    outline: none !important;
+    line-height: 1.65 !important;
+  }
+  .block-row[data-type="h1"] .block-editable {
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+    margin-top: 14px !important;
+    color: #000000 !important;
+  }
+  .block-row[data-type="h2"] .block-editable {
+    font-size: 15pt !important;
+    font-weight: 600 !important;
+    margin-top: 10px !important;
+    color: #111111 !important;
+  }
+  .block-row[data-type="h3"] .block-editable {
+    font-size: 13pt !important;
+    font-weight: 600 !important;
+    margin-top: 8px !important;
+    color: #222222 !important;
+  }
+  .block-row[data-type="code"] {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: #f8f9fa !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 4px !important;
+    padding: 8px 12px !important;
+  }
+  .block-row[data-type="code"] .block-editable {
+    font-family: Consolas, "Courier New", monospace !important;
+    font-size: 9.5pt !important;
+    color: #222222 !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+  }
+  .block-row[data-type="callout"],
+  .block-row[data-type="quote"] {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border-left: 3px solid #666666 !important;
+    background: #fbfbfb !important;
+    padding: 6px 12px !important;
+  }
+  .block-row[data-type="divider"] hr {
+    border: none !important;
+    border-top: 1px solid #cccccc !important;
+    margin: 12px 0 !important;
+  }
+  .todo-checkbox {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 

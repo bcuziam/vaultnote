@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v109" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v110" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v109" />
+  <link rel="stylesheet" href="./src/styles.css?v=v110" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v109</span>
+        <span class="app-version-badge" id="app-version-display">v110</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -321,7 +321,23 @@
                     이미지 첨부
                     <input type="file" id="image-upload-input" accept="image/*" class="hidden" />
                   </label>
-                  <button type="button" id="btn-export-md" class="meta-btn" title="마크다운(.md) 다운로드">내보내기</button>
+                  <div class="split-btn-group" id="split-btn-export-group" style="position: relative;">
+                    <button type="button" id="btn-export-menu-toggle" class="meta-btn" title="인쇄 및 파일 내보내기">내보내기 ▾</button>
+                    <div id="export-menu-popover" class="export-popover-menu hidden">
+                      <button type="button" class="export-popover-item" id="btn-action-print">
+                        <span class="item-title">인쇄 / PDF 저장</span>
+                        <span class="item-desc">A4 맞춤 인쇄 및 고품질 PDF 저장 (Ctrl+P)</span>
+                      </button>
+                      <button type="button" class="export-popover-item" id="btn-action-export-html">
+                        <span class="item-title">웹 문서 (.html)</span>
+                        <span class="item-desc">양식 보존 단독 실행형 HTML 다운로드</span>
+                      </button>
+                      <button type="button" class="export-popover-item" id="btn-action-export-md">
+                        <span class="item-title">마크다운 (.md)</span>
+                        <span class="item-desc">표준 마크다운 텍스트 다운로드</span>
+                      </button>
+                    </div>
+                  </div>
                   <button type="button" id="btn-restore-note" class="meta-btn hidden" title="휴지통에서 복원">복원</button>
                   <button type="button" id="btn-delete-note" class="meta-btn text-danger" title="삭제">삭제</button>
                 </div>
@@ -965,6 +981,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/app.js?v=v109"></script>
+  <script type="module" src="./src/app.js?v=v110"></script>
 </body>
 </html>
