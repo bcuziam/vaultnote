@@ -932,6 +932,7 @@ select:focus {
   max-width: 48%;
   padding: 24px 28px 80px;
   position: relative;
+  overflow-x: hidden;
 }
 
 .split-pane-header {
@@ -1109,7 +1110,12 @@ select:focus {
   color: var(--text-main);
   line-height: 1.65;
   font-size: 15px;
-  overflow-y: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .split-doc-header {

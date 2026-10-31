@@ -3885,18 +3885,18 @@ function renderSecondarySplitPane() {
         const videoUrl = b.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
         const title = b.title || 'YouTube 동영상';
         return `
-          <div class="split-doc-youtube" style="max-width:760px;margin:12px auto;">
-            <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;">
-              <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />
-              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);text-decoration:none;">
-                <div style="width:56px;height:40px;background:#ff0000;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;">
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <div class="split-doc-youtube" style="width:100%;max-width:100%;box-sizing:border-box;margin:12px 0;">
+            <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
+              <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);text-decoration:none;" title="동영상 열기">
+                <div style="width:52px;height:36px;background:#ff0000;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </div>
               </a>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:13px;">
-              <span style="font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(title)}</span>
-              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="color:#ff5252;text-decoration:none;font-weight:600;white-space:nowrap;margin-left:8px;">YouTube 앱에서 열기 ↗</a>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:12.5px;min-width:0;">
+              <span style="flex:1;min-width:0;font-weight:600;color:var(--text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="flex-shrink:0;color:#ff5252;text-decoration:none;font-weight:600;white-space:nowrap;font-size:12px;">YouTube 앱에서 열기 ↗</a>
             </div>
           </div>
         `;
