@@ -9190,6 +9190,49 @@ function exportNoteAsHtml(note) {
   a.click();
 }
 
+function updatePrintContainer() {
+  const container = document.getElementById('print-container');
+  if (!container) return;
+  const note = getActiveNote();
+  if (!note) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;">인쇄할 수 있는 노트가 선택되지 않았습니다.</div>';
+    return;
+  }
+  const blocks = getEditableBlocksForNote(note);
+  if (note.isEncrypted && !blocks) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;">암호화된 노트입니다. 잠금을 해제한 후 인쇄하세요.</div>';
+    return;
+  }
+  const folder = (state.folders || []).find((f) => f.id === note.folderId);
+  const folderName = folder ? folder.name : '기본 폴더';
+  const updatedDateStr = formatDate(note.updatedAt || note.createdAt);
+  const title = note.title || '제목 없음';
+  const bodyHtml = renderBlocksToStaticHtml(blocks || []);
+
+  container.innerHTML = `
+    <article class="print-document">
+      <header class="print-doc-header">
+        <h1 class="print-doc-title">${escapeHtml(title)}</h1>
+        <div class="print-doc-meta">
+          <span>폴더: ${escapeHtml(folderName)}</span>
+          <span>수정: ${escapeHtml(updatedDateStr)}</span>
+          ${(note.tags && note.tags.length > 0) ? `<span>태그: ${note.tags.map(t => `<span class="print-tag-badge">#${escapeHtml(t)}</span>`).join(' ')}</span>` : ''}
+        </div>
+      </header>
+      <div class="print-doc-body">
+        ${bodyHtml}
+      </div>
+    </article>
+  `;
+}
+
+function clearPrintContainer() {
+  const container = document.getElementById('print-container');
+  if (container) {
+    container.innerHTML = '';
+  }
+}
+
 function triggerPrintActiveNote() {
   const note = getActiveNote();
   if (!note) return;
@@ -9197,6 +9240,7 @@ function triggerPrintActiveNote() {
     showToast('암호화 노트를 해제한 후 인쇄하거나 내보낼 수 있습니다.');
     return;
   }
+  updatePrintContainer();
   window.print();
 }
 
@@ -9255,6 +9299,9 @@ function triggerPrintActiveNote() {
       }
     }
   });
+
+  window.addEventListener('beforeprint', updatePrintContainer);
+  window.addEventListener('afterprint', clearPrintContainer);
 
   document.getElementById('btn-restore-note').addEventListener('click', () => {
     const note = getActiveNote();

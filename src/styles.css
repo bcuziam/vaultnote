@@ -3703,205 +3703,110 @@ mark.search-highlight {
 }
 
 /* ============================================================================
-   Print Stylesheet (@media print) - Zero Bloat, High-Fidelity A4 Print & PDF
+   Dedicated Print Engine (#print-container) - Zero Bloat, 100% Clean A4 PDF
    ============================================================================ */
+#print-container {
+  display: none !important;
+}
+
 @media print {
   @page {
     size: A4 portrait;
-    margin: 15mm 15mm 15mm 15mm;
+    margin: 15mm;
   }
 
-  /* Force pure white background and dark text for clean, ink-efficient print */
   html, body {
     background: #ffffff !important;
     color: #111111 !important;
     height: auto !important;
     min-height: auto !important;
     overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
     font-size: 11pt !important;
-    line-height: 1.6 !important;
+    line-height: 1.65 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  .app-layout,
-  .main-content,
-  .editor-container,
-  #editor-view,
-  #note-editor-content,
-  .blocks-container {
+  /* Completely eliminate the interactive application shell and any popups from print output */
+  #app-shell,
+  #app-lock-overlay,
+  .toast-container,
+  .modal,
+  .floating-format-toolbar,
+  .mobile-format-accessory-bar {
+    display: none !important;
+  }
+
+  /* Expose the clean, isolated print container as a standard document flow */
+  #print-container {
     display: block !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
     position: static !important;
     width: 100% !important;
-    max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     color: #111111 !important;
-    box-shadow: none !important;
-    border: none !important;
   }
 
-  /* Hide UI Chrome, sidebars, interactive controls, toolbars, and modals */
-  .sidebar,
-  .sidebar-backdrop,
-  .workspace-topbar,
-  .meta-actions-right,
-  .meta-select,
-  .meta-sep,
-  .tag-popover-wrap,
-  .block-handle-container,
-  .block-handle,
-  .block-btn-add,
-  .block-btn-drag,
-  #editor-bottom-pad,
-  .editor-bottom-pad,
-  .toast-container,
-  .toast,
-  .floating-format-toolbar,
-  .mobile-format-accessory-bar,
-  .summarize-popover-menu,
-  .export-popover-menu,
-  .tag-popover,
-  .modal,
-  .modal-backdrop,
-  .app-modal-overlay,
-  .workspace-split-pane,
-  #split-doc-pane,
-  .note-list-view,
-  .trash-view,
-  #workspace-vault-view,
-  #btn-toggle-sidebar,
-  #note-empty-state,
-  #note-title-preview {
-    display: none !important;
+  .print-document {
+    width: 100%;
+    margin: 0 auto;
+    background: #ffffff;
+    color: #111111;
   }
 
-  /* Header & Title Layout */
-  .note-header-row {
-    margin-bottom: 8px !important;
-    padding-bottom: 8px !important;
-    border-bottom: 2px solid #222222 !important;
-  }
-  #note-title-input {
-    display: block !important;
-    width: 100% !important;
-    border: none !important;
-    outline: none !important;
-    resize: none !important;
-    font-size: 22pt !important;
-    font-weight: 700 !important;
-    color: #000000 !important;
-    background: transparent !important;
-    height: auto !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    font-family: inherit !important;
+  .print-doc-header {
+    margin-bottom: 22px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #111827;
   }
 
-  /* Metadata row (Date, Tags) */
-  .note-meta-bar {
-    display: flex !important;
-    align-items: center !important;
-    padding: 4px 0 12px 0 !important;
-    margin-bottom: 14px !important;
-    border-bottom: 1px solid #e0e0e0 !important;
-  }
-  #note-dates-display {
-    display: inline-block !important;
-    color: #555555 !important;
-    font-size: 9.5pt !important;
-  }
-  #note-tags-container {
-    display: inline-flex !important;
-    gap: 4px !important;
-    margin-left: 8px !important;
-  }
-  .tag-pill {
-    background: #f0f0f0 !important;
-    color: #333333 !important;
-    border: 1px solid #d0d0d0 !important;
-    font-size: 8.5pt !important;
-    padding: 1px 6px !important;
-  }
-  .tag-del-btn {
-    display: none !important;
+  .print-doc-title {
+    font-size: 22pt;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 10px 0;
+    line-height: 1.3;
   }
 
-  /* Blocks formatting & Page Breaks */
-  .block-row {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    margin-bottom: 6px !important;
-    padding: 2px 0 !important;
-    outline: none !important;
-    background: transparent !important;
+  .print-doc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font-size: 9.5pt;
+    color: #4b5563;
   }
-  .block-editable {
-    color: #111111 !important;
-    font-size: 11pt !important;
-    outline: none !important;
-    line-height: 1.65 !important;
+
+  .print-tag-badge {
+    display: inline-block;
+    background: #f3f4f6;
+    color: #374151;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 8.5pt;
+    border: 1px solid #e5e7eb;
   }
-  .block-row[data-type="h1"] .block-editable {
-    font-size: 18pt !important;
-    font-weight: 700 !important;
-    margin-top: 14px !important;
-    color: #000000 !important;
+
+  .print-doc-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  .block-row[data-type="h2"] .block-editable {
-    font-size: 15pt !important;
-    font-weight: 600 !important;
-    margin-top: 10px !important;
-    color: #111111 !important;
+
+  /* Clean Block Page-Breaks & Formatting */
+  h1, h2, h3, p, blockquote, pre, figure, details, hr {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
-  .block-row[data-type="h3"] .block-editable {
-    font-size: 13pt !important;
-    font-weight: 600 !important;
-    margin-top: 8px !important;
-    color: #222222 !important;
-  }
-  .block-row[data-type="code"] {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    background: #f8f9fa !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 4px !important;
-    padding: 8px 12px !important;
-  }
-  .block-row[data-type="code"] .block-editable {
-    font-family: Consolas, "Courier New", monospace !important;
-    font-size: 9.5pt !important;
-    color: #222222 !important;
-    white-space: pre-wrap !important;
-    word-break: break-all !important;
-  }
-  .block-row[data-type="callout"],
-  .block-row[data-type="quote"] {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    border-left: 3px solid #666666 !important;
-    background: #fbfbfb !important;
-    padding: 6px 12px !important;
-  }
-  .block-row[data-type="divider"] hr {
-    border: none !important;
-    border-top: 1px solid #cccccc !important;
-    margin: 12px 0 !important;
-  }
-  .todo-checkbox {
-    print-color-adjust: exact !important;
-    -webkit-print-color-adjust: exact !important;
-  }
+
   img {
     max-width: 100% !important;
     height: auto !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }
 
