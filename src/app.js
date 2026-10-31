@@ -1165,12 +1165,17 @@ function renderSidebar() {
         e.stopPropagation();
         if (!confirm(`'${f.name}' 폴더를 삭제하시겠습니까? (안의 노트는 삭제되지 않고 기본 폴더로 이동됩니다.)`)) return;
         const fallbackFolder = state.folders.find((fl) => fl.id !== f.id);
+        const now = new Date().toISOString();
         state.notes.forEach((n) => {
-          if (n.folderId === f.id && fallbackFolder) n.folderId = fallbackFolder.id;
+          if (n.folderId === f.id && fallbackFolder) {
+            n.folderId = fallbackFolder.id;
+            n.updatedAt = now;
+          }
         });
         state.folders = state.folders.filter((fl) => fl.id !== f.id);
         if (activeNav === `folder:${f.id}`) activeNav = 'all';
-        scheduleSave();
+        lastLocalMutationTime = Date.now();
+        scheduleSave(true, true);
         renderAll();
       });
       row.appendChild(delBtn);
@@ -8888,8 +8893,10 @@ function bindEvents() {
       note.encryptedPayload = encrypted;
       note.blocks = [];
       note.isEncrypted = true;
+      note.updatedAt = new Date().toISOString();
+      lastLocalMutationTime = Date.now();
       unlockedVaultPassword = pass;
-      scheduleSave();
+      scheduleSave(true, true);
       renderAll();
       setTimeout(() => document.getElementById('note-decrypt-pass')?.focus(), 20);
       showToast('노트가 AES-256으로 암호화되어 잠겼습니다. 비밀번호를 입력해야 열람됩니다.');
@@ -8899,8 +8906,10 @@ function bindEvents() {
       note.blocks = blocks;
       delete note.encryptedPayload;
       note.isEncrypted = false;
+      note.updatedAt = new Date().toISOString();
+      lastLocalMutationTime = Date.now();
       decryptedNotesSessionMap.delete(note.id);
-      scheduleSave();
+      scheduleSave(true, true);
       renderAll();
       showToast('노트 암호화 잠금이 완전히 해제되었습니다.');
     }
@@ -10425,7 +10434,7 @@ async function runBackgroundOcrForBlock(note, imgBlock) {
     if (text) {
       imgBlock.ocrText = text;
       touchNote(note);
-      scheduleSave(false);
+      scheduleSave(true, true);
 
       // 현재 화면에 이 이미지 블록이 표시되고 있다면 복사 버튼 즉시 갱신
       const imgRow = document.querySelector(`.block-row[data-block-id="${imgBlock.id}"]`);
