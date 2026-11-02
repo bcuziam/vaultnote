@@ -1444,6 +1444,50 @@ select:focus {
   text-decoration: underline;
 }
 
+/* YouTube Timestamp Jump Button */
+.yt-timestamp-btn {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  font-family: inherit;
+  font-size: 0.88em;
+  font-weight: 600;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: baseline;
+  text-decoration: none;
+  line-height: 1.35;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  user-select: none;
+}
+
+.yt-timestamp-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: #ef4444;
+  color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.yt-timestamp-btn:active {
+  transform: translateY(0);
+}
+
+[data-theme="dark"] .yt-timestamp-btn {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+[data-theme="dark"] .yt-timestamp-btn:hover {
+  background: rgba(248, 113, 113, 0.28);
+  color: #fca5a5;
+  border-color: #f87171;
+}
+
 .split-view-locked,
 .split-view-empty {
   display: flex;

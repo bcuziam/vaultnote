@@ -2024,6 +2024,71 @@ function deleteSelectedBlocks() {
 }
 
 /**
+ * 유튜브 타임스탬프 문자열을 초(seconds) 단위 정수로 변환 (예: 18:22 -> 1102, 1:04:12 -> 3852)
+ */
+function parseTimestampToSeconds(timeStr) {
+  if (!timeStr) return 0;
+  const parts = String(timeStr).trim().split(':').map(Number);
+  if (parts.some((n) => isNaN(n))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+/**
+ * 지정된 영역(에디터 또는 분할 뷰어) 내의 유튜브 플레이어를 찾아 특정 타임스탬프로 즉시 재생
+ */
+function playYouTubeAtTimestamp(scopeEl, seconds, timeLabel = '') {
+  if (!scopeEl) return;
+  const ytCard = scopeEl.querySelector('.youtube-player-card, .split-doc-youtube');
+  if (!ytCard) {
+    showToast(`재생할 유튜브 플레이어를 찾을 수 없습니다. (구간: ${timeLabel})`, 3000);
+    return;
+  }
+
+  const videoId =
+    ytCard.dataset.videoId ||
+    extractYouTubeVideoId(ytCard.querySelector('a')?.href || '');
+  if (!videoId) return;
+
+  const mediaContainer = ytCard.querySelector('.youtube-media-container, .split-youtube-media');
+  if (!mediaContainer) return;
+
+  const existingIframe = mediaContainer.querySelector('iframe');
+  if (existingIframe) {
+    try {
+      existingIframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
+        '*'
+      );
+      existingIframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+        '*'
+      );
+    } catch (_) {}
+    if (!existingIframe.src.includes(`start=${seconds}`)) {
+      existingIframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0&start=${seconds}&enablejsapi=1`;
+    }
+  } else {
+    mediaContainer.innerHTML = `
+      <iframe
+        src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0&start=${seconds}&enablejsapi=1"
+        title="YouTube 동영상"
+        style="width:100%;height:100%;border:0;display:block;"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen>
+      </iframe>
+    `;
+  }
+
+  try {
+    ytCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (_) {}
+
+  showToast(`[${timeLabel}] 구간부터 재생합니다.`, 3000);
+}
+
+/**
  * 인라인 마크다운 서식 렌더러 (볼드, 기울임, 취소선, 형광펜, 글자색, 링크 등)
  */
 function renderMarkdownInlineHtml(text = '') {
@@ -2049,6 +2114,8 @@ function renderMarkdownInlineHtml(text = '') {
   html = html.replace(/\[\[([^\]\n]+)\]\]/g, '<span class="wikilink-pill" data-wikitarget="$1">🔗 $1</span>');
   // 마크다운 링크: [표시텍스트](URL)
   html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="external-link">$1 ↗</a>');
+  // 유튜브 타임스탬프: [01:25], [18:22], [1:04:12]
+  html = html.replace(/\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g, '<button type="button" class="yt-timestamp-btn" data-time="$1" title="$1 구간 재생">[$1]</button>');
   // 일반 URL 자동 링크
   html = html.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer" class="external-link">$2 ↗</a>');
   return html;
@@ -2827,7 +2894,7 @@ function renderBlocksList(note, blocks) {
         if (!videoId || !mediaContainer) return;
         mediaContainer.innerHTML = `
           <iframe
-            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0"
+            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0&enablejsapi=1"
             title="${escapeHtml(title)}"
             style="width:100%;height:100%;border:0;display:block;"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -3153,7 +3220,7 @@ function renderBlocksList(note, blocks) {
       });
 
       const hasSearchMatch = Boolean(pendingEditorSearchHighlight && (block.text || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(block.text || '');
+      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2})/i.test(block.text || '');
       const previewDiv = document.createElement('div');
       previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
       let renderedHtml = renderMarkdownInlineHtml(block.text || '');
@@ -3170,7 +3237,26 @@ function renderBlocksList(note, blocks) {
         ta.focus();
       };
 
-      previewDiv.addEventListener('click', activateBlockEditor);
+      previewDiv.addEventListener('click', (e) => {
+        const timeBtn = e.target.closest('.yt-timestamp-btn');
+        if (timeBtn) {
+          e.stopPropagation();
+          e.preventDefault();
+          const timeStr = timeBtn.dataset.time || '';
+          const sec = parseTimestampToSeconds(timeStr);
+          playYouTubeAtTimestamp(document.getElementById('block-editor-container'), sec, timeStr);
+          return;
+        }
+        const wikiPill = e.target.closest('.wikilink-pill');
+        if (wikiPill) {
+          e.stopPropagation();
+          e.preventDefault();
+          const targetTitle = wikiPill.dataset.wikitarget;
+          if (targetTitle) openOrCreateWikiLink(targetTitle);
+          return;
+        }
+        activateBlockEditor();
+      });
 
       ta.addEventListener('focus', () => {
         if (!previewDiv.classList.contains('hidden')) {
@@ -3185,7 +3271,7 @@ function renderBlocksList(note, blocks) {
         setTimeout(() => {
           if (document.activeElement !== ta) {
             const hasQuery = Boolean(pendingEditorSearchHighlight && (ta.value || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(ta.value || '');
+            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2})/i.test(ta.value || '');
             if (stillHasFormatting) {
               let updatedHtml = renderMarkdownInlineHtml(ta.value || '');
               if (pendingEditorSearchHighlight) {
@@ -3891,14 +3977,14 @@ function renderSecondarySplitPane() {
         const videoUrl = b.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
         const title = b.title || 'YouTube 동영상';
         return `
-          <div class="split-doc-youtube" style="width:100%;max-width:100%;box-sizing:border-box;margin:12px 0;">
-            <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
+          <div class="split-doc-youtube" data-video-id="${escapeHtml(videoId || '')}" style="width:100%;max-width:100%;box-sizing:border-box;margin:12px 0;">
+            <div class="split-youtube-media" style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
               <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />
-              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);text-decoration:none;" title="동영상 열기">
+              <button type="button" class="split-youtube-play-btn" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);border:0;cursor:pointer;width:100%;" title="동영상 바로 재생">
                 <div style="width:52px;height:36px;background:#ff0000;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;">
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </div>
-              </a>
+              </button>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:12.5px;min-width:0;">
               <span style="flex:1;min-width:0;font-weight:600;color:var(--text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
@@ -3983,6 +4069,39 @@ function renderSecondarySplitPane() {
         showToast(`'${targetTitle}' 노트를 찾을 수 없습니다.`);
       }
     });
+  });
+
+  // YouTube timestamp click handlers inside secondary viewer
+  viewer.querySelectorAll('.yt-timestamp-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const timeStr = btn.dataset.time || '';
+      const sec = parseTimestampToSeconds(timeStr);
+      playYouTubeAtTimestamp(viewer, sec, timeStr);
+    });
+  });
+
+  // Direct inline play button click inside split-doc-youtube
+  viewer.querySelectorAll('.split-doc-youtube').forEach((card) => {
+    const playBtn = card.querySelector('.split-youtube-play-btn');
+    const media = card.querySelector('.split-youtube-media');
+    const videoId = card.dataset.videoId;
+    if (playBtn && media && videoId) {
+      playBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        media.innerHTML = `
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0&enablejsapi=1"
+            title="YouTube 동영상"
+            style="width:100%;height:100%;border:0;display:block;"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen>
+          </iframe>
+        `;
+      });
+    }
   });
 }
 
@@ -7448,7 +7567,7 @@ async function clipAndSummarizeUrl(rawUrl, options = {}) {
       // 2. API 키가 정상 등록된 경우: 로딩 상태를 명확히 유지하며 AI 심층 요약 직접 호출
       const loadBlock = newNote.blocks.find((b) => b.id === loadingBlockId);
       if (loadBlock) {
-        loadBlock.text = '[안내] AI가 본문 내용과 맥락을 심층 분석하여 맞춤 요약을 생성하고 있습니다 (약 5~15초 소요)...';
+        loadBlock.text = '[안내] AI가 본문 내용과 맥락을 심층 분석하여 맞춤 요약을 생성하고 있습니다 (약 30~50초 소요)...';
       }
       scheduleSave();
       if (activeNoteId === newNote.id) renderActiveNoteEditor();
