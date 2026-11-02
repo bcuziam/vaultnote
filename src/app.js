@@ -1552,6 +1552,7 @@ function createMainNoteItemElement(note, folderMap, query, isTrash) {
 }
 
 function renderMainNoteListView() {
+  hideFloatingFormatToolbar();
   const titleEl = document.getElementById('current-filter-title');
   const subtitleEl = document.getElementById('current-filter-subtitle');
   const emptyTrashBtn = document.getElementById('btn-empty-trash');
@@ -2256,6 +2257,7 @@ function hideFloatingFormatToolbar() {
   const toolbar = document.getElementById('floating-format-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
   document.getElementById('format-color-palette')?.classList.add('hidden');
+  activeFormattedTextarea = null;
 }
 
 function applyFormattingToActiveSelection(formatType, targetTa = null, customColor = '') {
@@ -7735,6 +7737,7 @@ async function checkIncomingWebClipParams() {
 // Workspace View Router
 // ============================================================================
 function renderWorkspaceView() {
+  hideFloatingFormatToolbar();
   const listView = document.getElementById('workspace-list-view');
   const editorArea = document.getElementById('workspace-editor-area');
   const tableView = document.getElementById('workspace-table-view');
