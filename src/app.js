@@ -2039,8 +2039,10 @@ function parseTimestampToSeconds(timeStr) {
  * 지정된 영역(에디터 또는 분할 뷰어) 내의 유튜브 플레이어를 찾아 특정 타임스탬프로 즉시 재생
  */
 function playYouTubeAtTimestamp(scopeEl, seconds, timeLabel = '') {
-  if (!scopeEl) return;
-  const ytCard = scopeEl.querySelector('.youtube-player-card, .split-doc-youtube');
+  const targetScope = scopeEl || document.getElementById('blocks-container') || document;
+  const ytCard =
+    targetScope.querySelector('.youtube-player-card, .split-doc-youtube') ||
+    document.querySelector('.youtube-player-card, .split-doc-youtube');
   if (!ytCard) {
     showToast(`재생할 유튜브 플레이어를 찾을 수 없습니다. (구간: ${timeLabel})`, 3000);
     return;
@@ -3244,7 +3246,7 @@ function renderBlocksList(note, blocks) {
           e.preventDefault();
           const timeStr = timeBtn.dataset.time || '';
           const sec = parseTimestampToSeconds(timeStr);
-          playYouTubeAtTimestamp(document.getElementById('block-editor-container'), sec, timeStr);
+          playYouTubeAtTimestamp(document.getElementById('blocks-container'), sec, timeStr);
           return;
         }
         const wikiPill = e.target.closest('.wikilink-pill');
