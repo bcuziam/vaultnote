@@ -2057,7 +2057,7 @@ function playYouTubeAtTimestamp(scopeEl, seconds, timeLabel = '') {
   if (!mediaContainer) return;
 
   const existingIframe = mediaContainer.querySelector('iframe');
-  if (existingIframe) {
+  if (existingIframe && existingIframe.contentWindow) {
     try {
       existingIframe.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
@@ -2068,9 +2068,6 @@ function playYouTubeAtTimestamp(scopeEl, seconds, timeLabel = '') {
         '*'
       );
     } catch (_) {}
-    if (!existingIframe.src.includes(`start=${seconds}`)) {
-      existingIframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0&start=${seconds}&enablejsapi=1`;
-    }
   } else {
     mediaContainer.innerHTML = `
       <iframe
