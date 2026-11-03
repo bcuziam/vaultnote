@@ -1610,9 +1610,13 @@ function renderMainNoteListView() {
   if (emptyTrashBtn) emptyTrashBtn.classList.toggle('hidden', !isTrash || notes.length === 0);
   if (quickUrlBar) quickUrlBar.classList.toggle('hidden', isTrash);
   if (subtitleEl) {
-    subtitleEl.textContent = isTrash
-      ? '휴지통의 노트를 복원하거나 영구 삭제할 수 있습니다.'
-      : '마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.';
+    if (isTrash) {
+      subtitleEl.textContent = '휴지통의 노트를 복원하거나 영구 삭제할 수 있습니다.';
+      subtitleEl.classList.remove('hidden');
+    } else {
+      subtitleEl.textContent = '';
+      subtitleEl.classList.add('hidden');
+    }
   }
 
   if (mainListObserver) {

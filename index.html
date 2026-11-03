@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v124" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v125" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v124" />
+  <link rel="stylesheet" href="./src/styles.css?v=v125" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v124</span>
+        <span class="app-version-badge" id="app-version-display">v125</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -184,7 +184,7 @@
           <div class="list-view-header">
             <div>
               <h2 id="current-filter-title">전체 노트</h2>
-              <p id="current-filter-subtitle" class="text-muted">마우스로 끌어 순서를 바꾸거나, Ctrl+V로 웹 URL을 붙여넣어 요약 노트를 만드세요.</p>
+              <p id="current-filter-subtitle" class="text-muted hidden"></p>
             </div>
             <div class="list-view-controls">
               <div class="list-search-wrap">
@@ -206,7 +206,7 @@
             <input
               type="url"
               id="list-quick-url-input"
-              placeholder="웹서핑 중 찾은 URL 주소를 여기에 붙여넣거나 목록에서 바로 Ctrl+V를 누르면 핵심 요약 노트로 정리됩니다..."
+              placeholder="요약할 웹 URL을 붙여넣고 [URL 요약 정리] 버튼을 누르세요 (또는 Enter)"
               autocomplete="off"
             />
             <button type="button" id="btn-list-url-summarize" class="btn btn-secondary btn-sm">URL 요약 정리</button>
@@ -987,6 +987,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v124"></script>
+  <script type="module" src="./src/app.js?v=v125"></script>
 </body>
 </html>
