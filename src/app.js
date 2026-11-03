@@ -1502,7 +1502,7 @@ function createMainNoteItemElement(note, folderMap, query, isTrash) {
 
   item.innerHTML = `
     <div class="main-note-left">
-      ${isPinned ? `<span class="note-pinned-badge" title="상단 고정">${pinSvg} 고정</span>` : ''}
+      ${isPinned ? `<span class="note-pinned-badge" title="상단 고정">${pinSvg}</span>` : ''}
       <span class="main-note-title">${highlightedTitle}</span>
     </div>
     <div class="main-note-right">
