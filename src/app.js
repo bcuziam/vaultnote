@@ -905,6 +905,7 @@ async function lockEverything(reasonMsg = '화면이 잠금 상태로 전환되�
   }
 
   if (hasVerifier) {
+    stopAllActiveMedia();
     document.getElementById('app-lock-overlay').classList.remove('hidden');
     document.getElementById('app-lock-input').value = '';
     setTimeout(() => document.getElementById('app-lock-input')?.focus(), 20);
@@ -1433,6 +1434,7 @@ function applyEditorSearchHighlight(query) {
 }
 
 function openNoteInEditor(noteId) {
+  stopAllActiveMedia();
   const note = state.notes.find((n) => n.id === noteId);
   if (!note || (note.trashed && activeNav !== 'trash')) {
     showToast('삭제되었거나 존재하지 않는 메모입니다.');
@@ -2129,6 +2131,43 @@ function playYouTubeAtTimestamp(scopeEl, seconds, timeLabel = '') {
   } catch (_) {}
 
   showToast(`[${timeLabel}] 구간부터 재생합니다.`, 3000);
+}
+
+/**
+ * 에디터 또는 분할 뷰어에서 실행 중인 모든 유튜브 동영상 및 미디어 재생을 즉시 정지하고 리소스를 해제
+ * @param {HTMLElement|string} [scope] - 정지 대상 범위 (기본: 에디터 및 분할 뷰어 전체)
+ */
+function stopAllActiveMedia(scope) {
+  const root = typeof scope === 'string' ? document.querySelector(scope) : (scope || document);
+  if (!root) return;
+
+  // 1. YouTube iframe 정지 및 제거 (postMessage 중지 명령 + about:blank 전환 + DOM 분리로 오디오 0초 즉각 차단)
+  const iframes = root.querySelectorAll(
+    '#workspace-editor-area iframe, #secondary-split-pane iframe, .youtube-media-container iframe, .split-youtube-media iframe'
+  );
+  iframes.forEach((iframe) => {
+    try {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }), '*');
+      }
+    } catch (_) {}
+    try {
+      iframe.src = 'about:blank';
+      iframe.remove();
+    } catch (_) {}
+  });
+
+  // 2. HTML5 audio 및 video 요소 정지
+  const htmlMedia = root.querySelectorAll(
+    '#workspace-editor-area audio, #workspace-editor-area video, #secondary-split-pane audio, #secondary-split-pane video'
+  );
+  htmlMedia.forEach((media) => {
+    try {
+      media.pause();
+      media.currentTime = 0;
+    } catch (_) {}
+  });
 }
 
 /**
@@ -3905,7 +3944,10 @@ function renderSecondarySplitPane() {
   const pane = document.getElementById('secondary-split-pane');
   const isSplit = activeViewMode === 'split';
   pane.classList.toggle('hidden', !isSplit);
-  if (!isSplit) return;
+  if (!isSplit) {
+    stopAllActiveMedia(pane);
+    return;
+  }
 
   const activeNotes = state.notes.filter((n) => !n.trashed);
   if (!secondaryNoteId || !activeNotes.some((n) => n.id === secondaryNoteId)) {
@@ -7793,6 +7835,11 @@ function renderWorkspaceView() {
     el?.classList.add('hidden')
   );
 
+  const isEditorOrSplit = (activeViewMode === 'editor' || activeViewMode === 'split') && !['vault', 'graph', 'clipper'].includes(activeNav);
+  if (!isEditorOrSplit) {
+    stopAllActiveMedia();
+  }
+
   document.querySelectorAll('.view-Segment .seg-btn').forEach((btn) => {
     const isSpecialNav = ['vault', 'graph', 'clipper'].includes(activeNav);
     btn.classList.toggle('active', !isSpecialNav && btn.dataset.viewmode === activeViewMode);
@@ -8309,6 +8356,7 @@ function bindEvents() {
     // 2. 본문(에디터) 또는 특수 뷰(1층)에서 뒤로가기를 눌렀을 때:
     // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면](0층)으로 직행!
     if (activeViewMode !== 'list') {
+      stopAllActiveMedia();
       activeViewMode = 'list';
       renderAll(true, true);
       return;
