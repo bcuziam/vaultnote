@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v121" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v122" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v121" />
+  <link rel="stylesheet" href="./src/styles.css?v=v122" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v121</span>
+        <span class="app-version-badge" id="app-version-display">v122</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -193,10 +193,9 @@
               </div>
               <select id="sort-select" class="select-sm" title="정렬 기준">
                 <option value="updated_desc" selected>최근 수정순</option>
-                <option value="custom">사용자 지정 순서 (드래그 이동)</option>
                 <option value="created_desc">최근 생성순</option>
-                <option value="title_asc">제목 가나다순</option>
                 <option value="fav_first">중요 표시 우선</option>
+                <option value="title_asc">제목 가나다순</option>
               </select>
               <button type="button" id="btn-empty-trash" class="btn btn-danger btn-sm hidden">휴지통 비우기</button>
             </div>
@@ -314,6 +313,12 @@
                     </div>
                   </div>
                   <button type="button" id="btn-open-note-graph" class="meta-btn" title="이 문서를 중심으로 연관된 문서 연결 그래프 보기">연결도</button>
+                  <button type="button" id="btn-toggle-pin" class="meta-btn" title="이 노트를 목록 최상단에 고정">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;">
+                      <line x1="12" y1="17" x2="12" y2="22"></line>
+                      <path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path>
+                    </svg><span class="pin-text">고정</span>
+                  </button>
                   <button type="button" id="btn-toggle-fav" class="meta-btn" title="중요 표시">☆ 중요</button>
                   <button type="button" id="btn-relock-note" class="meta-btn hidden" title="열려 있는 암호화 노트를 다시 화면에서 잠그기">다시 잠그기</button>
                   <button type="button" id="btn-toggle-note-encrypt" class="meta-btn" title="이 노트 AES-256 암호화 잠금">암호화 잠금</button>
@@ -982,6 +987,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v121"></script>
+  <script type="module" src="./src/app.js?v=v122"></script>
 </body>
 </html>

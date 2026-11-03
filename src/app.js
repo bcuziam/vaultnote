@@ -945,23 +945,52 @@ function getFilteredNotes() {
     });
   }
 
-  if (sortMode !== 'custom') {
-    list.sort((a, b) => {
-      if (sortMode === 'title_asc') {
-        return (a.title || '제목 없음').localeCompare(b.title || '제목 없음', 'ko');
-      }
-      if (sortMode === 'created_desc') {
-        return (b.createdAt || '').localeCompare(a.createdAt || '');
-      }
-      if (sortMode === 'fav_first') {
-        if (Boolean(b.favorite) !== Boolean(a.favorite)) return b.favorite ? 1 : -1;
-        return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
-      }
+  // 1. Separate pinned notes and unpinned notes
+  const pinnedList = list.filter((n) => Boolean(n.pinned));
+  const unpinnedList = list.filter((n) => !n.pinned);
+
+  // Pinned notes preserve their custom pin order (pinnedAt descending or state order)
+  pinnedList.sort((a, b) => {
+    return (b.pinnedAt || b.updatedAt || '').localeCompare(a.pinnedAt || a.updatedAt || '');
+  });
+
+  // 2. Unpinned notes follow user-selected sortMode
+  unpinnedList.sort((a, b) => {
+    if (sortMode === 'title_asc') {
+      return (a.title || '제목 없음').localeCompare(b.title || '제목 없음', 'ko');
+    }
+    if (sortMode === 'created_desc') {
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    }
+    if (sortMode === 'fav_first') {
+      if (Boolean(b.favorite) !== Boolean(a.favorite)) return b.favorite ? 1 : -1;
       return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
-    });
+    }
+    return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+  });
+
+  return [...pinnedList, ...unpinnedList];
+}
+
+function togglePinNote(targetNoteId) {
+  const note = state.notes.find((n) => n.id === targetNoteId);
+  if (!note || note.trashed) return;
+
+  const currentPinnedCount = state.notes.filter((n) => !n.trashed && n.pinned).length;
+  if (!note.pinned && currentPinnedCount >= 5) {
+    showToast('상단 고정은 최대 5개까지 가능합니다. 기존 고정을 해제 후 다시 시도해 주세요.', 3500);
+    return;
   }
 
-  return list;
+  note.pinned = !note.pinned;
+  if (note.pinned) {
+    note.pinnedAt = new Date().toISOString();
+  } else {
+    delete note.pinnedAt;
+  }
+  touchNote(note);
+  renderAll();
+  showToast(note.pinned ? '노트가 상단에 고정되었습니다.' : '상단 고정이 해제되었습니다.');
 }
 
 function reorderNoteInState(sourceId, targetId, placeAfter = false) {
@@ -1271,20 +1300,17 @@ function renderSidebar() {
     } else {
       for (const note of notes.slice(0, 25)) {
         const row = document.createElement('div');
-        row.className = `note-list-row ${note.id === activeNoteId && activeViewMode === 'editor' ? 'active' : ''}`;
+        row.className = `note-list-row ${note.id === activeNoteId && activeViewMode === 'editor' ? 'active' : ''} ${note.pinned ? 'pinned' : ''}`;
         row.dataset.quickNoteId = note.id;
+        const pinIcon = note.pinned ? `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sidebar-pin-icon" style="flex-shrink:0;color:var(--accent);margin-right:4px;"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path></svg>` : '';
         const prefix = note.isEncrypted ? '[잠금] ' : note.favorite ? '★ ' : '';
         const query = (document.getElementById('list-view-search')?.value || document.getElementById('inline-filter-input')?.value || '').trim();
         const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
         row.innerHTML = `
-          <span class="drag-handle" title="마우스로 잡아 순서 이동">⋮⋮</span>
+          ${pinIcon}
           <span class="note-list-row-title">${highlightedTitle}</span>
         `;
-        if (!note.trashed) {
-          attachNoteRowDragEvents(row, note.id);
-        }
         row.addEventListener('click', (e) => {
-          if (e.target.closest('.drag-handle')) return;
           openNoteInEditor(note.id);
         });
         quickContainer.appendChild(row);
@@ -1458,37 +1484,47 @@ let mainListScrollHandler = null;
 
 function createMainNoteItemElement(note, folderMap, query, isTrash) {
   const item = document.createElement('div');
-  item.className = `main-note-item ${note.id === activeNoteId ? 'active' : ''}`;
+  const isPinned = Boolean(note.pinned && !isTrash);
+  item.className = `main-note-item ${note.id === activeNoteId ? 'active' : ''} ${isPinned ? 'pinned' : ''}`;
   item.dataset.noteId = note.id;
   const folderName = folderMap.get(note.folderId) || '기본';
   const tagsText = (note.tags || []).map((t) => `#${escapeHtml(t)}`).join(' ');
   const prefix = note.isEncrypted ? '[암호화] ' : note.favorite ? '★ ' : '';
 
+  const pinSvg = `
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="pin-icon" style="vertical-align:-1px;">
+      <line x1="12" y1="17" x2="12" y2="22"></line>
+      <path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path>
+    </svg>
+  `;
+
   const highlightedTitle = highlightSearchTerm(prefix + (note.title || '제목 없음'), query);
-  const highlightedSnippet = highlightSearchTerm(getNotePlainSnippet(note, query), query);
 
   item.innerHTML = `
-    ${!isTrash ? `<span class="drag-handle" title="마우스로 잡고 위아래로 끌어 순서 변경 (또는 좌측 폴더로 이동)">⋮⋮</span>` : ''}
     <div class="main-note-left">
-      <div class="main-note-title">${highlightedTitle}</div>
-      <div class="main-note-snippet">${highlightedSnippet}</div>
+      ${isPinned ? `<span class="note-pinned-badge" title="상단 고정">${pinSvg} 고정</span>` : ''}
+      <span class="main-note-title">${highlightedTitle}</span>
     </div>
     <div class="main-note-right">
-      ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
       <span class="note-folder-badge">${escapeHtml(folderName)}</span>
+      ${tagsText ? `<span class="main-note-tags" title="${escapeHtml(tagsText)}">${tagsText}</span>` : ''}
       <span class="note-date-badge">${formatDate(note.updatedAt)}</span>
-      ${
-        isTrash
-          ? `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
-             <button type="button" class="btn btn-danger btn-sm btn-row-del">영구 삭제</button>`
-          : `<button type="button" class="text-btn text-danger btn-row-trash" title="휴지통으로 이동">삭제</button>`
-      }
+      <div class="main-note-actions">
+        ${
+          !isTrash
+            ? `<button type="button" class="btn-row-pin ${isPinned ? 'active' : ''}" title="${isPinned ? '상단 고정 해제' : '상단 고정'}">${pinSvg}</button>
+               <button type="button" class="text-btn text-danger btn-row-trash" title="휴지통으로 이동">삭제</button>`
+            : `<button type="button" class="btn btn-secondary btn-sm btn-row-restore">복원</button>
+               <button type="button" class="btn btn-danger btn-sm btn-row-del">영구 삭제</button>`
+        }
+      </div>
     </div>
   `;
 
-  if (!isTrash) {
-    attachNoteRowDragEvents(item, note.id);
-  }
+  item.querySelector('.btn-row-pin')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePinNote(note.id);
+  });
 
   item.querySelector('.btn-row-restore')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1789,6 +1825,13 @@ function renderActiveNoteEditor() {
     if (titleInput) titleInput.classList.remove('hidden');
   }
   setTimeout(() => autoResizeTextarea(titleInput), 0);
+
+  const pinBtn = document.getElementById('btn-toggle-pin');
+  if (pinBtn) {
+    pinBtn.classList.toggle('active', Boolean(note.pinned));
+    pinBtn.title = note.pinned ? '상단 고정 해제' : '이 노트를 목록 최상단에 고정';
+    pinBtn.disabled = Boolean(note.trashed);
+  }
 
   const favBtn = document.getElementById('btn-toggle-fav');
   favBtn.textContent = note.favorite ? '★ 중요' : '☆ 중요';
@@ -8938,6 +8981,12 @@ function bindEvents() {
     }
     graphViewMode = 'local';
     selectCategoryNav('graph');
+  });
+
+  document.getElementById('btn-toggle-pin')?.addEventListener('click', () => {
+    const note = getActiveNote();
+    if (!note) return;
+    togglePinNote(note.id);
   });
 
   document.getElementById('btn-toggle-fav').addEventListener('click', () => {
