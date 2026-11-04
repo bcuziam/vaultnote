@@ -4124,7 +4124,7 @@ function renderSplitPickerDropdown(query = '') {
       const dateStr = formatDate(n.updatedAt || n.createdAt);
       const metaParts = [folderName, dateStr].filter(Boolean).join(' · ');
 
-      const iconSvg = n.isPinned
+      const iconSvg = n.pinned
         ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);flex-shrink:0;"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path></svg>`
         : (n.isEncrypted
           ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#f87171;flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`
@@ -4221,6 +4221,8 @@ function renderSecondarySplitPane() {
     if (b.type !== 'number') {
       listNumberCounter = 0;
     }
+    const indent = b.indent || 0;
+    const indentStyle = indent ? `margin-left:${indent * 24}px;` : '';
 
     switch (b.type) {
       case 'h1':
@@ -4231,32 +4233,30 @@ function renderSecondarySplitPane() {
         return `<h3 class="split-doc-h3">${renderMarkdownInlineHtml(b.text || '')}</h3>`;
       case 'callout':
         return `
-          <div class="split-doc-callout">
+          <div class="split-doc-callout" style="${indentStyle}">
             <span class="callout-icon" style="font-weight:700;font-size:11.5px;color:var(--accent);margin-right:6px;">[안내]</span>
             <div class="callout-content">${renderMarkdownInlineHtml(b.text || '')}</div>
           </div>`;
       case 'quote':
-        return `<blockquote class="split-doc-quote">${renderMarkdownInlineHtml(b.text || '')}</blockquote>`;
+        return `<blockquote class="split-doc-quote" style="${indentStyle}">${renderMarkdownInlineHtml(b.text || '')}</blockquote>`;
       case 'todo':
         return `
-          <div class="split-doc-todo ${b.checked ? 'is-done' : ''}">
+          <div class="split-doc-todo ${b.checked ? 'is-done' : ''}" style="${indentStyle}">
             <input type="checkbox" class="split-todo-checkbox" ${b.checked ? 'checked' : ''} disabled />
             <span class="todo-text">${renderMarkdownInlineHtml(b.text || '')}</span>
           </div>`;
       case 'bullet': {
-        const indent = b.indent || 0;
         const bulletChar = indent === 1 ? '◦' : (indent >= 2 ? '▪' : '•');
         return `
-          <div class="split-doc-bullet" style="margin-left:${indent * 20}px;">
+          <div class="split-doc-bullet" style="margin-left:${indent * 24}px;">
             <span class="bullet-dot">${bulletChar}</span>
             <span class="bullet-text">${renderMarkdownInlineHtml(b.text || '')}</span>
           </div>`;
       }
       case 'number': {
         listNumberCounter += 1;
-        const indent = b.indent || 0;
         return `
-          <div class="split-doc-number" style="margin-left:${indent * 20}px;">
+          <div class="split-doc-number" style="margin-left:${indent * 24}px;">
             <span class="number-label">${listNumberCounter}.</span>
             <span class="number-text">${renderMarkdownInlineHtml(b.text || '')}</span>
           </div>`;
@@ -4268,7 +4268,7 @@ function renderSecondarySplitPane() {
           </div>`;
       case 'toggle':
         return `
-          <details class="split-doc-toggle" ${b.open ? 'open' : ''}>
+          <details class="split-doc-toggle" ${b.open ? 'open' : ''} style="${indentStyle}">
             <summary class="split-toggle-summary">${renderMarkdownInlineHtml(b.text || '상세 보기')}</summary>
             <div class="split-toggle-details">${renderMarkdownInlineHtml(b.details || '')}</div>
           </details>`;
@@ -4330,7 +4330,7 @@ function renderSecondarySplitPane() {
       case 'p':
       default:
         if (!b.text) return '<p class="split-doc-empty-p">&nbsp;</p>';
-        return `<p class="split-doc-p">${renderMarkdownInlineHtml(b.text)}</p>`;
+        return `<p class="split-doc-p" style="${indentStyle}">${renderMarkdownInlineHtml(b.text)}</p>`;
     }
   }).join('');
 
@@ -4338,8 +4338,8 @@ function renderSecondarySplitPane() {
     <div class="split-doc-header">
       <div class="split-doc-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--text-muted);">
         ${folder ? `<span class="split-meta-folder">${escapeHtml(folder.name)}</span>` : ''}
-        ${folder && (secNote.isPinned || updatedDateStr) ? '<span>·</span>' : ''}
-        ${secNote.isPinned ? `
+        ${folder && (secNote.pinned || updatedDateStr) ? '<span>·</span>' : ''}
+        ${secNote.pinned ? `
           <span class="split-meta-pin" style="display:inline-flex;align-items:center;gap:3px;color:var(--accent);font-weight:500;">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -4348,7 +4348,7 @@ function renderSecondarySplitPane() {
             고정됨
           </span>
         ` : ''}
-        ${secNote.isPinned && updatedDateStr ? '<span>·</span>' : ''}
+        ${secNote.pinned && updatedDateStr ? '<span>·</span>' : ''}
         ${updatedDateStr ? `<span class="split-meta-date">${escapeHtml(updatedDateStr)}</span>` : ''}
       </div>
       <h1 class="split-doc-title">${escapeHtml(secNote.title || '제목 없음')}</h1>
