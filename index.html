@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v125" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v126" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v125" />
+  <link rel="stylesheet" href="./src/styles.css?v=v126" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v125</span>
+        <span class="app-version-badge" id="app-version-display">v126</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -255,15 +255,27 @@
 
               <!-- 간결한 한 줄 메타데이터 & 도구 바 -->
               <div class="note-meta-bar">
-                <select id="note-folder-select" class="meta-select" title="폴더 변경"></select>
+                <div class="meta-popover-wrap">
+                  <button type="button" id="btn-note-folder-picker" class="meta-select-btn" title="폴더 변경">
+                    <span id="note-folder-current-name">기본 폴더</span>
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:3px;opacity:0.7;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </button>
+                  <div id="note-folder-popover" class="meta-popover-menu hidden"></div>
+                </div>
                 <span class="meta-sep">·</span>
-                <select id="note-status-select" class="meta-select" title="진행 상태">
-                  <option value="todo">대기</option>
-                  <option value="in_progress">진행중</option>
-                  <option value="done">완료</option>
-                  <option value="archived">보관</option>
-                  <option value="">상태 없음(-)</option>
-                </select>
+                <div class="meta-popover-wrap">
+                  <button type="button" id="btn-note-status-picker" class="meta-select-btn" title="진행 상태">
+                    <span id="note-status-current-name">상태 없음</span>
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:3px;opacity:0.7;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </button>
+                  <div id="note-status-popover" class="meta-popover-menu hidden">
+                    <button type="button" class="meta-popover-item" data-status="todo">대기</button>
+                    <button type="button" class="meta-popover-item" data-status="in_progress">진행중</button>
+                    <button type="button" class="meta-popover-item" data-status="done">완료</button>
+                    <button type="button" class="meta-popover-item" data-status="archived">보관</button>
+                    <button type="button" class="meta-popover-item" data-status="">상태 없음(-)</button>
+                  </div>
+                </div>
                 <span class="meta-sep">·</span>
                 <span id="note-dates-display" class="note-dates-display" style="color:var(--text-muted);font-size:11.5px;white-space:nowrap;"></span>
                 <span class="meta-sep">·</span>
@@ -987,6 +999,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v125"></script>
+  <script type="module" src="./src/app.js?v=v126"></script>
 </body>
 </html>

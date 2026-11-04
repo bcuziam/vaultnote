@@ -1185,6 +1185,36 @@ function renderSidebar() {
     });
     row.appendChild(btn);
 
+    // 폴더명 수정 버튼 (인라인 SVG 연필 아이콘)
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'folder-edit-btn';
+    editBtn.title = '폴더명 수정';
+    editBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+      </svg>
+    `;
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const currentName = f.name || '';
+      const newName = prompt('새 폴더명을 입력하세요:', currentName);
+      if (newName === null) return;
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === currentName) return;
+      if (state.folders.some((fl) => fl.id !== f.id && fl.name.toLowerCase() === trimmed.toLowerCase())) {
+        showToast('이미 동일한 이름의 폴더가 존재합니다.');
+        return;
+      }
+      f.name = trimmed;
+      lastLocalMutationTime = Date.now();
+      scheduleSave(true, true);
+      renderAll();
+      showToast(`폴더명이 '${trimmed}'(으)로 변경되었습니다.`);
+    });
+    row.appendChild(editBtn);
+
     if (state.folders.length > 1) {
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
@@ -1214,16 +1244,12 @@ function renderSidebar() {
     folderListEl.appendChild(row);
   }
 
-  // Folder selects in editor & clipper
-  const folderSelects = [
-    document.getElementById('note-folder-select'),
-    document.getElementById('clipper-target-folder')
-  ];
-  for (const sel of folderSelects) {
-    if (!sel) continue;
-    const prev = sel.value;
-    sel.innerHTML = state.folders.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
-    if (prev && state.folders.some((f) => f.id === prev)) sel.value = prev;
+  // Folder selects in clipper (if exists)
+  const clipperFolderSel = document.getElementById('clipper-target-folder');
+  if (clipperFolderSel) {
+    const prev = clipperFolderSel.value;
+    clipperFolderSel.innerHTML = state.folders.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    if (prev && state.folders.some((f) => f.id === prev)) clipperFolderSel.value = prev;
   }
 
   // Tags (Smart Tag Management: Popular Top 15 + Lazy On-Demand Rendering)
@@ -1743,6 +1769,15 @@ function closeTagPopover() {
   if (pop) pop.classList.add('hidden');
 }
 
+function closeMetaPopovers() {
+  const folderPop = document.getElementById('note-folder-popover');
+  const statusPop = document.getElementById('note-status-popover');
+  if (folderPop) folderPop.classList.add('hidden');
+  if (statusPop) statusPop.classList.add('hidden');
+  document.getElementById('btn-note-folder-picker')?.classList.remove('active');
+  document.getElementById('btn-note-status-picker')?.classList.remove('active');
+}
+
 function commitPopoverTags() {
   const inp = document.getElementById('note-tag-popover-input');
   const raw = (inp?.value || '').trim();
@@ -1859,6 +1894,41 @@ function renderActiveNoteEditor() {
   restoreBtn.classList.toggle('hidden', !note.trashed);
   delBtn.textContent = note.trashed ? '영구 삭제' : '삭제';
 
+  // Custom Folder Picker Trigger & Popover Items
+  const folderBtn = document.getElementById('btn-note-folder-picker');
+  const folderNameEl = document.getElementById('note-folder-current-name');
+  const folderPopover = document.getElementById('note-folder-popover');
+  const currentFolder = state.folders.find((f) => f.id === note.folderId) || state.folders[0];
+  if (folderNameEl) folderNameEl.textContent = currentFolder?.name || '폴더 없음';
+  if (folderBtn) folderBtn.disabled = Boolean(note.trashed);
+  if (folderPopover) {
+    folderPopover.innerHTML = state.folders.map((f) => `
+      <button type="button" class="meta-popover-item ${f.id === (note.folderId || currentFolder?.id) ? 'active' : ''}" data-folder-id="${f.id}">
+        ${escapeHtml(f.name)}
+      </button>
+    `).join('');
+  }
+
+  // Custom Status Picker Trigger & Popover Items
+  const statusBtn = document.getElementById('btn-note-status-picker');
+  const statusNameEl = document.getElementById('note-status-current-name');
+  const statusPopover = document.getElementById('note-status-popover');
+  const statusMap = {
+    todo: '대기',
+    in_progress: '진행중',
+    done: '완료',
+    archived: '보관',
+    '': '상태 없음(-)'
+  };
+  if (statusNameEl) statusNameEl.textContent = statusMap[note.status] || '상태 없음';
+  if (statusBtn) statusBtn.disabled = Boolean(note.trashed);
+  if (statusPopover) {
+    statusPopover.querySelectorAll('.meta-popover-item').forEach((item) => {
+      item.classList.toggle('active', item.dataset.status === (note.status || ''));
+    });
+  }
+
+  // Legacy fallback support if select still exists
   const folderSel = document.getElementById('note-folder-select');
   if (folderSel) {
     folderSel.value = note.folderId || (state.folders[0]?.id || '');
@@ -1872,6 +1942,7 @@ function renderActiveNoteEditor() {
   const tagAddBtn = document.getElementById('btn-open-tag-popover');
   if (tagAddBtn) tagAddBtn.disabled = Boolean(note.trashed);
   closeTagPopover();
+  closeMetaPopovers();
 
   // Created & Updated timestamps display
   const datesEl = document.getElementById('note-dates-display');
@@ -9049,7 +9120,66 @@ function bindEvents() {
     renderAll();
   });
 
-  document.getElementById('note-folder-select').addEventListener('change', (e) => {
+  // Custom Folder Picker Event Listeners
+  const folderPickerBtn = document.getElementById('btn-note-folder-picker');
+  const folderPopoverEl = document.getElementById('note-folder-popover');
+  folderPickerBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = folderPopoverEl?.classList.contains('hidden');
+    closeMetaPopovers();
+    closeTagPopover();
+    if (isHidden) {
+      folderPopoverEl?.classList.remove('hidden');
+      folderPickerBtn?.classList.add('active');
+    }
+  });
+
+  folderPopoverEl?.addEventListener('click', (e) => {
+    const item = e.target.closest('.meta-popover-item');
+    if (!item) return;
+    e.stopPropagation();
+    const folderId = item.dataset.folderId;
+    const note = getActiveNote();
+    closeMetaPopovers();
+    if (note && folderId && note.folderId !== folderId) {
+      note.folderId = folderId;
+      touchNote(note);
+      renderAll();
+      const targetFolder = state.folders.find((f) => f.id === folderId);
+      if (targetFolder) showToast(`'${targetFolder.name}' 폴더로 이동되었습니다.`);
+    }
+  });
+
+  // Custom Status Picker Event Listeners
+  const statusPickerBtn = document.getElementById('btn-note-status-picker');
+  const statusPopoverEl = document.getElementById('note-status-popover');
+  statusPickerBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = statusPopoverEl?.classList.contains('hidden');
+    closeMetaPopovers();
+    closeTagPopover();
+    if (isHidden) {
+      statusPopoverEl?.classList.remove('hidden');
+      statusPickerBtn?.classList.add('active');
+    }
+  });
+
+  statusPopoverEl?.addEventListener('click', (e) => {
+    const item = e.target.closest('.meta-popover-item');
+    if (!item) return;
+    e.stopPropagation();
+    const newStatus = item.dataset.status ?? '';
+    const note = getActiveNote();
+    closeMetaPopovers();
+    if (note && note.status !== newStatus) {
+      note.status = newStatus;
+      touchNote(note);
+      renderAll();
+    }
+  });
+
+  // Fallback for native selects if present
+  document.getElementById('note-folder-select')?.addEventListener('change', (e) => {
     const note = getActiveNote();
     if (!note) return;
     note.folderId = e.target.value;
@@ -9057,7 +9187,7 @@ function bindEvents() {
     renderAll();
   });
 
-  document.getElementById('note-status-select').addEventListener('change', (e) => {
+  document.getElementById('note-status-select')?.addEventListener('change', (e) => {
     const note = getActiveNote();
     if (!note) return;
     note.status = e.target.value;
@@ -9091,10 +9221,13 @@ function bindEvents() {
     }
   });
 
-  // 바깥 터치/클릭 시 태그 말풍선 자동 닫기
+  // 바깥 터치/클릭 시 태그 말풍선 및 메타데이터 팝오버 자동 닫기
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.tag-popover-wrap')) {
       closeTagPopover();
+    }
+    if (!e.target.closest('.meta-popover-wrap')) {
+      closeMetaPopovers();
     }
   });
 
