@@ -9,11 +9,11 @@ function createInitialState() {
   return {
     version: 3,
     folders: [
-      { id: 'f_work', name: '업무 · 프로젝트' },
-      { id: 'f_idea', name: '아이디어 · 기획' },
-      { id: 'f_clip', name: '웹 스크랩' },
-      { id: 'f_personal', name: '개인 노트' },
-      { id: 'f_security', name: '보안 폴더' }
+      { id: 'f_work', name: '업무 · 프로젝트', updatedAt: now },
+      { id: 'f_idea', name: '아이디어 · 기획', updatedAt: now },
+      { id: 'f_clip', name: '웹 스크랩', updatedAt: now },
+      { id: 'f_personal', name: '개인 노트', updatedAt: now },
+      { id: 'f_security', name: '보안 폴더', updatedAt: now }
     ],
     notes: [
       {
@@ -138,6 +138,7 @@ function createInitialState() {
     vaultItems: [],
     deletedNoteIds: {},
     deletedVaultItemIds: {},
+    deletedFolderIds: {},
     scratchpad: '',
     orderUpdatedAt: now,
     settings: {
@@ -507,6 +508,31 @@ function hasVaultItemChanges(remoteVaultItems, localVaultItems, remoteDeletedVau
   return false;
 }
 
+function hasFolderChanges(remoteFolders, localFolders, remoteDeletedFolderIds = null, localDeletedFolderIds = null) {
+  const rFolders = Array.isArray(remoteFolders) ? remoteFolders : [];
+  const lFolders = Array.isArray(localFolders) ? localFolders : [];
+  const rDel = remoteDeletedFolderIds || {};
+  const lDel = localDeletedFolderIds || {};
+
+  for (const id of Object.keys(rDel)) {
+    if (!lDel[id]) return true;
+  }
+  for (const f of rFolders) {
+    if (lDel[f.id]) return true;
+  }
+  const lMap = new Map(lFolders.map((f) => [f.id, f]));
+  for (const rFolder of rFolders) {
+    if (lDel[rFolder.id]) continue;
+    const lFolder = lMap.get(rFolder.id);
+    if (!lFolder) return true;
+    if (rFolder.name !== lFolder.name) return true;
+  }
+  for (const lFolder of lFolders) {
+    if (rDel[lFolder.id]) return true;
+  }
+  return false;
+}
+
 function isSidebarCollapsedOnDevice() {
   const isMobile = window.innerWidth <= 820;
   if (isMobile) {
@@ -533,6 +559,10 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   const mergedDeletedVaultItemIds = {
     ...(state.deletedVaultItemIds || {}),
     ...(remoteState.deletedVaultItemIds || {})
+  };
+  const mergedDeletedFolderIds = {
+    ...(state.deletedFolderIds || {}),
+    ...(remoteState.deletedFolderIds || {})
   };
 
   // 2. 설정 병합 (기기별 로컬 테마 및 메뉴바 상태 보존)
@@ -581,13 +611,34 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     }
   }
 
-  // 4. 폴더 병합
-  const remoteFolderIds = new Set((remoteState.folders || []).map((f) => f.id));
-  const mergedFolders = [...(remoteState.folders || [])];
-  for (const lFolder of (state.folders || [])) {
-    if (!remoteFolderIds.has(lFolder.id)) {
-      mergedFolders.push(lFolder);
+  // 4. 폴더 양방향 안전 병합 (삭제 장부 반영 및 LWW 갱신)
+  const localFolders = Array.isArray(state.folders) ? state.folders : [];
+  const remoteFolders = Array.isArray(remoteState.folders) ? remoteState.folders : [];
+  const folderMap = new Map();
+
+  for (const f of localFolders) {
+    if (!f || !f.id || mergedDeletedFolderIds[f.id]) continue;
+    folderMap.set(f.id, f);
+  }
+
+  for (const f of remoteFolders) {
+    if (!f || !f.id || mergedDeletedFolderIds[f.id]) continue;
+    const existing = folderMap.get(f.id);
+    if (!existing) {
+      folderMap.set(f.id, f);
+    } else {
+      const existingTime = new Date(existing.updatedAt || 0).getTime();
+      const remoteTime = new Date(f.updatedAt || 0).getTime();
+      if (remoteTime > existingTime) {
+        folderMap.set(f.id, f);
+      }
     }
+  }
+
+  let mergedFolders = Array.from(folderMap.values());
+  // 폴더가 모두 삭제되어 0개가 되는 극단적인 경우 기본 폴더 최소 1개 유지 보장
+  if (mergedFolders.length === 0) {
+    mergedFolders = [{ id: 'f_default', name: '기본 폴더', updatedAt: new Date().toISOString() }];
   }
 
   // 5. 보안금고 항목(vaultItems) 양방향 안전 병합
@@ -624,23 +675,26 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   );
   const latestOrderTime = Math.max(rOrderTime, lOrderTime);
 
-  // 원격에 이미 삭제된 노트/금고항목이 포함되어 있거나 삭제장부가 누락되어 있는지 확인
+  // 원격에 이미 삭제된 노트/금고/폴더가 포함되어 있거나 삭제장부가 누락되어 있는지 확인
   const remoteHadDeletedNotes = (remoteState.notes || []).some((n) => mergedDeletedNoteIds[n.id]);
   const remoteHadDeletedVault = (remoteState.vaultItems || []).some((v) => mergedDeletedVaultItemIds[v.id]);
+  const remoteHadDeletedFolders = (remoteState.folders || []).some((f) => mergedDeletedFolderIds[f.id]);
   const remoteMissingTombstones =
     Object.keys(state.deletedNoteIds || {}).some((id) => !remoteState.deletedNoteIds?.[id]) ||
-    Object.keys(state.deletedVaultItemIds || {}).some((id) => !remoteState.deletedVaultItemIds?.[id]);
-  const needsRemotePurgePush = remoteHadDeletedNotes || remoteHadDeletedVault || remoteMissingTombstones;
+    Object.keys(state.deletedVaultItemIds || {}).some((id) => !remoteState.deletedVaultItemIds?.[id]) ||
+    Object.keys(state.deletedFolderIds || {}).some((id) => !remoteState.deletedFolderIds?.[id]);
+  const needsRemotePurgePush = remoteHadDeletedNotes || remoteHadDeletedVault || remoteHadDeletedFolders || remoteMissingTombstones;
 
   state = {
     ...createInitialState(),
     ...remoteState,
     notes: mergedNotes,
-    folders: mergedFolders.length > 0 ? mergedFolders : state.folders,
+    folders: mergedFolders,
     settings: mergedSettings,
     vaultItems: mergedVaultItems,
     deletedNoteIds: mergedDeletedNoteIds,
     deletedVaultItemIds: mergedDeletedVaultItemIds,
+    deletedFolderIds: mergedDeletedFolderIds,
     lastSavedAt: new Date(latestMtime).toISOString(),
     orderUpdatedAt: new Date(latestOrderTime || latestMtime).toISOString()
   };
@@ -746,7 +800,8 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
         const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
         const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes, folderState.orderUpdatedAt, state.orderUpdatedAt, folderState.deletedNoteIds);
         const hasVaultUpdates = hasVaultItemChanges(folderState.vaultItems, state.vaultItems, folderState.deletedVaultItemIds, state.deletedVaultItemIds);
-        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
+        const hasFldUpdates = hasFolderChanges(folderState.folders, state.folders, folderState.deletedFolderIds, state.deletedFolderIds);
+        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates || hasFldUpdates) {
           await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
           return true;
         }
@@ -1208,6 +1263,7 @@ function renderSidebar() {
         return;
       }
       f.name = trimmed;
+      f.updatedAt = new Date().toISOString();
       lastLocalMutationTime = Date.now();
       scheduleSave(true, true);
       renderAll();
@@ -1233,6 +1289,8 @@ function renderSidebar() {
           }
         });
         state.folders = state.folders.filter((fl) => fl.id !== f.id);
+        state.deletedFolderIds = state.deletedFolderIds || {};
+        state.deletedFolderIds[f.id] = now;
         if (activeNav === `folder:${f.id}`) activeNav = 'all';
         lastLocalMutationTime = Date.now();
         scheduleSave(true, true);
@@ -8717,9 +8775,9 @@ function bindEvents() {
   document.getElementById('btn-add-folder').addEventListener('click', () => {
     const name = prompt('새 폴더 이름:');
     if (!name || !name.trim()) return;
-    const newFolder = { id: uid('folder'), name: name.trim() };
+    const newFolder = { id: uid('folder'), name: name.trim(), updatedAt: new Date().toISOString() };
     state.folders.push(newFolder);
-    scheduleSave();
+    scheduleSave(true, true);
     selectCategoryNav(`folder:${newFolder.id}`);
   });
 
