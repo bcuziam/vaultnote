@@ -354,7 +354,7 @@ function getNotePlainSnippet(note, query = '') {
         const start = Math.max(0, idx - 25);
         const end = Math.min(b.ocrText.length, idx + query.length + 55);
         const snippet = b.ocrText.slice(start, end);
-        return (start > 0 ? '...' : '') + `📷 [이미지 내 텍스트] ` + snippet + (end < b.ocrText.length ? '...' : '');
+        return (start > 0 ? '...' : '') + `[이미지 텍스트] ` + snippet + (end < b.ocrText.length ? '...' : '');
       }
       const txt = (b.text || '').trim();
       if (txt && txt.toLowerCase().includes(qLower)) {
@@ -384,7 +384,7 @@ function getNotePlainSnippet(note, query = '') {
   }
   for (const b of blocks) {
     if (b.text && b.text.trim()) return b.text.trim().slice(0, 120);
-    if (b.type === 'image' && b.ocrText) return '📷 [이미지 텍스트] ' + b.ocrText.slice(0, 120);
+    if (b.type === 'image' && b.ocrText) return '[이미지 텍스트] ' + b.ocrText.slice(0, 120);
   }
   return '본문 내용 없음';
 }
@@ -1933,7 +1933,15 @@ function renderActiveNoteEditor() {
   trashBanner.classList.toggle('hidden', !note.trashed);
   if (note.trashed) {
     trashBanner.innerHTML = `
-      <span>🗑️ <strong>휴지통에 있는 메모입니다.</strong> (읽기 전용 모드)</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          <line x1="10" y1="11" x2="10" y2="17"></line>
+          <line x1="14" y1="11" x2="14" y2="17"></line>
+        </svg>
+        <strong>휴지통에 있는 메모입니다.</strong> (읽기 전용 모드)
+      </span>
       <span style="font-size:12px;color:var(--text-muted);">편집하거나 동기화하려면 상단의 [복원] 버튼을 누르세요.</span>
     `;
   }
@@ -2410,7 +2418,7 @@ function renderMarkdownInlineHtml(text = '') {
   // 코드: `code`
   html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
   // 위키링크: [[노트제목]]
-  html = html.replace(/\[\[([^\]\n]+)\]\]/g, '<span class="wikilink-pill" data-wikitarget="$1">🔗 $1</span>');
+  html = html.replace(/\[\[([^\]\n]+)\]\]/g, '<span class="wikilink-pill" data-wikitarget="$1">↗ $1</span>');
   // 마크다운 링크: [표시텍스트](URL)
   html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="external-link">$1 ↗</a>');
   // 유튜브 타임스탬프: [01:25], [18:22], [1:04:12]
@@ -2945,8 +2953,8 @@ function renderBlocksList(note, blocks) {
             <button type="button" data-imgw="100%" title="폭 100%">100%</button>
             ${
               hasOcr
-                ? `<button type="button" data-imgocr="copy" title="인식된 글자 클립보드 복사">📋 글자 복사</button>`
-                : `<button type="button" data-imgocr="run" title="AI 글자인식 (OCR)">🔍 글자인식</button>`
+                ? `<button type="button" data-imgocr="copy" title="인식된 글자 클립보드 복사">글자 복사</button>`
+                : `<button type="button" data-imgocr="run" title="AI 글자인식 (OCR)">글자인식 (OCR)</button>`
             }
             <button type="button" data-imgdel="1" style="color:#ff8a80;" title="이미지 삭제">삭제</button>
           </div>
@@ -2969,16 +2977,16 @@ function renderBlocksList(note, blocks) {
               showToast('이미지에서 인식된 글자를 복사했습니다.');
             }
           } else if (action === 'run') {
-            ocrBtn.textContent = '⏳ 인식 중...';
+            ocrBtn.textContent = '인식 중...';
             ocrBtn.disabled = true;
             await runBackgroundOcrForBlock(note, block);
             if (block.ocrText) {
-              ocrBtn.textContent = '📋 글자 복사';
+              ocrBtn.textContent = '글자 복사';
               ocrBtn.title = '인식된 글자 클립보드 복사';
               ocrBtn.dataset.imgocr = 'copy';
               ocrBtn.disabled = false;
             } else {
-              ocrBtn.textContent = '🔍 글자인식';
+              ocrBtn.textContent = '글자인식 (OCR)';
               ocrBtn.disabled = false;
               showToast('글자를 인식하지 못했거나 API 키 및 네트워크를 확인해 주세요.');
             }
@@ -3181,7 +3189,7 @@ function renderBlocksList(note, blocks) {
                 <span>▶</span> 바로 재생
               </button>
               <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" class="youtube-btn-app-open" title="유튜브 앱 또는 웹사이트로 열기">
-                <span>📺</span> YouTube 앱에서 열기 ↗
+                YouTube에서 열기 ↗
               </a>
               <button type="button" class="text-btn text-danger btn-del-youtube" style="padding:4px 8px;font-size:12px;" title="동영상 카드 삭제">삭제</button>
             </div>
@@ -3619,14 +3627,13 @@ function renderBlocksList(note, blocks) {
 function renderWikiLinkChipsForBlock(bodyEl, text = '') {
   const existing = bodyEl.querySelector('.wikilink-chips');
   if (existing) existing.remove();
-  const wikiLinks = extractWikiLinks(text);
   const webUrls = extractWebUrls(text);
-  if (wikiLinks.length === 0 && webUrls.length === 0) return;
+  if (webUrls.length === 0) return;
 
   const wrap = document.createElement('div');
   wrap.className = 'wikilink-chips';
 
-  // 1. Render clickable Web URL pills (opens original webpage in new tab)
+  // Render clickable Web URL pills (opens original webpage in new tab)
   const isSourceBlock = /^\s*(출처|원문)\s*[:：]/.test(text);
   for (const url of webUrls) {
     const a = document.createElement('a');
@@ -3648,17 +3655,6 @@ function renderWikiLinkChipsForBlock(bodyEl, text = '') {
       e.stopPropagation();
     });
     wrap.appendChild(a);
-  }
-
-  // 2. Render internal [[WikiLink]] pills
-  for (const title of wikiLinks) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'wikilink-pill';
-    const target = state.notes.find((n) => !n.trashed && (n.title || '').trim().toLowerCase() === title.toLowerCase());
-    btn.textContent = target ? `↗ ${title}` : `+ 새 노트 생성: ${title}`;
-    btn.addEventListener('click', () => openOrCreateWikiLink(title));
-    wrap.appendChild(btn);
   }
   bodyEl.appendChild(wrap);
 }
@@ -4124,18 +4120,23 @@ function renderSplitPickerDropdown(query = '') {
     <div class="split-picker-header">${countLabel}</div>
     ${matchedNotes.slice(0, 40).map((n) => {
       const folderName = folderMap.get(n.folderId) || '';
-      const icon = n.isPinned ? '📌' : (n.isEncrypted ? '🔒' : '📄');
       const isSelected = n.id === secondaryNoteId;
       const dateStr = formatDate(n.updatedAt || n.createdAt);
+      const metaParts = [folderName, dateStr].filter(Boolean).join(' · ');
+
+      const iconSvg = n.isPinned
+        ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);flex-shrink:0;"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path></svg>`
+        : (n.isEncrypted
+          ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#f87171;flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`
+          : `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.65;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`);
 
       return `
         <div class="split-picker-item ${isSelected ? 'active' : ''}" data-note-id="${n.id}">
-          <span class="split-picker-item-icon">${icon}</span>
+          <span class="split-picker-item-icon" style="display:inline-flex;align-items:center;">${iconSvg}</span>
           <div class="split-picker-item-info">
             <div class="split-picker-item-title">${escapeHtml(n.title || '제목 없음')}</div>
             <div class="split-picker-item-sub">
-              ${folderName ? `<span class="picker-folder">📁 ${escapeHtml(folderName)}</span>` : ''}
-              ${dateStr ? `<span class="picker-time">🕒 ${dateStr}</span>` : ''}
+              ${metaParts ? `<span class="picker-meta">${escapeHtml(metaParts)}</span>` : ''}
             </div>
           </div>
           ${isSelected ? '<span class="split-picker-check">✓</span>' : ''}
@@ -4198,7 +4199,12 @@ function renderSecondarySplitPane() {
   if (secNote.isEncrypted && !decryptedNotesSessionMap.has(secNote.id)) {
     viewer.innerHTML = `
       <div class="split-view-locked">
-        <div class="locked-icon">🔒</div>
+        <div class="locked-icon" style="display:inline-flex;align-items:center;justify-content:center;color:#f87171;margin-bottom:8px;">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
         <h3>암호화된 보안 노트입니다</h3>
         <p class="text-muted" style="margin-top:6px;max-width:320px;">내용을 참조하려면 메인 편집기에서 비밀번호를 입력해 잠금을 해제해 주세요.</p>
       </div>`;
@@ -4226,7 +4232,7 @@ function renderSecondarySplitPane() {
       case 'callout':
         return `
           <div class="split-doc-callout">
-            <span class="callout-icon">💡</span>
+            <span class="callout-icon" style="font-weight:700;font-size:11.5px;color:var(--accent);margin-right:6px;">[안내]</span>
             <div class="callout-content">${renderMarkdownInlineHtml(b.text || '')}</div>
           </div>`;
       case 'quote':
@@ -4291,7 +4297,7 @@ function renderSecondarySplitPane() {
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:12.5px;min-width:0;">
               <span style="flex:1;min-width:0;font-weight:600;color:var(--text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="flex-shrink:0;color:#ff5252;text-decoration:none;font-weight:600;white-space:nowrap;font-size:12px;">YouTube 앱에서 열기 ↗</a>
+              <a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer" style="flex-shrink:0;color:#ff5252;text-decoration:none;font-weight:600;white-space:nowrap;font-size:12px;">YouTube에서 열기 ↗</a>
             </div>
           </div>
         `;
@@ -4318,7 +4324,7 @@ function renderSecondarySplitPane() {
       case 'secret':
         return `
           <div class="split-doc-secret" title="클릭하여 비밀 내용 보기/숨기기">
-            <span class="secret-badge">🔒 보안 내용</span>
+            <span class="secret-badge">[보안 내용]</span>
             <span class="secret-text masked">${escapeHtml(b.text || '')}</span>
           </div>`;
       case 'p':
@@ -4330,10 +4336,20 @@ function renderSecondarySplitPane() {
 
   viewer.innerHTML = `
     <div class="split-doc-header">
-      <div class="split-doc-meta">
-        ${folder ? `<span class="split-meta-folder">📁 ${escapeHtml(folder.name)}</span>` : ''}
-        ${secNote.isPinned ? `<span class="split-meta-pin">📌 고정됨</span>` : ''}
-        ${updatedDateStr ? `<span class="split-meta-date">🕒 ${updatedDateStr}</span>` : ''}
+      <div class="split-doc-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--text-muted);">
+        ${folder ? `<span class="split-meta-folder">${escapeHtml(folder.name)}</span>` : ''}
+        ${folder && (secNote.isPinned || updatedDateStr) ? '<span>·</span>' : ''}
+        ${secNote.isPinned ? `
+          <span class="split-meta-pin" style="display:inline-flex;align-items:center;gap:3px;color:var(--accent);font-weight:500;">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="17" x2="12" y2="22"></line>
+              <path d="M5 17h14v-2l-2-3V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7l-2 3v2z"></path>
+            </svg>
+            고정됨
+          </span>
+        ` : ''}
+        ${secNote.isPinned && updatedDateStr ? '<span>·</span>' : ''}
+        ${updatedDateStr ? `<span class="split-meta-date">${escapeHtml(updatedDateStr)}</span>` : ''}
       </div>
       <h1 class="split-doc-title">${escapeHtml(secNote.title || '제목 없음')}</h1>
       ${Array.isArray(secNote.tags) && secNote.tags.length > 0 ? `
@@ -11129,20 +11145,20 @@ function triggerPrintActiveNote() {
     const key = (inp?.value || '').trim().replace(/^["']|["']$/g, '');
     if (!key) {
       if (feedback) {
-        feedback.textContent = '❌ API 키를 먼저 입력해주세요.';
+        feedback.textContent = '[입력 필요] API 키를 먼저 입력해주세요.';
         feedback.style.color = 'var(--text-danger, #e53e3e)';
       }
       return showToast('Gemini API 키를 먼저 입력해주세요.');
     }
 
     if (feedback) {
-      feedback.textContent = '⏳ Google Gemini 2.0 Flash 통신 확인 중...';
+      feedback.textContent = '[통신 확인 중] Google Gemini 통신 상태 확인 중...';
       feedback.style.color = 'var(--text-muted)';
     }
 
     const testRes = await testGeminiApiKey(key);
     if (feedback) {
-      feedback.textContent = (testRes.ok ? '✅ ' : '❌ ') + testRes.message;
+      feedback.textContent = (testRes.ok ? '[성공] ' : '[실패] ') + testRes.message;
       feedback.style.color = testRes.ok ? 'var(--primary-color, #10b981)' : 'var(--text-danger, #e53e3e)';
     }
     showToast(testRes.message, testRes.ok ? 3000 : 4500);
@@ -11221,18 +11237,18 @@ function triggerPrintActiveNote() {
     const key = (inp?.value || state.settings.geminiApiKey || '').trim().replace(/^["']|["']$/g, '');
     if (!key) {
       if (feedback) {
-        feedback.textContent = '❌ 먼저 API 키를 입력해주세요.';
+        feedback.textContent = '[입력 필요] 먼저 API 키를 입력해주세요.';
         feedback.style.color = 'var(--text-danger, #e53e3e)';
       }
       return showToast('Gemini API 키를 먼저 입력해주세요.');
     }
     if (feedback) {
-      feedback.textContent = '⏳ Google Gemini 2.0 Flash 통신 확인 중...';
+      feedback.textContent = '[통신 확인 중] Google Gemini 통신 상태 확인 중...';
       feedback.style.color = 'var(--text-muted)';
     }
     const testRes = await testGeminiApiKey(key);
     if (feedback) {
-      feedback.textContent = (testRes.ok ? '✅ ' : '❌ ') + testRes.message;
+      feedback.textContent = (testRes.ok ? '[성공] ' : '[실패] ') + testRes.message;
       feedback.style.color = testRes.ok ? 'var(--primary-color, #10b981)' : 'var(--text-danger, #e53e3e)';
     }
     showToast(testRes.message, testRes.ok ? 3000 : 4500);
@@ -11537,7 +11553,7 @@ async function runBackgroundOcrForBlock(note, imgBlock) {
         if (toolbar) {
           let ocrBtn = toolbar.querySelector('[data-imgocr]');
           if (ocrBtn) {
-            ocrBtn.textContent = '📋 글자 복사';
+            ocrBtn.textContent = '글자 복사';
             ocrBtn.title = '인식된 글자 클립보드 복사';
             ocrBtn.dataset.imgocr = 'copy';
             ocrBtn.disabled = false;
