@@ -1065,6 +1065,8 @@ function reorderNoteInState(sourceId, targetId, placeAfter = false) {
   const sortSelect = document.getElementById('sort-select');
   if (sortSelect && sortSelect.value !== 'custom') {
     sortSelect.value = 'custom';
+    const sortNameEl = document.getElementById('sort-current-name');
+    if (sortNameEl) sortNameEl.textContent = '사용자 지정';
   }
   lastLocalMutationTime = Date.now();
   state.orderUpdatedAt = new Date().toISOString();
@@ -1302,15 +1304,25 @@ function renderSidebar() {
     folderListEl.appendChild(row);
   }
 
-  // Folder selects in clipper (if exists)
-  const clipperFolderSel = document.getElementById('clipper-target-folder');
-  if (clipperFolderSel) {
-    const prev = clipperFolderSel.value;
-    clipperFolderSel.innerHTML = state.folders.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
-    if (prev && state.folders.some((f) => f.id === prev)) {
-      clipperFolderSel.value = prev;
-    } else if (state.folders.some((f) => f.id === 'f_clip')) {
-      clipperFolderSel.value = 'f_clip';
+  // Folder selects in clipper (custom popover & hidden input)
+  const clipperHiddenInp = document.getElementById('clipper-target-folder');
+  const clipperFolderNameEl = document.getElementById('clipper-folder-current-name');
+  const clipperFolderPopover = document.getElementById('clipper-folder-popover');
+  if (clipperHiddenInp) {
+    let currentId = clipperHiddenInp.value;
+    if (!currentId || !state.folders.some((f) => f.id === currentId)) {
+      currentId = state.folders.some((f) => f.id === 'f_clip') ? 'f_clip' : (state.folders[0]?.id || 'f_work');
+      clipperHiddenInp.value = currentId;
+    }
+    const targetFolder = state.folders.find((f) => f.id === currentId) || state.folders[0];
+    if (clipperFolderNameEl) clipperFolderNameEl.textContent = targetFolder?.name || '폴더 없음';
+
+    if (clipperFolderPopover) {
+      clipperFolderPopover.innerHTML = state.folders.map((f) => `
+        <button type="button" class="meta-popover-item ${f.id === currentId ? 'active' : ''}" data-folder-id="${f.id}">
+          ${escapeHtml(f.name)}
+        </button>
+      `).join('');
     }
   }
 
@@ -1834,10 +1846,21 @@ function closeTagPopover() {
 function closeMetaPopovers() {
   const folderPop = document.getElementById('note-folder-popover');
   const statusPop = document.getElementById('note-status-popover');
+  const clipperFolderPop = document.getElementById('clipper-folder-popover');
+  const sortPop = document.getElementById('sort-popover');
+  const graphCenterPop = document.getElementById('graph-center-popover');
+
   if (folderPop) folderPop.classList.add('hidden');
   if (statusPop) statusPop.classList.add('hidden');
+  if (clipperFolderPop) clipperFolderPop.classList.add('hidden');
+  if (sortPop) sortPop.classList.add('hidden');
+  if (graphCenterPop) graphCenterPop.classList.add('hidden');
+
   document.getElementById('btn-note-folder-picker')?.classList.remove('active');
   document.getElementById('btn-note-status-picker')?.classList.remove('active');
+  document.getElementById('btn-clipper-folder-picker')?.classList.remove('active');
+  document.getElementById('btn-sort-picker')?.classList.remove('active');
+  document.getElementById('btn-graph-center-picker')?.classList.remove('active');
 }
 
 function commitPopoverTags() {
@@ -5164,11 +5187,22 @@ function renderKnowledgeGraph() {
     localBtn.classList.toggle('active', graphViewMode === 'local');
     globalBtn.classList.toggle('active', graphViewMode === 'global');
   }
-  if (centerSelect) {
-    centerSelect.innerHTML = notes
+  const centerHiddenInp = document.getElementById('graph-center-note-select');
+  const centerNameEl = document.getElementById('graph-center-current-name');
+  const centerPopover = document.getElementById('graph-center-popover');
+  const currentCenterNote = notes.find((n) => n.id === graphCenterNoteId) || notes[0];
+  if (centerHiddenInp) centerHiddenInp.value = currentCenterNote?.id || '';
+  if (centerNameEl) {
+    centerNameEl.textContent = currentCenterNote ? `기준 문서: ${(currentCenterNote.title || '제목 없음').slice(0, 24)}` : '기준 문서 없음';
+  }
+  if (centerPopover) {
+    centerPopover.innerHTML = notes
       .map(
-        (n) =>
-          `<option value="${n.id}" ${n.id === graphCenterNoteId ? 'selected' : ''}>기준 문서: ${escapeHtml((n.title || '제목 없음').slice(0, 32))}</option>`
+        (n) => `
+        <button type="button" class="meta-popover-item ${n.id === currentCenterNote?.id ? 'active' : ''}" data-note-id="${n.id}">
+          ${escapeHtml((n.title || '제목 없음').slice(0, 36))}
+        </button>
+      `
       )
       .join('');
   }
@@ -9153,7 +9187,51 @@ function bindEvents() {
   document.addEventListener('mousedown', hideToolbarIfOutside);
   document.addEventListener('touchend', hideToolbarIfOutside);
 
-  document.getElementById('sort-select').addEventListener('change', () => {
+  // Custom Sort Picker Event Listeners
+  const sortBtn = document.getElementById('btn-sort-picker');
+  const sortPopoverEl = document.getElementById('sort-popover');
+  const sortHiddenInp = document.getElementById('sort-select');
+  const sortCurrentNameEl = document.getElementById('sort-current-name');
+  const sortNamesMap = {
+    updated_desc: '최근 수정순',
+    created_desc: '최근 생성순',
+    fav_first: '중요 표시 우선',
+    title_asc: '제목 가나다순',
+    custom: '사용자 지정'
+  };
+
+  sortBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = sortPopoverEl?.classList.contains('hidden');
+    closeMetaPopovers();
+    closeTagPopover();
+    if (isHidden) {
+      sortPopoverEl?.classList.remove('hidden');
+      sortBtn?.classList.add('active');
+    }
+  });
+
+  sortPopoverEl?.addEventListener('click', (e) => {
+    const item = e.target.closest('.meta-popover-item');
+    if (!item) return;
+    e.stopPropagation();
+    const sortVal = item.dataset.sort;
+    closeMetaPopovers();
+    if (sortHiddenInp && sortVal) {
+      sortHiddenInp.value = sortVal;
+      if (sortCurrentNameEl) sortCurrentNameEl.textContent = sortNamesMap[sortVal] || sortVal;
+      sortPopoverEl.querySelectorAll('.meta-popover-item').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.sort === sortVal);
+      });
+      renderMainNoteListView();
+      renderSidebar();
+    }
+  });
+
+  sortHiddenInp?.addEventListener('change', () => {
+    if (sortCurrentNameEl && sortHiddenInp.value) {
+      sortCurrentNameEl.textContent = sortNamesMap[sortHiddenInp.value] || sortHiddenInp.value;
+    }
     renderMainNoteListView();
     renderSidebar();
   });
@@ -9326,6 +9404,65 @@ function bindEvents() {
     if (!note) return;
     note.status = e.target.value;
     touchNote(note);
+  });
+
+  // Custom Clipper Folder Picker Event Listeners
+  const clipperFolderBtn = document.getElementById('btn-clipper-folder-picker');
+  const clipperFolderPopoverEl = document.getElementById('clipper-folder-popover');
+  clipperFolderBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = clipperFolderPopoverEl?.classList.contains('hidden');
+    closeMetaPopovers();
+    closeTagPopover();
+    if (isHidden) {
+      clipperFolderPopoverEl?.classList.remove('hidden');
+      clipperFolderBtn?.classList.add('active');
+    }
+  });
+
+  clipperFolderPopoverEl?.addEventListener('click', (e) => {
+    const item = e.target.closest('.meta-popover-item');
+    if (!item) return;
+    e.stopPropagation();
+    const folderId = item.dataset.folderId;
+    closeMetaPopovers();
+    const clipperHiddenInp = document.getElementById('clipper-target-folder');
+    const clipperFolderNameEl = document.getElementById('clipper-folder-current-name');
+    if (clipperHiddenInp && folderId) {
+      clipperHiddenInp.value = folderId;
+      const targetFolder = state.folders.find((f) => f.id === folderId);
+      if (clipperFolderNameEl) clipperFolderNameEl.textContent = targetFolder?.name || '폴더 없음';
+      renderSidebar();
+    }
+  });
+
+  // Custom Graph Center Note Picker Event Listeners
+  const graphCenterBtn = document.getElementById('btn-graph-center-picker');
+  const graphCenterPopoverEl = document.getElementById('graph-center-popover');
+  graphCenterBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = graphCenterPopoverEl?.classList.contains('hidden');
+    closeMetaPopovers();
+    closeTagPopover();
+    if (isHidden) {
+      graphCenterPopoverEl?.classList.remove('hidden');
+      graphCenterBtn?.classList.add('active');
+    }
+  });
+
+  graphCenterPopoverEl?.addEventListener('click', (e) => {
+    const item = e.target.closest('.meta-popover-item');
+    if (!item) return;
+    e.stopPropagation();
+    const noteId = item.dataset.noteId;
+    closeMetaPopovers();
+    if (noteId) {
+      graphCenterNoteId = noteId;
+      activeNoteId = noteId;
+      graphViewMode = 'local';
+      selectedGraphNodeId = null;
+      renderKnowledgeGraph();
+    }
   });
 
   // Tag Popover (Notion-style) Listeners

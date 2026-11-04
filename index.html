@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v135" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v136" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v135" />
+  <link rel="stylesheet" href="./src/styles.css?v=v136" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v135</span>
+        <span class="app-version-badge" id="app-version-display">v136</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -192,12 +192,19 @@
                 <input type="text" id="list-view-search" placeholder="현재 목록 내 검색..." class="list-search-input" />
                 <button type="button" id="btn-clear-list-search" class="search-clear-btn hidden" title="검색어 지우기">✕</button>
               </div>
-              <select id="sort-select" class="select-sm" title="정렬 기준">
-                <option value="updated_desc" selected>최근 수정순</option>
-                <option value="created_desc">최근 생성순</option>
-                <option value="fav_first">중요 표시 우선</option>
-                <option value="title_asc">제목 가나다순</option>
-              </select>
+              <div class="meta-popover-wrap">
+                <button type="button" id="btn-sort-picker" class="meta-select-btn" style="border:1px solid var(--border);padding:5px 9px;border-radius:6px;background:var(--bg-secondary);color:var(--text);" title="정렬 기준">
+                  <span id="sort-current-name">최근 수정순</span>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:5px;opacity:0.7;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="sort-popover" class="meta-popover-menu hidden">
+                  <button type="button" class="meta-popover-item active" data-sort="updated_desc">최근 수정순</button>
+                  <button type="button" class="meta-popover-item" data-sort="created_desc">최근 생성순</button>
+                  <button type="button" class="meta-popover-item" data-sort="fav_first">중요 표시 우선</button>
+                  <button type="button" class="meta-popover-item" data-sort="title_asc">제목 가나다순</button>
+                </div>
+              </div>
+              <input type="hidden" id="sort-select" value="updated_desc" />
               <button type="button" id="btn-empty-trash" class="btn btn-danger btn-sm hidden">휴지통 비우기</button>
             </div>
           </div>
@@ -504,7 +511,14 @@
                 <button type="button" id="btn-graph-mode-local" class="seg-btn active">선택 문서 중심 (연관 문서만)</button>
                 <button type="button" id="btn-graph-mode-global" class="seg-btn">전체 문서 보기</button>
               </div>
-              <select id="graph-center-note-select" class="select-sm" title="기준 문서 선택" style="max-width:240px;"></select>
+              <div class="meta-popover-wrap">
+                <button type="button" id="btn-graph-center-picker" class="meta-select-btn" style="border:1px solid var(--border);padding:5px 9px;border-radius:6px;background:var(--bg-secondary);color:var(--text);max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="기준 문서 변경">
+                  <span id="graph-center-current-name">기준 문서 선택</span>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:5px;opacity:0.7;flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="graph-center-popover" class="meta-popover-menu hidden" style="max-height:280px;overflow-y:auto;min-width:220px;"></div>
+              </div>
+              <input type="hidden" id="graph-center-note-select" value="" />
               <button type="button" id="btn-graph-open-center" class="btn btn-primary btn-sm">기준 문서 열기</button>
             </div>
           </div>
@@ -521,8 +535,15 @@
             <h3>웹 클리퍼</h3>
             <p class="text-muted">URL에서 본문을 추출하거나 복사한 웹 콘텐츠를 깔끔한 노트로 변환합니다.</p>
             <div class="clipper-target-folder-row mt-12" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
-              <label for="clipper-target-folder" style="font-weight:600;white-space:nowrap;">저장 대상 폴더:</label>
-              <select id="clipper-target-folder" class="select-sm" style="max-width:220px;"></select>
+              <span style="font-weight:600;white-space:nowrap;">저장 대상 폴더:</span>
+              <div class="meta-popover-wrap">
+                <button type="button" id="btn-clipper-folder-picker" class="meta-select-btn" style="border:1px solid var(--border);padding:4px 9px;border-radius:6px;background:var(--bg-secondary);color:var(--text);" title="저장 폴더 변경">
+                  <span id="clipper-folder-current-name">웹 스크랩</span>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:5px;opacity:0.7;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="clipper-folder-popover" class="meta-popover-menu hidden"></div>
+              </div>
+              <input type="hidden" id="clipper-target-folder" value="f_clip" />
             </div>
           </div>
 
@@ -1004,6 +1025,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v135"></script>
+  <script type="module" src="./src/app.js?v=v136"></script>
 </body>
 </html>
