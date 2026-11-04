@@ -2121,7 +2121,7 @@ function updateMultiBlockActionBar() {
   if (!bar) return;
   const count = selectedBlockIds.size;
   if (count > 0) {
-    if (countEl) countEl.textContent = `${count}개 줄 선택됨`;
+    if (countEl) countEl.textContent = `${count}줄 선택`;
     bar.classList.remove('hidden');
   } else {
     bar.classList.add('hidden');
@@ -2200,6 +2200,63 @@ function deleteSelectedBlocks() {
   touchNote(note, blocks);
   renderActiveNoteEditor();
   showToast(`${count}개 줄이 삭제되었습니다. (되돌리기: ↩ 또는 Ctrl+Z)`);
+}
+
+/**
+ * 선택된 블록들을 마크다운 기호 없이 순수 텍스트(Plain Text) 그대로 클립보드에 복사
+ */
+async function copySelectedBlocks() {
+  if (selectedBlockIds.size === 0) return;
+  const note = getActiveNote();
+  const blocks = getEditableBlocksForNote(note);
+  if (!note || !blocks) return;
+
+  // 원문 블록 순서대로 선택된 블록만 추출
+  const targetBlocks = blocks.filter((b) => selectedBlockIds.has(b.id));
+  if (targetBlocks.length === 0) return;
+
+  const lines = targetBlocks.map((b) => {
+    if (b.type === 'table' && Array.isArray(b.rows)) {
+      return b.rows.map((row) => (Array.isArray(row) ? row.join('\t') : '')).join('\n');
+    }
+    if (b.type === 'image') {
+      return b.ocrText ? `[이미지 텍스트]\n${b.ocrText}` : '[이미지]';
+    }
+    if (b.type === 'divider') {
+      return '---';
+    }
+    return String(b.text || '');
+  });
+
+  const plainText = lines.join('\n');
+  let success = false;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(plainText);
+      success = true;
+    } catch (_) {}
+  }
+
+  if (!success) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = plainText;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      success = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (_) {}
+  }
+
+  if (success) {
+    showToast(`${targetBlocks.length}개 줄이 클립보드에 복사되었습니다.`);
+  } else {
+    showToast('클립보드 복사에 실패했습니다.');
+  }
 }
 
 /**
@@ -8533,13 +8590,17 @@ function bindEvents() {
     }
   });
 
-  document.getElementById('btn-delete-selected-blocks')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    deleteSelectedBlocks();
-  });
   document.getElementById('btn-select-all-blocks')?.addEventListener('click', (e) => {
     e.preventDefault();
     selectAllBlocks();
+  });
+  document.getElementById('btn-copy-selected-blocks')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    copySelectedBlocks();
+  });
+  document.getElementById('btn-delete-selected-blocks')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    deleteSelectedBlocks();
   });
   document.getElementById('btn-cancel-block-selection')?.addEventListener('click', (e) => {
     e.preventDefault();

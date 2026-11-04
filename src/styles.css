@@ -2112,7 +2112,7 @@ select:focus {
 .btn-multi-del:active {
   transform: scale(0.97);
 }
-.btn-multi-cancel, .btn-multi-select-all {
+.btn-multi-cancel, .btn-multi-select-all, .btn-multi-copy {
   background: transparent;
   color: var(--text-main);
   border: 1px solid var(--border-strong);
@@ -2123,10 +2123,9 @@ select:focus {
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
-.btn-multi-cancel:hover, .btn-multi-select-all:hover {
+.btn-multi-cancel:hover, .btn-multi-select-all:hover, .btn-multi-copy:hover {
   background: var(--bg-hover);
   color: var(--text-main);
-  color: var(--text-color, #111);
 }
 
 .block-gutter {
@@ -3296,11 +3295,30 @@ mark.search-highlight {
   }
   .multi-block-action-bar {
     bottom: 16px;
-    width: calc(100% - 32px);
-    max-width: 400px;
-    justify-content: space-between;
-    padding: 8px 14px;
+    width: calc(100% - 20px);
+    max-width: 420px;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 10px;
     box-sizing: border-box;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .multi-block-count {
+    padding-right: 6px;
+    font-size: 12px;
+  }
+  .btn-multi-turninto,
+  .btn-multi-select-all,
+  .btn-multi-copy,
+  .btn-multi-del {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .btn-multi-cancel {
+    padding: 5px 7px;
+    font-size: 12px;
   }
 }
 
