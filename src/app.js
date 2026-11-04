@@ -1307,7 +1307,11 @@ function renderSidebar() {
   if (clipperFolderSel) {
     const prev = clipperFolderSel.value;
     clipperFolderSel.innerHTML = state.folders.map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
-    if (prev && state.folders.some((f) => f.id === prev)) clipperFolderSel.value = prev;
+    if (prev && state.folders.some((f) => f.id === prev)) {
+      clipperFolderSel.value = prev;
+    } else if (state.folders.some((f) => f.id === 'f_clip')) {
+      clipperFolderSel.value = 'f_clip';
+    }
   }
 
   // Tags (Smart Tag Management: Popular Top 15 + Lazy On-Demand Rendering)
