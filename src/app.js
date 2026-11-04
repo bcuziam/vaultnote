@@ -8095,19 +8095,24 @@ function getNavStateSnapshot(depth = 0) {
   };
 }
 
+function isPureNoteListView() {
+  const isSpecialNav = ['graph', 'vault', 'clipper'].includes(activeNav);
+  return activeViewMode === 'list' && !isSpecialNav;
+}
+
 function initNavigationHistory() {
   if (isHistoryInitialized) return;
   isHistoryInitialized = true;
 
-  const isList = activeViewMode === 'list';
+  const isList = isPureNoteListView();
 
-  // 1. Tier 0 바닥 상태: 목록 화면을 히스토리 루트로 고정
+  // 1. Tier 0 바닥 상태: 순수 목록 화면을 히스토리 루트로 고정
   window.history.replaceState(
     { vn: true, depth: 0, view: 'list', activeNav: 'all' },
     ''
   );
 
-  // 2. 만약 첫 화면이 본문(에디터)이라면 Tier 1 상태를 1개 push
+  // 2. 만약 첫 화면이 본문(에디터) 또는 특수화면(연결도, 금고, 클리퍼)이라면 Tier 1 상태를 1개 push
   if (!isList) {
     window.history.pushState(getNavStateSnapshot(1), '');
   }
@@ -8116,7 +8121,7 @@ function initNavigationHistory() {
   // 앱 최초 구동 후 사용자가 화면을 처음 터치/클릭하는 순간,
   // 브라우저가 Tier 1 스택을 정식 제스처 엔트리로 확정하도록 보장
   const ensureUserGestureActivation = () => {
-    if (activeViewMode !== 'list' && window.history.state?.depth !== 1) {
+    if (!isPureNoteListView() && window.history.state?.depth !== 1) {
       window.history.pushState(getNavStateSnapshot(1), '');
     }
   };
@@ -8127,7 +8132,7 @@ function initNavigationHistory() {
 function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
   if (!isHistoryInitialized) return;
   const currentDepth = Number(window.history.state?.depth ?? 0);
-  const isList = activeViewMode === 'list';
+  const isList = isPureNoteListView();
 
   if (fromPopState) {
     // popstate로 이동해왔을 때:
@@ -8141,7 +8146,7 @@ function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
   if (isList) {
     // [목록 화면으로 전환할 때]
     if (currentDepth === 1) {
-      // 1층(상세)에 있던 상태에서 화면 버튼/메뉴를 눌러 목록으로 나가는 경우:
+      // 1층(상세/특수화면)에 있던 상태에서 화면 버튼/메뉴를 눌러 목록으로 나가는 경우:
       // 브라우저 히스토리를 1단계 뒤로(history.back) 감아주어 스택 중복을 완벽히 방지!
       // (목록에 진입했을 때 스택이 무조건 0층에 위치하게 됨)
       window.history.back();
@@ -8150,7 +8155,7 @@ function syncNavigationHistory(fromPopState = false, replaceHistory = false) {
       window.history.replaceState(getNavStateSnapshot(0), '');
     }
   } else {
-    // [상세 화면(에디터/특수화면)으로 전환할 때]
+    // [상세 화면(에디터/특수화면: 연결도·금고·클리퍼)으로 전환할 때]
     if (currentDepth === 1 || replaceHistory) {
       // 이미 1층에 있거나 명시적 교체 요청이면 히스토리를 늘리지 않고 1층에서 내용만 교체
       window.history.replaceState(getNavStateSnapshot(1), '');
@@ -8543,16 +8548,18 @@ function bindEvents() {
       return;
     }
 
-    // 2. 본문(에디터) 또는 특수 뷰(1층)에서 뒤로가기를 눌렀을 때:
-    // 과거 노트를 거꾸로 순회하지 않고 무조건 최신 [목록 화면](0층)으로 직행!
-    if (activeViewMode !== 'list') {
+    // 2. 본문(에디터) 또는 특수 뷰(연결도·금고·클리퍼) 등 1층에서 뒤로가기를 눌렀을 때:
+    // 과거 노트를 거꾸로 순회하거나 앱이 꺼지지 않고 무조건 최신 [목록 화면](0층)으로 안전 직행!
+    const isSpecialScreen = ['graph', 'vault', 'clipper'].includes(activeNav);
+    if (activeViewMode !== 'list' || isSpecialScreen) {
       stopAllActiveMedia();
+      if (isSpecialScreen) activeNav = 'all';
       activeViewMode = 'list';
       renderAll(true, true);
       return;
     }
 
-    // 3. 이미 [목록 화면]일 때:
+    // 3. 이미 순수 [목록 화면](전체노트/중요/폴더)일 때:
     // 인위적인 가드를 걸지 않고 스마트폰 OS의 표준 흐름(홈 화면 퇴장/백그라운드 전환)에 맡김
   });
 
