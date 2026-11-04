@@ -3302,8 +3302,7 @@ mark.search-highlight {
     padding: 6px 10px;
     box-sizing: border-box;
     flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible !important;
   }
   .multi-block-count {
     padding-right: 6px;
@@ -3319,6 +3318,10 @@ mark.search-highlight {
   .btn-multi-cancel {
     padding: 5px 7px;
     font-size: 12px;
+  }
+  .multi-turninto-menu {
+    max-width: 90vw;
+    box-sizing: border-box;
   }
 }
 

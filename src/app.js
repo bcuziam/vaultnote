@@ -8570,25 +8570,29 @@ function bindEvents() {
   // Multi-block batch action bar listeners
   const btnMultiTurninto = document.getElementById('btn-multi-turninto');
   const turnintoMenu = document.getElementById('multi-turninto-menu');
-  btnMultiTurninto?.addEventListener('click', (e) => {
+  const handleToggleTurninto = (e) => {
     e.preventDefault();
     e.stopPropagation();
     turnintoMenu?.classList.toggle('hidden');
-  });
+  };
+  btnMultiTurninto?.addEventListener('click', handleToggleTurninto);
 
   turnintoMenu?.querySelectorAll('[data-turn-type]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    const handleSelectTurnType = (e) => {
       e.preventDefault();
       e.stopPropagation();
       applyBlockTypeToSelectedBlocks(btn.dataset.turnType);
-    });
+    };
+    btn.addEventListener('click', handleSelectTurnType);
   });
 
-  document.addEventListener('click', (e) => {
+  const handleOutsideCloseTurninto = (e) => {
     if (!e.target.closest('#multi-turninto-menu') && !e.target.closest('#btn-multi-turninto')) {
       turnintoMenu?.classList.add('hidden');
     }
-  });
+  };
+  document.addEventListener('click', handleOutsideCloseTurninto);
+  document.addEventListener('pointerdown', handleOutsideCloseTurninto);
 
   document.getElementById('btn-select-all-blocks')?.addEventListener('click', (e) => {
     e.preventDefault();
