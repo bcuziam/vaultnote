@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v138" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v140" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v138" />
+  <link rel="stylesheet" href="./src/styles.css?v=v140" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v138</span>
+        <span class="app-version-badge" id="app-version-display">v140</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -600,11 +600,14 @@
     <div class="slash-menu-title">블록 전환</div>
     <button type="button" class="slash-item" data-type="p"><strong>본문</strong> <span>일반 텍스트</span></button>
     <button type="button" class="slash-item" data-type="h1"><strong>제목 1</strong> <span>대제목 (# )</span></button>
+    <button type="button" class="slash-item" data-type="h1_num"><strong>번호 제목 1</strong> <span>1. 대제목</span></button>
     <button type="button" class="slash-item" data-type="h2"><strong>제목 2</strong> <span>중제목 (## )</span></button>
+    <button type="button" class="slash-item" data-type="h2_num"><strong>번호 제목 2</strong> <span>1.1. 중제목</span></button>
     <button type="button" class="slash-item" data-type="h3"><strong>제목 3</strong> <span>소제목 (### )</span></button>
+    <button type="button" class="slash-item" data-type="h3_num"><strong>번호 제목 3</strong> <span>1.1.1. 소제목</span></button>
     <button type="button" class="slash-item" data-type="todo"><strong>할 일 체크리스트</strong> <span>체크박스 ([] )</span></button>
     <button type="button" class="slash-item" data-type="bullet"><strong>글머리 목록</strong> <span>목록 (- )</span></button>
-    <button type="button" class="slash-item" data-type="number"><strong>번호 목록</strong> <span>순서 있는 목록</span></button>
+    <button type="button" class="slash-item" data-type="number"><strong>번호 목록</strong> <span>순서 있는 목록 (1. )</span></button>
     <button type="button" class="slash-item" data-type="toggle"><strong>토글 접기/펼치기</strong> <span>하위 내용 접기</span></button>
     <button type="button" class="slash-item" data-type="callout"><strong>인용 / 강조 박스</strong> <span>콜아웃 (> )</span></button>
     <button type="button" class="slash-item" data-type="table"><strong>표 (Table)</strong> <span>행/열 표</span></button>
@@ -612,6 +615,7 @@
     <button type="button" class="slash-item" data-type="secret"><strong>가림(보안) 블록</strong> <span>마우스 오버 시 표시</span></button>
     <button type="button" class="slash-item" data-type="divider"><strong>구분선</strong> <span>가로선 (---)</span></button>
     <div class="slash-menu-title" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;">블록 작업</div>
+    <button type="button" class="slash-item" data-blockact="toggle_num"><strong>번호 매기기 켜기/끄기</strong> <span>순번 자동 채번 토글</span></button>
     <button type="button" class="slash-item" data-blockact="select"><strong>줄 다중 선택 모드</strong> <span>여러 줄 일괄 삭제/선택</span></button>
     <button type="button" class="slash-item" data-blockact="summarize"><strong>문서 상단 요약정리</strong> <span>본문 핵심 요약 생성</span></button>
     <button type="button" class="slash-item" data-blockact="up"><strong>위로 이동</strong> <span>한 줄 위로</span></button>
@@ -961,11 +965,15 @@
       <div id="multi-turninto-menu" class="multi-turninto-menu hidden">
         <button type="button" data-turn-type="p"><strong>본문</strong> <span>일반 텍스트</span></button>
         <button type="button" data-turn-type="h1"><strong>제목 1</strong> <span>대제목</span></button>
+        <button type="button" data-turn-type="h1_num"><strong>번호 제목 1</strong> <span>1. 대제목</span></button>
         <button type="button" data-turn-type="h2"><strong>제목 2</strong> <span>중제목</span></button>
+        <button type="button" data-turn-type="h2_num"><strong>번호 제목 2</strong> <span>1.1. 중제목</span></button>
         <button type="button" data-turn-type="h3"><strong>제목 3</strong> <span>소제목</span></button>
+        <button type="button" data-turn-type="h3_num"><strong>번호 제목 3</strong> <span>1.1.1. 소제목</span></button>
         <button type="button" data-turn-type="todo"><strong>할 일 체크리스트</strong> <span>체크박스</span></button>
         <button type="button" data-turn-type="bullet"><strong>글머리 목록</strong> <span>불릿 (- )</span></button>
         <button type="button" data-turn-type="number"><strong>번호 목록</strong> <span>1. 2. 3.</span></button>
+        <button type="button" data-turn-type="toggle_num"><strong>번호 켜기/끄기</strong> <span>순번 토글</span></button>
         <button type="button" data-turn-type="callout"><strong>인용 / 콜아웃</strong> <span>강조 박스</span></button>
         <button type="button" data-turn-type="toggle"><strong>토글 목록</strong> <span>접기/펼치기</span></button>
         <button type="button" data-turn-type="code"><strong>코드 블록</strong> <span>코드</span></button>
@@ -1030,6 +1038,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v138"></script>
+  <script type="module" src="./src/app.js?v=v140"></script>
 </body>
 </html>

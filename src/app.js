@@ -2101,19 +2101,96 @@ function clearBlockSelection() {
   updateMultiBlockActionBar();
 }
 
+/**
+ * 스마트 동적 계층형 번호 채번 엔진 (방식 2)
+ * - 제목 계층: 제목 1이 없으면 현재 최상위인 제목 2 기준 1., 2. 로 독립 시작
+ *   - h1 + numbered: 1., 2. (하위 카운터 초기화)
+ *   - h2 + numbered: h1이 있으면 1.1., 1.2. / h1이 없으면 1., 2.
+ *   - h3 + numbered: h1/h2 상태에 따라 1.1.1. / 1.1. / 1.
+ * - 번호 목록: 번호 목록 블록들만 세어서 1., 2. / 들여쓰기 시 1.1., 1.2.
+ * - 번호 없는 일반 블록은 건너뛰며 카운터를 올리지 않음
+ */
+function calculateBlockNumberLabels(blocks) {
+  const labels = new Map();
+  if (!Array.isArray(blocks)) return labels;
+
+  let h1Count = 0;
+  let h2Count = 0;
+  let h3Count = 0;
+  let listCounters = [];
+
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (!b) continue;
+
+    const isNumberedHeading = Boolean(b.numbered) && ['h1', 'h2', 'h3'].includes(b.type);
+    const isNumberList = b.type === 'number' || (Boolean(b.numbered) && b.type === 'p');
+
+    if (isNumberedHeading) {
+      listCounters = [];
+
+      if (b.type === 'h1') {
+        h1Count += 1;
+        h2Count = 0;
+        h3Count = 0;
+        labels.set(b.id, `${h1Count}.`);
+      } else if (b.type === 'h2') {
+        h2Count += 1;
+        h3Count = 0;
+        if (h1Count === 0) {
+          labels.set(b.id, `${h2Count}.`);
+        } else {
+          labels.set(b.id, `${h1Count}.${h2Count}.`);
+        }
+      } else if (b.type === 'h3') {
+        h3Count += 1;
+        if (h1Count === 0 && h2Count === 0) {
+          labels.set(b.id, `${h3Count}.`);
+        } else if (h1Count === 0) {
+          labels.set(b.id, `${h2Count}.${h3Count}.`);
+        } else {
+          labels.set(b.id, `${h1Count}.${h2Count}.${h3Count}.`);
+        }
+      }
+    } else if (isNumberList) {
+      const indent = Math.max(0, b.indent || 0);
+      while (listCounters.length <= indent) {
+        listCounters.push(0);
+      }
+      listCounters.length = indent + 1;
+      listCounters[indent] += 1;
+
+      if (indent === 0) {
+        labels.set(b.id, `${listCounters[0]}.`);
+      } else {
+        const parts = listCounters.slice(0, indent + 1);
+        labels.set(b.id, `${parts.join('.')}.`);
+      }
+    } else {
+      listCounters = [];
+    }
+  }
+
+  return labels;
+}
+
 function getBlockTypeLabel(type) {
   const map = {
     p: '본문',
     h1: '제목 1',
     h2: '제목 2',
     h3: '제목 3',
+    h1_num: '번호 제목 1',
+    h2_num: '번호 제목 2',
+    h3_num: '번호 제목 3',
     todo: '할 일 체크리스트',
     bullet: '글머리 목록',
     number: '번호 목록',
     toggle: '토글 목록',
     callout: '인용/콜아웃',
     code: '코드 블록',
-    table: '표'
+    table: '표',
+    toggle_num: '번호 매기기 토글'
   };
   return map[type] || type;
 }
@@ -2129,11 +2206,23 @@ function applyBlockTypeToSelectedBlocks(newType) {
   let count = 0;
   for (const block of blocks) {
     if (selectedBlockIds.has(block.id)) {
-      block.type = newType;
-      if (newType === 'todo' && block.checked === undefined) {
+      if (newType === 'toggle_num') {
+        block.numbered = !block.numbered;
+      } else if (newType.endsWith('_num')) {
+        const baseType = newType.replace('_num', '');
+        block.type = baseType;
+        block.numbered = true;
+      } else {
+        block.type = newType;
+        block.numbered = false;
+      }
+      if (block.type === 'number') {
+        block.numbered = true;
+      }
+      if (block.type === 'todo' && block.checked === undefined) {
         block.checked = false;
       }
-      if (newType === 'table' && !block.rows) {
+      if (block.type === 'table' && !block.rows) {
         block.rows = [
           ['항목', '내용', '비고'],
           ['', '', '']
@@ -2679,6 +2768,8 @@ function renderBlocksList(note, blocks) {
     if (!validIds.has(id)) selectedBlockIds.delete(id);
   }
   updateMultiBlockActionBar();
+
+  const numberLabels = calculateBlockNumberLabels(blocks);
 
   blocks.forEach((block, idx) => {
     const row = document.createElement('div');
@@ -3239,7 +3330,13 @@ function renderBlocksList(note, blocks) {
         innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;">${bulletChar}</span>`;
       } else if (block.type === 'number') {
         innerWrap.className = 'block-todo-wrap';
-        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;">${idx + 1}.</span>`;
+        const numLabel = numberLabels.get(block.id) || '1.';
+        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;font-weight:500;">${numLabel}</span>`;
+      } else if (['h1', 'h2', 'h3'].includes(block.type) && block.numbered) {
+        innerWrap.className = 'block-todo-wrap block-heading-numbered-wrap';
+        const numLabel = numberLabels.get(block.id) || '';
+        const fontSize = block.type === 'h1' ? '20px' : (block.type === 'h2' ? '17px' : '15px');
+        innerWrap.innerHTML = `<span class="heading-num-badge" style="padding-top:2px;color:var(--text-secondary);font-size:${fontSize};font-weight:700;margin-right:2px;user-select:none;">${numLabel}</span>`;
       } else if (block.type === 'callout') {
         innerWrap.className = 'block-callout';
       } else if (block.type === 'secret') {
@@ -3255,8 +3352,33 @@ function renderBlocksList(note, blocks) {
       ta.addEventListener('input', () => {
         const val = ta.value;
         if (block.type === 'p') {
-          if (val.startsWith('# ')) {
+          if (val.startsWith('# 1. ') || val.startsWith('# 1 ')) {
             block.type = 'h1';
+            block.numbered = true;
+            block.text = val.slice(val.startsWith('# 1. ') ? 5 : 4);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('## 1. ') || val.startsWith('## 1 ')) {
+            block.type = 'h2';
+            block.numbered = true;
+            block.text = val.slice(val.startsWith('## 1. ') ? 6 : 5);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('### 1. ') || val.startsWith('### 1 ')) {
+            block.type = 'h3';
+            block.numbered = true;
+            block.text = val.slice(val.startsWith('### 1. ') ? 7 : 6);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (val.startsWith('# ')) {
+            block.type = 'h1';
+            block.numbered = false;
             block.text = val.slice(2);
             touchNote(note, blocks);
             renderActiveNoteEditor();
@@ -3264,6 +3386,7 @@ function renderBlocksList(note, blocks) {
             return;
           } else if (val.startsWith('## ')) {
             block.type = 'h2';
+            block.numbered = false;
             block.text = val.slice(3);
             touchNote(note, blocks);
             renderActiveNoteEditor();
@@ -3271,7 +3394,16 @@ function renderBlocksList(note, blocks) {
             return;
           } else if (val.startsWith('### ')) {
             block.type = 'h3';
+            block.numbered = false;
             block.text = val.slice(4);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id);
+            return;
+          } else if (/^\d+\.\s/.test(val)) {
+            block.type = 'number';
+            block.numbered = true;
+            block.text = val.replace(/^\d+\.\s/, '');
             touchNote(note, blocks);
             renderActiveNoteEditor();
             focusBlock(block.id);
@@ -3371,8 +3503,8 @@ function renderBlocksList(note, blocks) {
           closeSlashMenu();
           recordPreActionSnapshot();
 
-          // 1. 빈 목록(todo, bullet, number)에서 엔터 시 들여쓰기 감소 또는 일반 문단(p)으로 변환
-          if (['todo', 'bullet', 'number'].includes(block.type) && !currentText.trim()) {
+          // 1. 빈 목록(todo, bullet, number) 또는 번호 제목에서 엔터 시 들여쓰기 감소 또는 일반 문단(p)으로 변환
+          if ((['todo', 'bullet', 'number'].includes(block.type) || block.numbered) && !currentText.trim()) {
             if ((block.indent || 0) > 0) {
               block.indent = (block.indent || 0) - 1;
               touchNote(note, blocks);
@@ -3381,6 +3513,7 @@ function renderBlocksList(note, blocks) {
               return;
             }
             block.type = 'p';
+            block.numbered = false;
             touchNote(note, blocks);
             renderActiveNoteEditor();
             focusBlock(block.id);
@@ -3390,7 +3523,7 @@ function renderBlocksList(note, blocks) {
           // 2. [노션 표준] 커서가 문장 맨 앞(0번째)에 있을 때:
           // 현재 블록 위에 새 빈 줄을 삽입하고, 새 빈 줄에 포커스를 줌! (기존 글은 아래로 밀림)
           if (selStart === 0 && currentText.length > 0) {
-            const newBlock = { id: uid('b'), type: 'p', text: '', checked: false, indent: block.indent || 0 };
+            const newBlock = { id: uid('b'), type: 'p', text: '', checked: false, indent: block.indent || 0, numbered: false };
             blocks.splice(idx, 0, newBlock);
             touchNote(note, blocks);
             renderActiveNoteEditor();
@@ -3404,9 +3537,20 @@ function renderBlocksList(note, blocks) {
           const tailText = currentText.slice(selStart);
           block.text = headText;
 
-          // 헤딩(H1/H2/H3) 뒤에서 엔터를 치면 다음 줄은 일반 본문('p')으로 전환, 목록은 목록 타입 유지
-          const nextType = ['todo', 'bullet', 'number'].includes(block.type) ? block.type : 'p';
-          const newBlock = { id: uid('b'), type: nextType, text: tailText, checked: false, indent: block.indent || 0 };
+          // 헤딩(H1/H2/H3) 뒤에서 엔터를 칠 때:
+          // 번호가 지정된 헤딩(block.numbered)이면 다음 줄도 동일한 헤딩 타입과 numbered: true를 유지!
+          // 일반 헤딩(numbered 없음)이면 다음 줄은 일반 본문('p')으로 전환, 목록은 목록 타입 유지
+          let nextType = 'p';
+          let nextNumbered = false;
+          if (['todo', 'bullet', 'number'].includes(block.type)) {
+            nextType = block.type;
+            nextNumbered = block.type === 'number';
+          } else if (['h1', 'h2', 'h3'].includes(block.type) && block.numbered) {
+            nextType = block.type;
+            nextNumbered = true;
+          }
+
+          const newBlock = { id: uid('b'), type: nextType, text: tailText, checked: false, indent: block.indent || 0, numbered: nextNumbered };
           blocks.splice(idx + 1, 0, newBlock);
           touchNote(note, blocks);
           renderActiveNoteEditor();
@@ -3424,11 +3568,23 @@ function renderBlocksList(note, blocks) {
             focusBlock(block.id, 0);
             return;
           }
+          if (block.numbered) {
+            e.preventDefault();
+            closeSlashMenu();
+            recordPreActionSnapshot();
+            block.numbered = false;
+            if (block.type === 'number') block.type = 'p';
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            focusBlock(block.id, 0);
+            return;
+          }
           if (block.type !== 'p' && isMergeableTextType(block.type)) {
             e.preventDefault();
             closeSlashMenu();
             recordPreActionSnapshot();
             block.type = 'p';
+            block.numbered = false;
             touchNote(note, blocks);
             renderActiveNoteEditor();
             focusBlock(block.id, 0);
@@ -3985,12 +4141,23 @@ function applyBlockType(blockId, newType) {
   for (const id of targetIds) {
     const target = blocks.find((b) => b.id === id);
     if (target) {
-      target.type = newType;
+      if (newType === 'toggle_num') {
+        target.numbered = !target.numbered;
+      } else if (newType.endsWith('_num')) {
+        target.type = newType.replace('_num', '');
+        target.numbered = true;
+      } else {
+        target.type = newType;
+        target.numbered = false;
+      }
+      if (target.type === 'number') {
+        target.numbered = true;
+      }
       if (target.text === '/') target.text = '';
-      if (newType === 'todo' && target.checked === undefined) {
+      if (target.type === 'todo' && target.checked === undefined) {
         target.checked = false;
       }
-      if (newType === 'table' && !target.rows) {
+      if (target.type === 'table' && !target.rows) {
         target.rows = [
           ['항목', '내용', '비고'],
           ['', '', '']
@@ -4019,6 +4186,11 @@ function executeBlockAction(blockId, action) {
   if (action === 'summarize') {
     closeSlashMenu();
     summarizeCurrentActiveNote();
+    return;
+  }
+  if (action === 'toggle_num') {
+    closeSlashMenu();
+    applyBlockType(blockId, 'toggle_num');
     return;
   }
   const note = getActiveNote();
@@ -4215,22 +4387,26 @@ function renderSecondarySplitPane() {
   const folder = state.folders.find((f) => f.id === secNote.folderId);
   const updatedDateStr = formatDate(secNote.updatedAt || secNote.createdAt);
 
-  let listNumberCounter = 0;
+  const secNumberLabels = calculateBlockNumberLabels(secBlocks);
 
   const blocksHtml = secBlocks.map((b) => {
-    if (b.type !== 'number') {
-      listNumberCounter = 0;
-    }
     const indent = b.indent || 0;
     const indentStyle = indent ? `margin-left:${indent * 24}px;` : '';
+    const numLabel = secNumberLabels.get(b.id);
 
     switch (b.type) {
-      case 'h1':
-        return `<h1 class="split-doc-h1">${renderMarkdownInlineHtml(b.text || '')}</h1>`;
-      case 'h2':
-        return `<h2 class="split-doc-h2">${renderMarkdownInlineHtml(b.text || '')}</h2>`;
-      case 'h3':
-        return `<h3 class="split-doc-h3">${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      case 'h1': {
+        const prefix = numLabel ? `<span class="split-heading-num-label" style="color:var(--text-secondary);font-size:18px;font-weight:700;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h1 class="split-doc-h1">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h1>`;
+      }
+      case 'h2': {
+        const prefix = numLabel ? `<span class="split-heading-num-label" style="color:var(--text-secondary);font-size:16px;font-weight:700;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h2 class="split-doc-h2">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h2>`;
+      }
+      case 'h3': {
+        const prefix = numLabel ? `<span class="split-heading-num-label" style="color:var(--text-secondary);font-size:14px;font-weight:700;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h3 class="split-doc-h3">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      }
       case 'callout':
         return `
           <div class="split-doc-callout" style="${indentStyle}">
@@ -4254,10 +4430,10 @@ function renderSecondarySplitPane() {
           </div>`;
       }
       case 'number': {
-        listNumberCounter += 1;
+        const displayNum = numLabel || '1.';
         return `
           <div class="split-doc-number" style="margin-left:${indent * 24}px;">
-            <span class="number-label">${listNumberCounter}.</span>
+            <span class="number-label">${displayNum}</span>
             <span class="number-text">${renderMarkdownInlineHtml(b.text || '')}</span>
           </div>`;
       }
@@ -9596,21 +9772,25 @@ function bindEvents() {
   });
 
 function renderBlocksToStaticHtml(blocks) {
-  let listNumberCounter = 0;
+  const staticNumberLabels = calculateBlockNumberLabels(blocks);
   return (blocks || []).map((b) => {
-    if (b.type !== 'number') {
-      listNumberCounter = 0;
-    }
     const indent = b.indent || 0;
     const indentPx = indent * 20;
+    const numLabel = staticNumberLabels.get(b.id);
 
     switch (b.type) {
-      case 'h1':
-        return `<h1 style="font-size:22px;font-weight:700;margin:18px 0 8px;color:#111;">${renderMarkdownInlineHtml(b.text || '')}</h1>`;
-      case 'h2':
-        return `<h2 style="font-size:18px;font-weight:600;margin:14px 0 6px;color:#222;">${renderMarkdownInlineHtml(b.text || '')}</h2>`;
-      case 'h3':
-        return `<h3 style="font-size:15px;font-weight:600;margin:10px 0 4px;color:#333;">${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      case 'h1': {
+        const prefix = numLabel ? `<span style="font-size:20px;font-weight:700;color:#6b7280;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h1 style="font-size:22px;font-weight:700;margin:18px 0 8px;color:#111;">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h1>`;
+      }
+      case 'h2': {
+        const prefix = numLabel ? `<span style="font-size:17px;font-weight:700;color:#6b7280;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h2 style="font-size:18px;font-weight:600;margin:14px 0 6px;color:#222;">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h2>`;
+      }
+      case 'h3': {
+        const prefix = numLabel ? `<span style="font-size:14px;font-weight:700;color:#6b7280;margin-right:6px;">${numLabel}</span>` : '';
+        return `<h3 style="font-size:15px;font-weight:600;margin:10px 0 4px;color:#333;">${prefix}${renderMarkdownInlineHtml(b.text || '')}</h3>`;
+      }
       case 'callout':
         return `
           <div style="background:#f8f9fa;border-left:4px solid #3b82f6;padding:10px 14px;border-radius:4px;margin:8px 0;display:flex;gap:8px;">
@@ -9634,10 +9814,10 @@ function renderBlocksToStaticHtml(blocks) {
           </div>`;
       }
       case 'number': {
-        listNumberCounter += 1;
+        const displayNum = numLabel || '1.';
         return `
           <div style="display:flex;align-items:flex-start;gap:8px;margin:4px 0;padding-left:${indentPx}px;">
-            <span style="color:#6b7280;line-height:1.6;font-weight:500;">${listNumberCounter}.</span>
+            <span style="color:#6b7280;line-height:1.6;font-weight:500;">${displayNum}</span>
             <span style="flex:1;line-height:1.6;">${renderMarkdownInlineHtml(b.text || '')}</span>
           </div>`;
       }

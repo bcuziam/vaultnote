@@ -230,19 +230,23 @@ export const VaultStorage = {
           `# ${note.title || '제목 없음'}`,
           ``
         ];
+        const numberLabels = (typeof calculateBlockNumberLabels === 'function')
+          ? calculateBlockNumberLabels(note.blocks || [])
+          : new Map();
         for (const b of note.blocks || []) {
           const indentStr = b.indent ? '  '.repeat(b.indent) : '';
-          if (b.type === 'h1') lines.push(`# ${b.text || ''}`);
-          else if (b.type === 'h2') lines.push(`## ${b.text || ''}`);
-          else if (b.type === 'h3') lines.push(`### ${b.text || ''}`);
+          const numLabel = numberLabels.get(b.id);
+          if (b.type === 'h1') lines.push(`# ${numLabel ? `${numLabel} ` : ''}${b.text || ''}`);
+          else if (b.type === 'h2') lines.push(`## ${numLabel ? `${numLabel} ` : ''}${b.text || ''}`);
+          else if (b.type === 'h3') lines.push(`### ${numLabel ? `${numLabel} ` : ''}${b.text || ''}`);
           else if (b.type === 'todo') lines.push(`${indentStr}- [${b.checked ? 'x' : ' '}] ${b.text || ''}`);
           else if (b.type === 'bullet') lines.push(`${indentStr}- ${b.text || ''}`);
-          else if (b.type === 'number') lines.push(`${indentStr}1. ${b.text || ''}`);
+          else if (b.type === 'number') lines.push(`${indentStr}${numLabel ? `${numLabel} ` : '1. '}${b.text || ''}`);
           else if (b.type === 'quote' || b.type === 'callout') lines.push(`${indentStr}> ${b.text || ''}`);
           else if (b.type === 'code') lines.push(`\`\`\`${b.lang || ''}\n${b.text || ''}\n\`\`\``);
           else if (b.type === 'divider') lines.push(`---`);
           else if (b.type === 'youtube') lines.push(`[![${b.title || 'YouTube'}](${b.thumbnailUrl || `https://img.youtube.com/vi/${b.videoId}/hqdefault.jpg`})](${b.url || `https://www.youtube.com/watch?v=${b.videoId}`})`);
-          else if (b.type === 'secret') lines.push(`> 🔒 [암호화된 보안 블록]`);
+          else if (b.type === 'secret') lines.push(`> [암호화된 보안 블록]`);
           else lines.push(indentStr ? `${indentStr}${b.text || ''}` : (b.text || ''));
           lines.push('');
         }

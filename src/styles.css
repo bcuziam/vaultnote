@@ -2245,6 +2245,22 @@ select:focus {
   opacity: 0.65;
 }
 
+.block-heading-numbered-wrap {
+  align-items: baseline !important;
+  gap: 8px;
+}
+.heading-num-badge {
+  font-family: inherit;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  user-select: none;
+}
+.split-heading-num-label {
+  color: var(--text-secondary);
+  user-select: none;
+}
+
 .block-callout {
   background: var(--bg-sidebar);
   border-left: 3px solid var(--text-secondary);
