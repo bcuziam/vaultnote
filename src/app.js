@@ -2178,6 +2178,32 @@ function calculateBlockNumberLabels(blocks) {
   return labels;
 }
 
+/**
+ * 표 내용 길이에 따른 스마트 열 너비 비율(%) 자동 계산 (노션 너비 자동 맞춤)
+ * - 한글 1.8, 영문/기호 1.0 가중치
+ * - 최소 가중치 4 보장으로 너무 좁아지는 현상 방지
+ * - 열별 최소 8% 보장
+ */
+function calculateColWidthsByContent(rows, maxCols) {
+  if (!Array.isArray(rows) || rows.length === 0 || maxCols <= 0) return [];
+  const colWeights = new Array(maxCols).fill(0);
+  for (let c = 0; c < maxCols; c++) {
+    let maxLen = 4;
+    rows.forEach((row) => {
+      const text = String((row && row[c]) || '').trim();
+      let len = 0;
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        len += code > 127 ? 1.8 : 1.0;
+      }
+      if (len > maxLen) maxLen = len;
+    });
+    colWeights[c] = Math.min(maxLen, 60);
+  }
+  const totalWeight = colWeights.reduce((a, b) => a + b, 0) || 1;
+  return colWeights.map((w) => Math.max(8, Math.round((w / totalWeight) * 100)));
+}
+
 function getBlockTypeLabel(type) {
   const map = {
     p: '본문',
@@ -3274,6 +3300,10 @@ function renderBlocksList(note, blocks) {
           const isHeader = rIdx === 0;
           const cellEl = document.createElement(isHeader ? 'th' : 'td');
 
+          if (Array.isArray(block.colWidthsPct) && block.colWidthsPct[cIdx]) {
+            cellEl.style.width = `${block.colWidthsPct[cIdx]}%`;
+          }
+
           // 셀 내부 입력 textarea (자동 줄바꿈 지원)
           const ta = document.createElement('textarea');
           ta.className = 'table-cell-input';
@@ -3386,6 +3416,8 @@ function renderBlocksList(note, blocks) {
               const menu = document.createElement('div');
               menu.className = 'table-col-menu';
               menu.innerHTML = `
+                <button type="button" class="table-col-menu-item btn-autofit-col">열 너비 내용에 맞춤</button>
+                <button type="button" class="table-col-menu-item btn-equal-col">열 너비 균등 분할</button>
                 <button type="button" class="table-col-menu-item btn-add-col-left">왼쪽에 열 추가</button>
                 <button type="button" class="table-col-menu-item btn-add-col-right">오른쪽에 열 추가</button>
                 ${maxCols > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-col-this">이 열 삭제</button>' : ''}
@@ -3396,8 +3428,8 @@ function renderBlocksList(note, blocks) {
               activeColMenu = menu;
 
               const rect = btnColMenu.getBoundingClientRect();
-              const menuW = 150;
-              const menuH = maxCols > 1 ? 112 : 78;
+              const menuW = 160;
+              const menuH = maxCols > 1 ? 180 : 145;
               let top = rect.bottom + 4;
               let left = Math.max(8, Math.min(window.innerWidth - menuW - 8, rect.right - menuW));
               if (top + menuH > window.innerHeight && rect.top > menuH + 8) {
@@ -3406,11 +3438,30 @@ function renderBlocksList(note, blocks) {
               menu.style.top = `${top}px`;
               menu.style.left = `${left}px`;
 
+              menu.querySelector('.btn-autofit-col')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                block.colWidthsPct = calculateColWidthsByContent(block.rows, maxCols);
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
+              menu.querySelector('.btn-equal-col')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                delete block.colWidthsPct;
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
               menu.querySelector('.btn-add-col-left')?.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 closeColMenu();
                 recordPreActionSnapshot();
                 block.rows.forEach((r) => r.splice(cIdx, 0, ''));
+                delete block.colWidthsPct;
                 touchNote(note, blocks);
                 renderActiveNoteEditor();
               });
@@ -3420,6 +3471,7 @@ function renderBlocksList(note, blocks) {
                 closeColMenu();
                 recordPreActionSnapshot();
                 block.rows.forEach((r) => r.splice(cIdx + 1, 0, ''));
+                delete block.colWidthsPct;
                 touchNote(note, blocks);
                 renderActiveNoteEditor();
               });
@@ -3429,6 +3481,7 @@ function renderBlocksList(note, blocks) {
                 closeColMenu();
                 recordPreActionSnapshot();
                 block.rows.forEach((r) => r.splice(cIdx, 1));
+                delete block.colWidthsPct;
                 touchNote(note, blocks);
                 renderActiveNoteEditor();
               });
