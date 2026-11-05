@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v148" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v150" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v148" />
+  <link rel="stylesheet" href="./src/styles.css?v=v150" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v148</span>
+        <span class="app-version-badge" id="app-version-display">v150</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -611,12 +611,6 @@
     <button type="button" class="slash-item" data-type="code"><strong>코드 블록</strong> <span>코드 스니펫</span></button>
     <button type="button" class="slash-item" data-type="secret"><strong>가림(보안) 블록</strong> <span>마우스 오버 시 표시</span></button>
     <button type="button" class="slash-item" data-type="divider"><strong>구분선</strong> <span>가로선 (---)</span></button>
-    <div class="slash-menu-title" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;">블록 작업</div>
-    <button type="button" class="slash-item" data-blockact="select"><strong>줄 다중 선택 모드</strong> <span>여러 줄 일괄 삭제/선택</span></button>
-    <button type="button" class="slash-item" data-blockact="summarize"><strong>문서 상단 요약정리</strong> <span>본문 핵심 요약 생성</span></button>
-    <button type="button" class="slash-item" data-blockact="up"><strong>위로 이동</strong> <span>한 줄 위로</span></button>
-    <button type="button" class="slash-item" data-blockact="down"><strong>아래로 이동</strong> <span>한 줄 아래로</span></button>
-    <button type="button" class="slash-item text-danger" data-blockact="delete"><strong>블록 삭제</strong> <span>현재 줄 삭제</span></button>
   </div>
 
   <!-- 빠른 메모 패드 (Scratchpad) -->
@@ -1030,6 +1024,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v148"></script>
+  <script type="module" src="./src/app.js?v=v150"></script>
 </body>
 </html>

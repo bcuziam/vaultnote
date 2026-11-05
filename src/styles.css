@@ -2332,10 +2332,8 @@ select:focus {
   background: var(--bg-card);
   position: relative;
   max-width: 100%;
+  width: 100%;
   box-sizing: border-box;
-}
-.block-table-wrapper.fit-page {
-  width: 100% !important;
 }
 .table-top-bar {
   display: flex;
@@ -2383,34 +2381,11 @@ select:focus {
   border-bottom-left-radius: 7px;
   border-bottom-right-radius: 7px;
 }
-.block-table-scroll.no-scroll {
-  overflow-x: hidden;
-}
 .block-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
-  min-width: 200px;
-}
-.block-table.fit-page {
   table-layout: fixed;
-  width: 100%;
-  min-width: 0;
-}
-.table-resizer-right {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  cursor: ew-resize;
-  z-index: 10;
-  user-select: none;
-  border-radius: 4px;
-}
-.table-resizer-right:hover,
-.table-resizer-right.active {
-  background: var(--accent);
+  box-sizing: border-box;
 }
 .block-table th,
 .block-table td {
@@ -2418,67 +2393,107 @@ select:focus {
   padding: 0;
   position: relative;
   vertical-align: top;
+  word-break: break-all;
 }
 .block-table th {
   background: var(--bg-sidebar);
   font-weight: 600;
 }
+.table-header-inner {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+.table-header-inner .table-cell-input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.table-col-menu-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  margin-right: 4px;
+  border-radius: 3px;
+  opacity: 0.6;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.table-col-menu-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  opacity: 1;
+}
+.table-col-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.table-col-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 32px;
+}
+.table-col-menu-item:hover {
+  background: var(--bg-hover);
+}
+.table-col-menu-item.text-danger {
+  color: var(--danger, #ef4444);
+}
+.table-col-menu-item.text-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
 .table-cell-input {
   width: 100%;
   border: none;
   background: transparent;
-  padding: 8px 10px;
+  padding: 7px 9px;
   font-family: inherit;
   font-size: 13.5px;
   color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
-  min-height: 36px;
+  min-height: 34px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  display: block;
 }
 .table-cell-input:focus {
   background: var(--bg-hover);
 }
-.col-resize-handle {
-  position: absolute;
-  top: 0;
-  right: -3px;
-  width: 7px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 2;
-  user-select: none;
-}
-.col-resize-handle:hover,
-.col-resize-handle.active {
-  background: var(--accent);
-}
-.table-btn-del-col {
-  position: absolute;
-  top: 2px;
-  right: 6px;
-  width: 15px;
-  height: 15px;
-  font-size: 10px;
-  line-height: 15px;
-  text-align: center;
-  background: var(--bg-card);
-  color: var(--text-muted);
-  border-radius: 3px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  border: 1px solid var(--border);
-  padding: 0;
-}
-.block-table th:hover .table-btn-del-col {
-  opacity: 1;
-}
-.table-btn-del-col:hover {
-  color: var(--danger, #ef4444);
-}
 .table-row-ctrl-td {
-  width: 26px;
-  min-width: 26px;
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
   text-align: center;
   background: var(--bg-sidebar);
   border: 1px solid var(--border);

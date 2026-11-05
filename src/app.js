@@ -3180,54 +3180,29 @@ function renderBlocksList(note, blocks) {
       block.rows.forEach((r) => {
         while (r.length < maxCols) r.push('');
       });
-      if (!Array.isArray(block.colWidths)) block.colWidths = [];
 
-      const isFitWidth = block.fitWidth !== false;
       const tableWrapper = document.createElement('div');
-      tableWrapper.className = 'block-table-wrapper' + (isFitWidth ? ' fit-page' : '');
-      if (!isFitWidth && block.tableWidth) {
-        tableWrapper.style.width = typeof block.tableWidth === 'number' ? `${block.tableWidth}px` : block.tableWidth;
-      } else {
-        tableWrapper.style.width = '100%';
-      }
+      tableWrapper.className = 'block-table-wrapper';
 
-      // 1. 상단 툴바 (크기 배지, 너비 토글, +열, +행, 삭제)
+      // 1. 상단 툴바 (크기 배지, +열, +행, 삭제)
       const topBar = document.createElement('div');
       topBar.className = 'table-top-bar';
-      const widthBtnLabel = isFitWidth ? '100% 맞춤' : (block.tableWidth || '자유폭');
       topBar.innerHTML = `
         <span class="table-tag-badge">
           <span>표</span>
           <span style="font-size:10px;opacity:0.75;">(${block.rows.length} × ${maxCols})</span>
         </span>
         <div class="table-quick-actions">
-          <button type="button" class="table-btn-action btn-toggle-width" title="표 너비 모드 전환 (100% 본문맞춤 ↔ 자유 조절)">${escapeHtml(widthBtnLabel)}</button>
           <button type="button" class="table-btn-action btn-add-col" title="오른쪽에 새 열 추가">+ 열</button>
           <button type="button" class="table-btn-action btn-add-row" title="아래에 새 행 추가">+ 행</button>
           <button type="button" class="table-btn-action text-danger btn-del-tbl" title="표 전체 삭제">삭제</button>
         </div>
       `;
 
-      topBar.querySelector('.btn-toggle-width')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        recordPreActionSnapshot();
-        if (block.fitWidth !== false) {
-          block.fitWidth = false;
-          const curW = Math.round(tableWrapper.getBoundingClientRect().width);
-          block.tableWidth = `${curW}px`;
-        } else {
-          block.fitWidth = true;
-          delete block.tableWidth;
-        }
-        touchNote(note, blocks);
-        renderActiveNoteEditor();
-      });
-
       topBar.querySelector('.btn-add-col')?.addEventListener('click', (e) => {
         e.stopPropagation();
         recordPreActionSnapshot();
         block.rows.forEach((r) => r.push(''));
-        if (block.colWidths && block.colWidths.length > 0) block.colWidths.push(120);
         touchNote(note, blocks);
         renderActiveNoteEditor();
       });
@@ -3251,14 +3226,26 @@ function renderBlocksList(note, blocks) {
 
       // 2. 가로 스크롤 컨테이너 & 테이블
       const scrollContainer = document.createElement('div');
-      scrollContainer.className = 'block-table-scroll' + (isFitWidth ? ' no-scroll' : '');
+      scrollContainer.className = 'block-table-scroll';
 
       const tbl = document.createElement('table');
-      tbl.className = 'block-table' + (isFitWidth ? ' fit-page' : '');
+      tbl.className = 'block-table';
+      // 열이 5개 이상일 때는 찌그러짐 방지를 위해 최소 너비 보장 및 가로 스크롤 허용
+      if (maxCols >= 5) {
+        tbl.style.minWidth = `${maxCols * 80 + 24}px`;
+      } else {
+        tbl.style.minWidth = '0';
+      }
 
-      let activeResizerCol = -1;
-      let startX = 0;
-      let startW = 0;
+      // 열 팝오버 메뉴 닫기 핸들러
+      let activeColMenu = null;
+      const closeColMenu = () => {
+        if (activeColMenu) {
+          activeColMenu.remove();
+          activeColMenu = null;
+          document.removeEventListener('click', closeColMenu);
+        }
+      };
 
       block.rows.forEach((row, rIdx) => {
         const tr = document.createElement('tr');
@@ -3287,110 +3274,35 @@ function renderBlocksList(note, blocks) {
           const isHeader = rIdx === 0;
           const cellEl = document.createElement(isHeader ? 'th' : 'td');
 
-          if (block.colWidths && block.colWidths[cIdx]) {
-            cellEl.style.width = `${block.colWidths[cIdx]}px`;
-            cellEl.style.minWidth = `${block.colWidths[cIdx]}px`;
-          } else if (isFitWidth) {
-            cellEl.style.width = `${Math.floor(100 / maxCols)}%`;
-            cellEl.style.minWidth = '30px';
-          } else {
-            cellEl.style.minWidth = '70px';
+          // 셀 내부 입력 textarea (자동 줄바꿈 지원)
+          const ta = document.createElement('textarea');
+          ta.className = 'table-cell-input';
+          ta.rows = 1;
+          ta.dataset.row = String(rIdx);
+          ta.dataset.col = String(cIdx);
+          ta.value = cellVal || '';
+          if (isHeader) {
+            ta.placeholder = '열 제목...';
           }
 
-          // 헤더 셀인 경우: 열 삭제 버튼 & 열 너비 리사이즈 핸들
-          if (isHeader) {
-            if (maxCols > 1) {
-              const btnDelCol = document.createElement('button');
-              btnDelCol.type = 'button';
-              btnDelCol.className = 'table-btn-del-col';
-              btnDelCol.textContent = '✕';
-              btnDelCol.title = `${cIdx + 1}번째 열 삭제`;
-              btnDelCol.addEventListener('click', (e) => {
-                e.stopPropagation();
-                recordPreActionSnapshot();
-                block.rows.forEach((r) => r.splice(cIdx, 1));
-                if (block.colWidths) block.colWidths.splice(cIdx, 1);
-                touchNote(note, blocks);
-                renderActiveNoteEditor();
-              });
-              cellEl.appendChild(btnDelCol);
+          const adjustTaHeight = () => {
+            ta.style.height = 'auto';
+            if (ta.scrollHeight > 34) {
+              ta.style.height = `${ta.scrollHeight}px`;
             }
+          };
 
-            // 열 너비 조절 핸들
-            const resizer = document.createElement('div');
-            resizer.className = 'col-resize-handle';
-            resizer.title = '마우스로 끌어 열 너비 조절';
-
-            const startResize = (clientX) => {
-              activeResizerCol = cIdx;
-              startX = clientX;
-              startW = cellEl.getBoundingClientRect().width;
-              resizer.classList.add('active');
-
-              const onMove = (moveEvt) => {
-                if (activeResizerCol !== cIdx) return;
-                const curX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
-                const newW = Math.max(60, Math.round(startW + (curX - startX)));
-                cellEl.style.width = `${newW}px`;
-                cellEl.style.minWidth = `${newW}px`;
-              };
-
-              const onEnd = () => {
-                if (activeResizerCol !== cIdx) return;
-                resizer.classList.remove('active');
-                activeResizerCol = -1;
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onEnd);
-                document.removeEventListener('touchmove', onMove);
-                document.removeEventListener('touchend', onEnd);
-                const finalW = Math.max(50, Math.round(cellEl.getBoundingClientRect().width));
-                if (!Array.isArray(block.colWidths)) block.colWidths = [];
-                while (block.colWidths.length < maxCols) block.colWidths.push(100);
-                block.colWidths[cIdx] = finalW;
-                block.fitWidth = false;
-                touchNote(note, blocks);
-                renderActiveNoteEditor();
-              };
-
-              document.addEventListener('mousemove', onMove);
-              document.addEventListener('mouseup', onEnd);
-              document.addEventListener('touchmove', onMove, { passive: false });
-              document.addEventListener('touchend', onEnd);
-            };
-
-            resizer.addEventListener('mousedown', (e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              startResize(e.clientX);
-            });
-            resizer.addEventListener('touchstart', (e) => {
-              if (e.touches.length !== 1) return;
-              e.stopPropagation();
-              startResize(e.touches[0].clientX);
-            }, { passive: false });
-
-            cellEl.appendChild(resizer);
-          }
-
-          // 셀 내부 입력 input
-          const inp = document.createElement('input');
-          inp.type = 'text';
-          inp.className = 'table-cell-input';
-          inp.dataset.row = String(rIdx);
-          inp.dataset.col = String(cIdx);
-          inp.value = cellVal || '';
-          if (isHeader) {
-            inp.style.fontWeight = '600';
-            inp.placeholder = '열 제목...';
-          }
-
-          inp.addEventListener('input', () => {
-            block.rows[rIdx][cIdx] = inp.value;
+          ta.addEventListener('input', () => {
+            block.rows[rIdx][cIdx] = ta.value;
+            adjustTaHeight();
             touchNote(note, blocks);
           });
 
-          // 키보드 네비게이션: Tab, Shift+Tab, Enter, ArrowUp, ArrowDown
-          inp.addEventListener('keydown', (e) => {
+          // 초기 로드 시 내용에 맞게 높이 맞춤
+          setTimeout(adjustTaHeight, 0);
+
+          // 키보드 네비게이션: Tab, Shift+Tab, Enter (Shift+Enter는 셀 내 줄바꿈), ArrowUp, ArrowDown
+          ta.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
               e.preventDefault();
               if (e.shiftKey) {
@@ -3401,7 +3313,7 @@ function renderBlocksList(note, blocks) {
                   prevC = maxCols - 1;
                 }
                 if (prevR >= 0) {
-                  const targetInp = tbl.querySelector(`input[data-row="${prevR}"][data-col="${prevC}"]`);
+                  const targetInp = tbl.querySelector(`textarea[data-row="${prevR}"][data-col="${prevC}"]`);
                   targetInp?.focus();
                 }
               } else {
@@ -3418,15 +3330,15 @@ function renderBlocksList(note, blocks) {
                   renderActiveNoteEditor();
                   setTimeout(() => {
                     const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
-                    const newInp = rowContainer?.querySelector(`input[data-row="${nextR}"][data-col="0"]`);
+                    const newInp = rowContainer?.querySelector(`textarea[data-row="${nextR}"][data-col="0"]`);
                     newInp?.focus();
                   }, 10);
                   return;
                 }
-                const targetInp = tbl.querySelector(`input[data-row="${nextR}"][data-col="${nextC}"]`);
+                const targetInp = tbl.querySelector(`textarea[data-row="${nextR}"][data-col="${nextC}"]`);
                 targetInp?.focus();
               }
-            } else if (e.key === 'Enter') {
+            } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               const nextR = rIdx + 1;
               if (nextR >= block.rows.length) {
@@ -3436,94 +3348,98 @@ function renderBlocksList(note, blocks) {
                 renderActiveNoteEditor();
                 setTimeout(() => {
                   const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
-                  const newInp = rowContainer?.querySelector(`input[data-row="${nextR}"][data-col="${cIdx}"]`);
+                  const newInp = rowContainer?.querySelector(`textarea[data-row="${nextR}"][data-col="${cIdx}"]`);
                   newInp?.focus();
                 }, 10);
                 return;
               }
-              const targetInp = tbl.querySelector(`input[data-row="${nextR}"][data-col="${cIdx}"]`);
+              const targetInp = tbl.querySelector(`textarea[data-row="${nextR}"][data-col="${cIdx}"]`);
               targetInp?.focus();
-            } else if (e.key === 'ArrowUp' && rIdx > 0) {
-              const targetInp = tbl.querySelector(`input[data-row="${rIdx - 1}"][data-col="${cIdx}"]`);
+            } else if (e.key === 'ArrowUp' && rIdx > 0 && ta.selectionStart === 0) {
+              const targetInp = tbl.querySelector(`textarea[data-row="${rIdx - 1}"][data-col="${cIdx}"]`);
               targetInp?.focus();
-            } else if (e.key === 'ArrowDown' && rIdx < block.rows.length - 1) {
-              const targetInp = tbl.querySelector(`input[data-row="${rIdx + 1}"][data-col="${cIdx}"]`);
+            } else if (e.key === 'ArrowDown' && rIdx < block.rows.length - 1 && ta.selectionEnd === ta.value.length) {
+              const targetInp = tbl.querySelector(`textarea[data-row="${rIdx + 1}"][data-col="${cIdx}"]`);
               targetInp?.focus();
             }
           });
 
-          cellEl.appendChild(inp);
+          if (isHeader) {
+            const headerInner = document.createElement('div');
+            headerInner.className = 'table-header-inner';
+            headerInner.appendChild(ta);
+
+            // 열 옵션 메뉴 버튼 (노션 스타일)
+            const btnColMenu = document.createElement('button');
+            btnColMenu.type = 'button';
+            btnColMenu.className = 'table-col-menu-btn';
+            btnColMenu.textContent = '▾';
+            btnColMenu.title = `${cIdx + 1}번째 열 옵션 메뉴`;
+
+            btnColMenu.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (activeColMenu) {
+                closeColMenu();
+                return;
+              }
+
+              const menu = document.createElement('div');
+              menu.className = 'table-col-menu';
+              menu.innerHTML = `
+                <button type="button" class="table-col-menu-item btn-add-col-left">← 왼쪽에 열 추가</button>
+                <button type="button" class="table-col-menu-item btn-add-col-right">→ 오른쪽에 열 추가</button>
+                ${maxCols > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-col-this">✕ 이 열 삭제</button>' : ''}
+              `;
+
+              menu.querySelector('.btn-add-col-left')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                block.rows.forEach((r) => r.splice(cIdx, 0, ''));
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
+              menu.querySelector('.btn-add-col-right')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                block.rows.forEach((r) => r.splice(cIdx + 1, 0, ''));
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
+              menu.querySelector('.btn-del-col-this')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                block.rows.forEach((r) => r.splice(cIdx, 1));
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
+              headerInner.appendChild(menu);
+              activeColMenu = menu;
+              setTimeout(() => {
+                document.addEventListener('click', closeColMenu);
+              }, 10);
+            });
+
+            headerInner.appendChild(btnColMenu);
+            cellEl.appendChild(headerInner);
+          } else {
+            cellEl.appendChild(ta);
+          }
+
           tr.appendChild(cellEl);
         });
 
         tbl.appendChild(tr);
       });
 
-      // 3. 표 전체 너비 리사이저 핸들 (오른쪽 테두리 마우스/터치 드래그)
-      const tableResizer = document.createElement('div');
-      tableResizer.className = 'table-resizer-right';
-      tableResizer.title = '끌어서 표 전체 너비 조절 (더블 클릭 시 100% 본문맞춤)';
-
-      const startTableResize = (clientX) => {
-        const startWidth = tableWrapper.getBoundingClientRect().width;
-        const startX = clientX;
-        tableResizer.classList.add('active');
-
-        const onMove = (moveEvt) => {
-          const curX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
-          const delta = curX - startX;
-          const newW = Math.max(160, Math.round(startWidth + delta));
-          tableWrapper.style.width = `${newW}px`;
-          tableWrapper.classList.remove('fit-page');
-          scrollContainer.classList.remove('no-scroll');
-          tbl.classList.remove('fit-page');
-          tbl.style.tableLayout = 'auto';
-        };
-
-        const onEnd = () => {
-          tableResizer.classList.remove('active');
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onEnd);
-          document.removeEventListener('touchmove', onMove);
-          document.removeEventListener('touchend', onEnd);
-          const finalW = Math.max(160, Math.round(tableWrapper.getBoundingClientRect().width));
-          block.fitWidth = false;
-          block.tableWidth = `${finalW}px`;
-          touchNote(note, blocks);
-          renderActiveNoteEditor();
-        };
-
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onEnd);
-        document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('touchend', onEnd);
-      };
-
-      tableResizer.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        startTableResize(e.clientX);
-      });
-      tableResizer.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        e.stopPropagation();
-        startTableResize(e.touches[0].clientX);
-      }, { passive: false });
-
-      tableResizer.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        recordPreActionSnapshot();
-        block.fitWidth = true;
-        delete block.tableWidth;
-        delete block.colWidths;
-        touchNote(note, blocks);
-        renderActiveNoteEditor();
-      });
-
       scrollContainer.appendChild(tbl);
       tableWrapper.appendChild(topBar);
       tableWrapper.appendChild(scrollContainer);
-      tableWrapper.appendChild(tableResizer);
       body.appendChild(tableWrapper);
     } else if (block.type === 'toggle') {
       const wrap = document.createElement('div');
