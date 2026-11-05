@@ -2260,6 +2260,13 @@ select:focus {
   color: var(--text-secondary);
   user-select: none;
 }
+.block-num-label-btn {
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.block-num-label-btn:hover {
+  color: var(--accent) !important;
+  opacity: 0.9;
+}
 
 .block-callout {
   background: var(--bg-sidebar);

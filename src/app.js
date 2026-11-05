@@ -2102,12 +2102,12 @@ function clearBlockSelection() {
 }
 
 /**
- * 스마트 동적 계층형 번호 채번 엔진 (방식 2)
+ * 스마트 동적 계층형 번호 채번 엔진 (방식 2 + 시작 번호 커스텀 + 들여쓰기 0 방지)
  * - 제목 계층: 제목 1이 없으면 현재 최상위인 제목 2 기준 1., 2. 로 독립 시작
- *   - h1 + numbered: 1., 2. (하위 카운터 초기화)
- *   - h2 + numbered: h1이 있으면 1.1., 1.2. / h1이 없으면 1., 2.
- *   - h3 + numbered: h1/h2 상태에 따라 1.1.1. / 1.1. / 1.
- * - 번호 목록: 번호 목록 블록들만 세어서 1., 2. / 들여쓰기 시 1.1., 1.2.
+ *   - h1 + numbered: 1., 2. (하위 카운터 초기화, startNumber 우선)
+ *   - h2 + numbered: h1이 있으면 1.1., 1.2. / h1이 없으면 1., 2. (startNumber 우선)
+ *   - h3 + numbered: h1/h2 상태에 따라 1.1.1. / 1.1. / 1. (startNumber 우선)
+ * - 번호 목록: 들여쓰기 깊이에 상관없이 1.부터 시작, 각 들여쓰기 레벨별 독립 순번 (startNumber 우선)
  * - 번호 없는 일반 블록은 건너뛰며 카운터를 올리지 않음
  */
 function calculateBlockNumberLabels(blocks) {
@@ -2117,7 +2117,7 @@ function calculateBlockNumberLabels(blocks) {
   let h1Count = 0;
   let h2Count = 0;
   let h3Count = 0;
-  let listCounters = [];
+  let listCountersByIndent = new Map();
 
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
@@ -2127,15 +2127,15 @@ function calculateBlockNumberLabels(blocks) {
     const isNumberList = b.type === 'number' || (Boolean(b.numbered) && b.type === 'p');
 
     if (isNumberedHeading) {
-      listCounters = [];
+      listCountersByIndent.clear();
 
       if (b.type === 'h1') {
-        h1Count += 1;
+        h1Count = (typeof b.startNumber === 'number' && b.startNumber > 0) ? b.startNumber : (h1Count + 1);
         h2Count = 0;
         h3Count = 0;
         labels.set(b.id, `${h1Count}.`);
       } else if (b.type === 'h2') {
-        h2Count += 1;
+        h2Count = (typeof b.startNumber === 'number' && b.startNumber > 0) ? b.startNumber : (h2Count + 1);
         h3Count = 0;
         if (h1Count === 0) {
           labels.set(b.id, `${h2Count}.`);
@@ -2143,7 +2143,7 @@ function calculateBlockNumberLabels(blocks) {
           labels.set(b.id, `${h1Count}.${h2Count}.`);
         }
       } else if (b.type === 'h3') {
-        h3Count += 1;
+        h3Count = (typeof b.startNumber === 'number' && b.startNumber > 0) ? b.startNumber : (h3Count + 1);
         if (h1Count === 0 && h2Count === 0) {
           labels.set(b.id, `${h3Count}.`);
         } else if (h1Count === 0) {
@@ -2154,20 +2154,24 @@ function calculateBlockNumberLabels(blocks) {
       }
     } else if (isNumberList) {
       const indent = Math.max(0, b.indent || 0);
-      while (listCounters.length <= indent) {
-        listCounters.push(0);
-      }
-      listCounters.length = indent + 1;
-      listCounters[indent] += 1;
 
-      if (indent === 0) {
-        labels.set(b.id, `${listCounters[0]}.`);
-      } else {
-        const parts = listCounters.slice(0, indent + 1);
-        labels.set(b.id, `${parts.join('.')}.`);
+      // 현재 들여쓰기보다 깊은 하위 들여쓰기 카운터는 정리
+      for (const k of listCountersByIndent.keys()) {
+        if (k > indent) listCountersByIndent.delete(k);
       }
+
+      let currentVal = listCountersByIndent.get(indent) || 0;
+      if (typeof b.startNumber === 'number' && b.startNumber > 0) {
+        currentVal = b.startNumber;
+      } else {
+        currentVal += 1;
+      }
+      listCountersByIndent.set(indent, currentVal);
+
+      // 들여쓰기 깊이와 무관하게 항상 1.부터 시작되는 정갈한 독립 순번
+      labels.set(b.id, `${currentVal}.`);
     } else {
-      listCounters = [];
+      listCountersByIndent.clear();
     }
   }
 
@@ -2180,17 +2184,13 @@ function getBlockTypeLabel(type) {
     h1: '제목 1',
     h2: '제목 2',
     h3: '제목 3',
-    h1_num: '번호 제목 1',
-    h2_num: '번호 제목 2',
-    h3_num: '번호 제목 3',
     todo: '할 일 체크리스트',
     bullet: '글머리 목록',
     number: '번호 목록',
     toggle: '토글 목록',
     callout: '인용/콜아웃',
     code: '코드 블록',
-    table: '표',
-    toggle_num: '번호 매기기 토글'
+    table: '표'
   };
   return map[type] || type;
 }
@@ -2206,19 +2206,27 @@ function applyBlockTypeToSelectedBlocks(newType) {
   let count = 0;
   for (const block of blocks) {
     if (selectedBlockIds.has(block.id)) {
-      if (newType === 'toggle_num') {
-        block.numbered = !block.numbered;
-      } else if (newType.endsWith('_num')) {
-        const baseType = newType.replace('_num', '');
-        block.type = baseType;
-        block.numbered = true;
+      if (newType === 'number') {
+        // 지능형 자동 반응: 현재 블록이 제목(h1/h2/h3)이면 제목 양식을 유지한 채 번호만 토글!
+        if (['h1', 'h2', 'h3'].includes(block.type)) {
+          block.numbered = !block.numbered;
+        } else if (block.type === 'number') {
+          block.type = 'p';
+          block.numbered = false;
+        } else {
+          block.type = 'number';
+          block.numbered = true;
+        }
+      } else if (['h1', 'h2', 'h3'].includes(newType)) {
+        // 기존에 번호가 켜져 있던 블록이면 새 제목으로 전환되어도 번호 상태 유지
+        const keepNumbered = Boolean(block.numbered || block.type === 'number');
+        block.type = newType;
+        block.numbered = keepNumbered;
       } else {
         block.type = newType;
         block.numbered = false;
       }
-      if (block.type === 'number') {
-        block.numbered = true;
-      }
+
       if (block.type === 'todo' && block.checked === undefined) {
         block.checked = false;
       }
@@ -3331,16 +3339,41 @@ function renderBlocksList(note, blocks) {
       } else if (block.type === 'number') {
         innerWrap.className = 'block-todo-wrap';
         const numLabel = numberLabels.get(block.id) || '1.';
-        innerWrap.innerHTML = `<span style="padding-top:2px;color:var(--text-secondary);font-size:14px;font-weight:500;">${numLabel}</span>`;
+        innerWrap.innerHTML = `<span class="block-num-label-btn" title="클릭하여 시작 번호 변경/재설정" style="padding-top:2px;color:var(--text-secondary);font-size:14px;font-weight:500;cursor:pointer;user-select:none;">${numLabel}</span>`;
       } else if (['h1', 'h2', 'h3'].includes(block.type) && block.numbered) {
         innerWrap.className = 'block-todo-wrap block-heading-numbered-wrap';
         const numLabel = numberLabels.get(block.id) || '';
         const fontSize = block.type === 'h1' ? '20px' : (block.type === 'h2' ? '17px' : '15px');
-        innerWrap.innerHTML = `<span class="heading-num-badge" style="padding-top:2px;color:var(--text-secondary);font-size:${fontSize};font-weight:700;margin-right:2px;user-select:none;">${numLabel}</span>`;
+        innerWrap.innerHTML = `<span class="heading-num-badge block-num-label-btn" title="클릭하여 시작 번호 변경/재설정" style="padding-top:2px;color:var(--text-secondary);font-size:${fontSize};font-weight:700;margin-right:2px;cursor:pointer;user-select:none;">${numLabel}</span>`;
       } else if (block.type === 'callout') {
         innerWrap.className = 'block-callout';
       } else if (block.type === 'secret') {
         innerWrap.className = 'block-secret';
+      }
+
+      const numLabelBtn = innerWrap.querySelector('.block-num-label-btn');
+      if (numLabelBtn) {
+        numLabelBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const currentVal = typeof block.startNumber === 'number' ? block.startNumber : '';
+          const input = prompt('이 항목의 시작 번호를 입력하세요 (숫자 입력 시 이 번호부터 시작, 비워두면 자동 채번):', currentVal);
+          if (input === null) return;
+          recordPreActionSnapshot();
+          const trimmed = input.trim();
+          if (!trimmed) {
+            delete block.startNumber;
+            showToast('자동 순번으로 복원되었습니다.');
+          } else {
+            const parsed = parseInt(trimmed, 10);
+            if (isNaN(parsed) || parsed < 1) {
+              return showToast('1 이상의 올바른 숫자를 입력해주세요.');
+            }
+            block.startNumber = parsed;
+            showToast(`시작 번호가 ${parsed}(으)로 설정되었습니다.`);
+          }
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        });
       }
 
       const ta = document.createElement('textarea');
@@ -4141,18 +4174,27 @@ function applyBlockType(blockId, newType) {
   for (const id of targetIds) {
     const target = blocks.find((b) => b.id === id);
     if (target) {
-      if (newType === 'toggle_num') {
-        target.numbered = !target.numbered;
-      } else if (newType.endsWith('_num')) {
-        target.type = newType.replace('_num', '');
-        target.numbered = true;
+      if (newType === 'number') {
+        // 지능형 자동 반응: 현재 블록이 제목(h1/h2/h3)이면 제목 양식을 유지한 채 번호만 토글!
+        if (['h1', 'h2', 'h3'].includes(target.type)) {
+          target.numbered = !target.numbered;
+        } else if (target.type === 'number') {
+          target.type = 'p';
+          target.numbered = false;
+        } else {
+          target.type = 'number';
+          target.numbered = true;
+        }
+      } else if (['h1', 'h2', 'h3'].includes(newType)) {
+        // 기존에 번호가 켜져 있던 블록이면 새 제목으로 전환되어도 번호 상태 유지
+        const keepNumbered = Boolean(target.numbered || target.type === 'number');
+        target.type = newType;
+        target.numbered = keepNumbered;
       } else {
         target.type = newType;
         target.numbered = false;
       }
-      if (target.type === 'number') {
-        target.numbered = true;
-      }
+
       if (target.text === '/') target.text = '';
       if (target.type === 'todo' && target.checked === undefined) {
         target.checked = false;
@@ -4186,11 +4228,6 @@ function executeBlockAction(blockId, action) {
   if (action === 'summarize') {
     closeSlashMenu();
     summarizeCurrentActiveNote();
-    return;
-  }
-  if (action === 'toggle_num') {
-    closeSlashMenu();
-    applyBlockType(blockId, 'toggle_num');
     return;
   }
   const note = getActiveNote();
