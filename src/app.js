@@ -3176,53 +3176,265 @@ function renderBlocksList(note, blocks) {
           ['', '', '']
         ];
       }
-      const tbl = document.createElement('table');
-      tbl.className = 'block-table';
-      block.rows.forEach((r, rIdx) => {
-        const tr = document.createElement('tr');
-        r.forEach((cellVal, cIdx) => {
-          const td = document.createElement('td');
-          const inp = document.createElement('input');
-          inp.type = 'text';
-          inp.value = cellVal;
-          if (rIdx === 0) inp.style.fontWeight = '600';
-          inp.addEventListener('input', () => {
-            block.rows[rIdx][cIdx] = inp.value;
-            touchNote(note, blocks);
-          });
-          td.appendChild(inp);
-          tr.appendChild(td);
-        });
-        tbl.appendChild(tr);
+      const maxCols = Math.max(...block.rows.map((r) => (Array.isArray(r) ? r.length : 0)), 1);
+      block.rows.forEach((r) => {
+        while (r.length < maxCols) r.push('');
       });
-      const tblActions = document.createElement('div');
-      tblActions.style.marginTop = '4px';
-      tblActions.style.display = 'flex';
-      tblActions.style.gap = '8px';
-      tblActions.innerHTML = `
-        <button type="button" class="text-btn">+ 행 추가</button>
-        <button type="button" class="text-btn">+ 열 추가</button>
-        <button type="button" class="text-btn text-danger">표 삭제</button>
+      if (!Array.isArray(block.colWidths)) block.colWidths = [];
+
+      const tableWrapper = document.createElement('div');
+      tableWrapper.className = 'block-table-wrapper';
+
+      // 1. 상단 툴바 (크기 배지, +열, +행, 삭제)
+      const topBar = document.createElement('div');
+      topBar.className = 'table-top-bar';
+      topBar.innerHTML = `
+        <span class="table-tag-badge">
+          <span>표</span>
+          <span style="font-size:10px;opacity:0.75;">(${block.rows.length} × ${maxCols})</span>
+        </span>
+        <div class="table-quick-actions">
+          <button type="button" class="table-btn-action btn-add-col" title="오른쪽에 새 열 추가">+ 열</button>
+          <button type="button" class="table-btn-action btn-add-row" title="아래에 새 행 추가">+ 행</button>
+          <button type="button" class="table-btn-action text-danger btn-del-tbl" title="표 전체 삭제">삭제</button>
+        </div>
       `;
-      tblActions.children[0].addEventListener('click', () => {
-        const cols = block.rows[0]?.length || 3;
-        block.rows.push(new Array(cols).fill(''));
-        touchNote(note, blocks);
-        renderActiveNoteEditor();
-      });
-      tblActions.children[1].addEventListener('click', () => {
+
+      topBar.querySelector('.btn-add-col')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        recordPreActionSnapshot();
         block.rows.forEach((r) => r.push(''));
+        if (block.colWidths && block.colWidths.length > 0) block.colWidths.push(120);
         touchNote(note, blocks);
         renderActiveNoteEditor();
       });
-      tblActions.children[2].addEventListener('click', () => {
+
+      topBar.querySelector('.btn-add-row')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        recordPreActionSnapshot();
+        block.rows.push(new Array(maxCols).fill(''));
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+
+      topBar.querySelector('.btn-del-tbl')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        recordPreActionSnapshot();
         blocks.splice(idx, 1);
         if (blocks.length === 0) blocks.push({ id: uid('b'), type: 'p', text: '' });
         touchNote(note, blocks);
         renderActiveNoteEditor();
       });
-      body.appendChild(tbl);
-      body.appendChild(tblActions);
+
+      // 2. 가로 스크롤 컨테이너 & 테이블
+      const scrollContainer = document.createElement('div');
+      scrollContainer.className = 'block-table-scroll';
+
+      const tbl = document.createElement('table');
+      tbl.className = 'block-table';
+
+      let activeResizerCol = -1;
+      let startX = 0;
+      let startW = 0;
+
+      block.rows.forEach((row, rIdx) => {
+        const tr = document.createElement('tr');
+
+        // 행 삭제 컨트롤 셀 (행이 2개 이상일 때 삭제 버튼 노출)
+        const rowCtrlTd = document.createElement('td');
+        rowCtrlTd.className = 'table-row-ctrl-td';
+        if (block.rows.length > 1) {
+          const btnDelRow = document.createElement('button');
+          btnDelRow.type = 'button';
+          btnDelRow.className = 'table-btn-del-row';
+          btnDelRow.textContent = '✕';
+          btnDelRow.title = `${rIdx + 1}번째 행 삭제`;
+          btnDelRow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            recordPreActionSnapshot();
+            block.rows.splice(rIdx, 1);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+          });
+          rowCtrlTd.appendChild(btnDelRow);
+        }
+        tr.appendChild(rowCtrlTd);
+
+        row.forEach((cellVal, cIdx) => {
+          const isHeader = rIdx === 0;
+          const cellEl = document.createElement(isHeader ? 'th' : 'td');
+
+          if (block.colWidths && block.colWidths[cIdx]) {
+            cellEl.style.width = `${block.colWidths[cIdx]}px`;
+            cellEl.style.minWidth = `${block.colWidths[cIdx]}px`;
+          } else {
+            cellEl.style.minWidth = '90px';
+          }
+
+          // 헤더 셀인 경우: 열 삭제 버튼 & 열 너비 리사이즈 핸들
+          if (isHeader) {
+            if (maxCols > 1) {
+              const btnDelCol = document.createElement('button');
+              btnDelCol.type = 'button';
+              btnDelCol.className = 'table-btn-del-col';
+              btnDelCol.textContent = '✕';
+              btnDelCol.title = `${cIdx + 1}번째 열 삭제`;
+              btnDelCol.addEventListener('click', (e) => {
+                e.stopPropagation();
+                recordPreActionSnapshot();
+                block.rows.forEach((r) => r.splice(cIdx, 1));
+                if (block.colWidths) block.colWidths.splice(cIdx, 1);
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+              cellEl.appendChild(btnDelCol);
+            }
+
+            // 열 너비 조절 핸들
+            const resizer = document.createElement('div');
+            resizer.className = 'col-resize-handle';
+            resizer.title = '마우스로 끌어 열 너비 조절';
+
+            const startResize = (clientX) => {
+              activeResizerCol = cIdx;
+              startX = clientX;
+              startW = cellEl.getBoundingClientRect().width;
+              resizer.classList.add('active');
+
+              const onMove = (moveEvt) => {
+                if (activeResizerCol !== cIdx) return;
+                const curX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
+                const newW = Math.max(60, Math.round(startW + (curX - startX)));
+                cellEl.style.width = `${newW}px`;
+                cellEl.style.minWidth = `${newW}px`;
+              };
+
+              const onEnd = () => {
+                if (activeResizerCol !== cIdx) return;
+                resizer.classList.remove('active');
+                activeResizerCol = -1;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onEnd);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onEnd);
+                const finalW = Math.max(60, Math.round(cellEl.getBoundingClientRect().width));
+                if (!Array.isArray(block.colWidths)) block.colWidths = [];
+                while (block.colWidths.length < maxCols) block.colWidths.push(100);
+                block.colWidths[cIdx] = finalW;
+                touchNote(note, blocks);
+              };
+
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onEnd);
+              document.addEventListener('touchmove', onMove, { passive: false });
+              document.addEventListener('touchend', onEnd);
+            };
+
+            resizer.addEventListener('mousedown', (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              startResize(e.clientX);
+            });
+            resizer.addEventListener('touchstart', (e) => {
+              if (e.touches.length !== 1) return;
+              e.stopPropagation();
+              startResize(e.touches[0].clientX);
+            }, { passive: false });
+
+            cellEl.appendChild(resizer);
+          }
+
+          // 셀 내부 입력 input
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'table-cell-input';
+          inp.dataset.row = String(rIdx);
+          inp.dataset.col = String(cIdx);
+          inp.value = cellVal || '';
+          if (isHeader) {
+            inp.style.fontWeight = '600';
+            inp.placeholder = '열 제목...';
+          }
+
+          inp.addEventListener('input', () => {
+            block.rows[rIdx][cIdx] = inp.value;
+            touchNote(note, blocks);
+          });
+
+          // 키보드 네비게이션: Tab, Shift+Tab, Enter, ArrowUp, ArrowDown
+          inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+              e.preventDefault();
+              if (e.shiftKey) {
+                let prevR = rIdx;
+                let prevC = cIdx - 1;
+                if (prevC < 0) {
+                  prevR = rIdx - 1;
+                  prevC = maxCols - 1;
+                }
+                if (prevR >= 0) {
+                  const targetInp = tbl.querySelector(`input[data-row="${prevR}"][data-col="${prevC}"]`);
+                  targetInp?.focus();
+                }
+              } else {
+                let nextR = rIdx;
+                let nextC = cIdx + 1;
+                if (nextC >= maxCols) {
+                  nextR = rIdx + 1;
+                  nextC = 0;
+                }
+                if (nextR >= block.rows.length) {
+                  recordPreActionSnapshot();
+                  block.rows.push(new Array(maxCols).fill(''));
+                  touchNote(note, blocks);
+                  renderActiveNoteEditor();
+                  setTimeout(() => {
+                    const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+                    const newInp = rowContainer?.querySelector(`input[data-row="${nextR}"][data-col="0"]`);
+                    newInp?.focus();
+                  }, 10);
+                  return;
+                }
+                const targetInp = tbl.querySelector(`input[data-row="${nextR}"][data-col="${nextC}"]`);
+                targetInp?.focus();
+              }
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const nextR = rIdx + 1;
+              if (nextR >= block.rows.length) {
+                recordPreActionSnapshot();
+                block.rows.push(new Array(maxCols).fill(''));
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+                setTimeout(() => {
+                  const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+                  const newInp = rowContainer?.querySelector(`input[data-row="${nextR}"][data-col="${cIdx}"]`);
+                  newInp?.focus();
+                }, 10);
+                return;
+              }
+              const targetInp = tbl.querySelector(`input[data-row="${nextR}"][data-col="${cIdx}"]`);
+              targetInp?.focus();
+            } else if (e.key === 'ArrowUp' && rIdx > 0) {
+              const targetInp = tbl.querySelector(`input[data-row="${rIdx - 1}"][data-col="${cIdx}"]`);
+              targetInp?.focus();
+            } else if (e.key === 'ArrowDown' && rIdx < block.rows.length - 1) {
+              const targetInp = tbl.querySelector(`input[data-row="${rIdx + 1}"][data-col="${cIdx}"]`);
+              targetInp?.focus();
+            }
+          });
+
+          cellEl.appendChild(inp);
+          tr.appendChild(cellEl);
+        });
+
+        tbl.appendChild(tr);
+      });
+
+      scrollContainer.appendChild(tbl);
+      tableWrapper.appendChild(topBar);
+      tableWrapper.appendChild(scrollContainer);
+      body.appendChild(tableWrapper);
     } else if (block.type === 'toggle') {
       const wrap = document.createElement('div');
       wrap.className = 'block-toggle';
@@ -9888,6 +10100,26 @@ function renderBlocksToStaticHtml(blocks) {
               <div style="font-weight:600;font-size:14px;color:#1f2937;">${escapeHtml(b.title || 'YouTube 영상')}</div>
               <a href="${videoUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#2563eb;text-decoration:none;">영상 보기</a>
             </div>
+          </div>`;
+      }
+      case 'table': {
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        if (rows.length === 0) return '';
+        return `
+          <div style="margin:12px 0;overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1f2937;border:1px solid #d1d5db;">
+              <tbody>
+                ${rows.map((row, rIdx) => `
+                  <tr style="${rIdx === 0 ? 'background:#f3f4f6;font-weight:600;' : ''}">
+                    ${(Array.isArray(row) ? row : []).map((cell) => `
+                      <${rIdx === 0 ? 'th' : 'td'} style="border:1px solid #d1d5db;padding:8px 10px;text-align:left;vertical-align:top;line-height:1.5;">
+                        ${renderMarkdownInlineHtml(escapeHtml(cell || ''))}
+                      </${rIdx === 0 ? 'th' : 'td'}>
+                    `).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>`;
       }
       default:

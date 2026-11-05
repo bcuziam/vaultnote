@@ -246,6 +246,24 @@ export const VaultStorage = {
           else if (b.type === 'code') lines.push(`\`\`\`${b.lang || ''}\n${b.text || ''}\n\`\`\``);
           else if (b.type === 'divider') lines.push(`---`);
           else if (b.type === 'youtube') lines.push(`[![${b.title || 'YouTube'}](${b.thumbnailUrl || `https://img.youtube.com/vi/${b.videoId}/hqdefault.jpg`})](${b.url || `https://www.youtube.com/watch?v=${b.videoId}`})`);
+          else if (b.type === 'table' && Array.isArray(b.rows) && b.rows.length > 0) {
+            const tableLines = [];
+            const cols = Math.max(...b.rows.map((r) => (Array.isArray(r) ? r.length : 0)));
+            if (cols > 0) {
+              b.rows.forEach((row, rIdx) => {
+                const safeCells = [];
+                for (let c = 0; c < cols; c++) {
+                  const val = (row && row[c] !== undefined) ? String(row[c]).replace(/\|/g, '\\|') : '';
+                  safeCells.push(val);
+                }
+                tableLines.push(`| ${safeCells.join(' | ')} |`);
+                if (rIdx === 0) {
+                  tableLines.push(`| ${new Array(cols).fill('---').join(' | ')} |`);
+                }
+              });
+              lines.push(tableLines.join('\n'));
+            }
+          }
           else if (b.type === 'secret') lines.push(`> [암호화된 보안 블록]`);
           else lines.push(indentStr ? `${indentStr}${b.text || ''}` : (b.text || ''));
           lines.push('');
