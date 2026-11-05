@@ -3182,23 +3182,46 @@ function renderBlocksList(note, blocks) {
       });
       if (!Array.isArray(block.colWidths)) block.colWidths = [];
 
+      const isFitWidth = block.fitWidth !== false;
       const tableWrapper = document.createElement('div');
-      tableWrapper.className = 'block-table-wrapper';
+      tableWrapper.className = 'block-table-wrapper' + (isFitWidth ? ' fit-page' : '');
+      if (!isFitWidth && block.tableWidth) {
+        tableWrapper.style.width = typeof block.tableWidth === 'number' ? `${block.tableWidth}px` : block.tableWidth;
+      } else {
+        tableWrapper.style.width = '100%';
+      }
 
-      // 1. 상단 툴바 (크기 배지, +열, +행, 삭제)
+      // 1. 상단 툴바 (크기 배지, 너비 토글, +열, +행, 삭제)
       const topBar = document.createElement('div');
       topBar.className = 'table-top-bar';
+      const widthBtnLabel = isFitWidth ? '100% 맞춤' : (block.tableWidth || '자유폭');
       topBar.innerHTML = `
         <span class="table-tag-badge">
           <span>표</span>
           <span style="font-size:10px;opacity:0.75;">(${block.rows.length} × ${maxCols})</span>
         </span>
         <div class="table-quick-actions">
+          <button type="button" class="table-btn-action btn-toggle-width" title="표 너비 모드 전환 (100% 본문맞춤 ↔ 자유 조절)">${escapeHtml(widthBtnLabel)}</button>
           <button type="button" class="table-btn-action btn-add-col" title="오른쪽에 새 열 추가">+ 열</button>
           <button type="button" class="table-btn-action btn-add-row" title="아래에 새 행 추가">+ 행</button>
           <button type="button" class="table-btn-action text-danger btn-del-tbl" title="표 전체 삭제">삭제</button>
         </div>
       `;
+
+      topBar.querySelector('.btn-toggle-width')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        recordPreActionSnapshot();
+        if (block.fitWidth !== false) {
+          block.fitWidth = false;
+          const curW = Math.round(tableWrapper.getBoundingClientRect().width);
+          block.tableWidth = `${curW}px`;
+        } else {
+          block.fitWidth = true;
+          delete block.tableWidth;
+        }
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
 
       topBar.querySelector('.btn-add-col')?.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -3228,10 +3251,10 @@ function renderBlocksList(note, blocks) {
 
       // 2. 가로 스크롤 컨테이너 & 테이블
       const scrollContainer = document.createElement('div');
-      scrollContainer.className = 'block-table-scroll';
+      scrollContainer.className = 'block-table-scroll' + (isFitWidth ? ' no-scroll' : '');
 
       const tbl = document.createElement('table');
-      tbl.className = 'block-table';
+      tbl.className = 'block-table' + (isFitWidth ? ' fit-page' : '');
 
       let activeResizerCol = -1;
       let startX = 0;
@@ -3267,8 +3290,11 @@ function renderBlocksList(note, blocks) {
           if (block.colWidths && block.colWidths[cIdx]) {
             cellEl.style.width = `${block.colWidths[cIdx]}px`;
             cellEl.style.minWidth = `${block.colWidths[cIdx]}px`;
+          } else if (isFitWidth) {
+            cellEl.style.width = `${Math.floor(100 / maxCols)}%`;
+            cellEl.style.minWidth = '30px';
           } else {
-            cellEl.style.minWidth = '90px';
+            cellEl.style.minWidth = '70px';
           }
 
           // 헤더 셀인 경우: 열 삭제 버튼 & 열 너비 리사이즈 핸들
@@ -3317,11 +3343,13 @@ function renderBlocksList(note, blocks) {
                 document.removeEventListener('mouseup', onEnd);
                 document.removeEventListener('touchmove', onMove);
                 document.removeEventListener('touchend', onEnd);
-                const finalW = Math.max(60, Math.round(cellEl.getBoundingClientRect().width));
+                const finalW = Math.max(50, Math.round(cellEl.getBoundingClientRect().width));
                 if (!Array.isArray(block.colWidths)) block.colWidths = [];
                 while (block.colWidths.length < maxCols) block.colWidths.push(100);
                 block.colWidths[cIdx] = finalW;
+                block.fitWidth = false;
                 touchNote(note, blocks);
+                renderActiveNoteEditor();
               };
 
               document.addEventListener('mousemove', onMove);
@@ -3431,9 +3459,71 @@ function renderBlocksList(note, blocks) {
         tbl.appendChild(tr);
       });
 
+      // 3. 표 전체 너비 리사이저 핸들 (오른쪽 테두리 마우스/터치 드래그)
+      const tableResizer = document.createElement('div');
+      tableResizer.className = 'table-resizer-right';
+      tableResizer.title = '끌어서 표 전체 너비 조절 (더블 클릭 시 100% 본문맞춤)';
+
+      const startTableResize = (clientX) => {
+        const startWidth = tableWrapper.getBoundingClientRect().width;
+        const startX = clientX;
+        tableResizer.classList.add('active');
+
+        const onMove = (moveEvt) => {
+          const curX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
+          const delta = curX - startX;
+          const newW = Math.max(160, Math.round(startWidth + delta));
+          tableWrapper.style.width = `${newW}px`;
+          tableWrapper.classList.remove('fit-page');
+          scrollContainer.classList.remove('no-scroll');
+          tbl.classList.remove('fit-page');
+          tbl.style.tableLayout = 'auto';
+        };
+
+        const onEnd = () => {
+          tableResizer.classList.remove('active');
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onEnd);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onEnd);
+          const finalW = Math.max(160, Math.round(tableWrapper.getBoundingClientRect().width));
+          block.fitWidth = false;
+          block.tableWidth = `${finalW}px`;
+          touchNote(note, blocks);
+          renderActiveNoteEditor();
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+      };
+
+      tableResizer.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        startTableResize(e.clientX);
+      });
+      tableResizer.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        e.stopPropagation();
+        startTableResize(e.touches[0].clientX);
+      }, { passive: false });
+
+      tableResizer.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        recordPreActionSnapshot();
+        block.fitWidth = true;
+        delete block.tableWidth;
+        delete block.colWidths;
+        touchNote(note, blocks);
+        renderActiveNoteEditor();
+      });
+
       scrollContainer.appendChild(tbl);
       tableWrapper.appendChild(topBar);
       tableWrapper.appendChild(scrollContainer);
+      tableWrapper.appendChild(tableResizer);
       body.appendChild(tableWrapper);
     } else if (block.type === 'toggle') {
       const wrap = document.createElement('div');
