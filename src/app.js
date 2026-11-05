@@ -3386,10 +3386,25 @@ function renderBlocksList(note, blocks) {
               const menu = document.createElement('div');
               menu.className = 'table-col-menu';
               menu.innerHTML = `
-                <button type="button" class="table-col-menu-item btn-add-col-left">← 왼쪽에 열 추가</button>
-                <button type="button" class="table-col-menu-item btn-add-col-right">→ 오른쪽에 열 추가</button>
-                ${maxCols > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-col-this">✕ 이 열 삭제</button>' : ''}
+                <button type="button" class="table-col-menu-item btn-add-col-left">왼쪽에 열 추가</button>
+                <button type="button" class="table-col-menu-item btn-add-col-right">오른쪽에 열 추가</button>
+                ${maxCols > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-col-this">이 열 삭제</button>' : ''}
               `;
+
+              // document.body 최상위에 fixed로 배치하여 행 개수나 부모 overflow 클리핑에 상관없이 100% 온전히 표시
+              document.body.appendChild(menu);
+              activeColMenu = menu;
+
+              const rect = btnColMenu.getBoundingClientRect();
+              const menuW = 150;
+              const menuH = maxCols > 1 ? 112 : 78;
+              let top = rect.bottom + 4;
+              let left = Math.max(8, Math.min(window.innerWidth - menuW - 8, rect.right - menuW));
+              if (top + menuH > window.innerHeight && rect.top > menuH + 8) {
+                top = rect.top - menuH - 4;
+              }
+              menu.style.top = `${top}px`;
+              menu.style.left = `${left}px`;
 
               menu.querySelector('.btn-add-col-left')?.addEventListener('click', (ev) => {
                 ev.stopPropagation();
@@ -3418,10 +3433,10 @@ function renderBlocksList(note, blocks) {
                 renderActiveNoteEditor();
               });
 
-              headerInner.appendChild(menu);
-              activeColMenu = menu;
               setTimeout(() => {
                 document.addEventListener('click', closeColMenu);
+                window.addEventListener('scroll', closeColMenu, { capture: true, once: true });
+                window.addEventListener('resize', closeColMenu, { once: true });
               }, 10);
             });
 

@@ -2384,7 +2384,7 @@ select:focus {
 .block-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   box-sizing: border-box;
 }
 .block-table th,
@@ -2394,6 +2394,7 @@ select:focus {
   position: relative;
   vertical-align: top;
   word-break: break-all;
+  min-width: 50px;
 }
 .block-table th {
   background: var(--bg-sidebar);
@@ -2434,15 +2435,13 @@ select:focus {
   opacity: 1;
 }
 .table-col-menu {
-  position: absolute;
-  top: calc(100% + 2px);
-  right: 4px;
+  position: fixed;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  min-width: 140px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
+  min-width: 150px;
   padding: 4px;
   display: flex;
   flex-direction: column;
