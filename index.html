@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v152" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v154" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v152" />
+  <link rel="stylesheet" href="./src/styles.css?v=v154" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v152</span>
+        <span class="app-version-badge" id="app-version-display">v154</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -133,7 +133,7 @@
           <button type="button" id="btn-editor-redo" class="icon-btn" title="다시 실행 (Ctrl+Y)" style="font-weight:700;">↪</button>
           <span class="meta-sep">/</span>
           <span id="active-note-breadcrumb" class="breadcrumb">전체 노트</span>
-          <span id="save-indicator" class="save-indicator">저장됨</span>
+          <span id="save-indicator" class="save-indicator" title="동기화 상태"><span class="sync-state-dot sync-dot-cloud"></span><span class="sync-state-text">저장됨</span></span>
         </div>
 
         <div class="topbar-right">
@@ -1024,6 +1024,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v152"></script>
+  <script type="module" src="./src/app.js?v=v154"></script>
 </body>
 </html>

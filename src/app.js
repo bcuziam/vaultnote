@@ -546,6 +546,23 @@ function isSidebarCollapsedOnDevice() {
   }
 }
 
+let currentSyncState = { status: 'cloud', text: '저장됨' };
+
+function updateSaveIndicator(status, text) {
+  currentSyncState = { status, text };
+  const indicator = document.getElementById('save-indicator');
+  if (!indicator) return;
+  const dot = indicator.querySelector('.sync-state-dot');
+  const txt = indicator.querySelector('.sync-state-text');
+  if (dot) {
+    dot.className = `sync-state-dot sync-dot-${status}`;
+  }
+  if (txt) {
+    txt.textContent = text;
+  }
+  indicator.title = text;
+}
+
 async function applyRemoteSyncedState(remoteState, label = '실시간 동기화됨') {
   if (!remoteState || !Array.isArray(remoteState.notes)) return false;
   const prevActiveId = activeNoteId;
@@ -588,19 +605,35 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
 
   const mergedNotes = [];
   const processedIds = new Set();
+  let localHadNewerChanges = Boolean(hasPendingCloudSync);
+  const remoteNotesMap = new Map((remoteState.notes || []).map((n) => [n.id, n]));
 
   for (const pNote of primaryNotes) {
     if (!pNote || !pNote.id || mergedDeletedNoteIds[pNote.id]) continue;
     const sNote = secondaryMap.get(pNote.id);
+    let winningNote = pNote;
     if (sNote) {
       if (mergedDeletedNoteIds[sNote.id]) continue;
       const pTime = new Date(pNote.updatedAt || 0).getTime();
       const sTime = new Date(sNote.updatedAt || 0).getTime();
-      mergedNotes.push(sTime > pTime ? sNote : pNote);
+      winningNote = sTime > pTime ? sNote : pNote;
+      mergedNotes.push(winningNote);
     } else {
       mergedNotes.push(pNote);
     }
     processedIds.add(pNote.id);
+
+    // 원격과 비교하여 채택된 최종본이 로컬에서 온 더 최신본이거나 원격에 없는 새 로컬 노트인지 확인
+    const rNote = remoteNotesMap.get(pNote.id);
+    if (!rNote) {
+      if (!mergedDeletedNoteIds[pNote.id]) localHadNewerChanges = true;
+    } else {
+      const wTime = new Date(winningNote.updatedAt || 0).getTime();
+      const rTime = new Date(rNote.updatedAt || 0).getTime();
+      if (wTime > rTime + 300) {
+        localHadNewerChanges = true;
+      }
+    }
   }
 
   for (const sNote of secondaryNotes) {
@@ -608,6 +641,16 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     if (!processedIds.has(sNote.id)) {
       mergedNotes.unshift(sNote);
       processedIds.add(sNote.id);
+      const rNote = remoteNotesMap.get(sNote.id);
+      if (!rNote && !mergedDeletedNoteIds[sNote.id]) {
+        localHadNewerChanges = true;
+      } else if (rNote) {
+        const sTime = new Date(sNote.updatedAt || 0).getTime();
+        const rTime = new Date(rNote.updatedAt || 0).getTime();
+        if (sTime > rTime + 300) {
+          localHadNewerChanges = true;
+        }
+      }
     }
   }
 
@@ -684,6 +727,7 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
     Object.keys(state.deletedVaultItemIds || {}).some((id) => !remoteState.deletedVaultItemIds?.[id]) ||
     Object.keys(state.deletedFolderIds || {}).some((id) => !remoteState.deletedFolderIds?.[id]);
   const needsRemotePurgePush = remoteHadDeletedNotes || remoteHadDeletedVault || remoteHadDeletedFolders || remoteMissingTombstones;
+  const needsRemotePush = needsRemotePurgePush || localHadNewerChanges;
 
   state = {
     ...createInitialState(),
@@ -710,10 +754,10 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   }
 
   renderAll(true);
-  const indicator = document.getElementById('save-indicator');
-  if (indicator) indicator.textContent = label;
+  updateSaveIndicator('cloud', label);
 
-  if (needsRemotePurgePush) {
+  // 로컬에 클라우드보다 더 최신인 노트/변경분이 있거나 정리 대상이 있으면 최신 합본으로 안전 업로드(Push)
+  if (needsRemotePush) {
     scheduleSave(true, true);
   }
 
@@ -736,10 +780,9 @@ async function flushPendingCloudSyncIfAny() {
 async function pullLiveSyncStateIfNewer(isInitial = false) {
   if (isSyncingLive) return false;
 
-  // 오프라인 동안 작성/수정되어 아직 클라우드에 못 올린 데이터가 있다면 즉시 업로드 시도
-  if (hasPendingCloudSync) {
-    flushPendingCloudSyncIfAny();
-  }
+  // [무손실 동기화 원칙]: 오프라인 미전송분이 있더라도 구글 최신본을 먼저 내려받아(Pull)
+  // 개별 노트 단위로 LWW 대조·병합(Merge)한 후 최신 합본을 업로드(Push)하므로,
+  // 원격 데이터를 확인하기 전에 로컬 데이터를 무작정 먼저 올려 덮어쓰는 행위를 원천 차단함.
 
   // 로컬에서 삭제/수정이 발생한 직후 3초간은 아직 업로드 완료되지 않은 과거 클라우드 데이터 수신 차단
   if (!isInitial && Date.now() - lastLocalMutationTime < 3000) {
@@ -841,17 +884,17 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
 
 function scheduleSave(triggerCloud = true, immediate = false) {
   lastLocalMutationTime = Date.now();
-  const indicator = document.getElementById('save-indicator');
-  if (indicator && triggerCloud) indicator.textContent = '저장 중...';
+  if (triggerCloud) updateSaveIndicator('saving', '저장 중...');
 
   clearTimeout(saveDebounceTimer);
   const executeSave = async () => {
+    saveDebounceTimer = null;
     if (triggerCloud) {
       state.lastSavedAt = new Date().toISOString();
     }
     const savedPayload = await VaultStorage.saveState(state, triggerCloud);
     state.lastSavedAt = savedPayload.lastSavedAt;
-    if (indicator && triggerCloud) indicator.textContent = '저장됨';
+    if (triggerCloud) updateSaveIndicator('local', '로컬 저장됨');
 
     if (triggerCloud) {
       await pushLiveSyncState();
@@ -863,7 +906,7 @@ function scheduleSave(triggerCloud = true, immediate = false) {
         try {
           const res = await VaultStorage.syncWithPCFolder(state.settings.pcVaultDir, state, 'save');
           if (res && res.ok) {
-            if (indicator) indicator.textContent = 'OneDrive 동기화됨';
+            updateSaveIndicator('cloud', 'OneDrive 동기화됨');
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = 'OneDrive 연동중';
           }
@@ -877,14 +920,14 @@ function scheduleSave(triggerCloud = true, immediate = false) {
           .then(() => {
             hasPendingCloudSync = false;
             try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
-            if (indicator) indicator.textContent = 'OneDrive 자동 저장됨';
+            updateSaveIndicator('cloud', 'OneDrive 자동 저장됨');
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = 'OneDrive 연동중';
           })
           .catch(() => {
             hasPendingCloudSync = true;
             try { localStorage.setItem('vaultnote_pending_cloud_sync', '1'); } catch (_) {}
-            if (indicator) indicator.textContent = '오프라인 저장됨 (온라인 시 자동 동기화)';
+            updateSaveIndicator('error', '동기화 실패 (오프라인 저장됨)');
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = '오프라인 (동기화 대기)';
           });
@@ -895,14 +938,14 @@ function scheduleSave(triggerCloud = true, immediate = false) {
           .then(() => {
             hasPendingCloudSync = false;
             try { localStorage.removeItem('vaultnote_pending_cloud_sync'); } catch (_) {}
-            if (indicator) indicator.textContent = 'Google Drive 자동 저장됨';
+            updateSaveIndicator('cloud', 'Google Drive 자동 저장됨');
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = 'Google Drive 연동중';
           })
           .catch(() => {
             hasPendingCloudSync = true;
             try { localStorage.setItem('vaultnote_pending_cloud_sync', '1'); } catch (_) {}
-            if (indicator) indicator.textContent = '오프라인 저장됨 (온라인 시 자동 동기화)';
+            updateSaveIndicator('error', '동기화 실패 (오프라인 저장됨)');
             const badge = document.getElementById('sync-status-badge');
             if (badge) badge.textContent = '오프라인 (동기화 대기)';
           });
@@ -919,6 +962,21 @@ function scheduleSave(triggerCloud = true, immediate = false) {
     return executeSave();
   } else {
     saveDebounceTimer = setTimeout(executeSave, 1000); // 1000ms(1초) 타이핑 안정 디바운스
+  }
+}
+
+/**
+ * 0초 즉시 플러시 (앱 종료 / 백그라운드 전환 시 미저장 데이터 영구 쓰기 100% 보장)
+ */
+function flushPendingSaveImmediately() {
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+    state.lastSavedAt = new Date().toISOString();
+    VaultStorage.saveState(state, false).catch(() => {});
+    hasPendingCloudSync = true;
+    try { localStorage.setItem('vaultnote_pending_cloud_sync', '1'); } catch (_) {}
+    updateSaveIndicator('local', '로컬 저장됨');
   }
 }
 
@@ -8795,6 +8853,12 @@ async function initApp() {
   initNavigationHistory();
   bindEvents();
 
+  if (hasPendingCloudSync) {
+    updateSaveIndicator('local', '오프라인 저장됨 (동기화 대기)');
+  } else {
+    updateSaveIndicator('cloud', '저장됨');
+  }
+
   // 기기별 맞춤 메뉴바 초기화 (노트북/PC는 항상 펼침, 스마트폰은 닫힘)
   const initialCollapsed = isSidebarCollapsedOnDevice();
   updateSidebarUI(initialCollapsed);
@@ -8850,10 +8914,18 @@ async function initApp() {
     pullLiveSyncStateIfNewer(false);
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'hidden') {
+      // 스마트폰 홈 화면 이동 / 다른 앱 전환 / 백그라운드 전환 시 0초 즉시 영구 플러시
+      flushPendingSaveImmediately();
+    } else if (document.visibilityState === 'visible') {
       markUserActivity();
       pullLiveSyncStateIfNewer(false);
     }
+  });
+
+  window.addEventListener('pagehide', () => {
+    // 브라우저 탭 닫기 / 앱 종료 시 0초 즉시 영구 플러시
+    flushPendingSaveImmediately();
   });
 
   let lastSyncPollTime = Date.now();
@@ -8953,7 +9025,10 @@ function bindEvents() {
     window.addEventListener(ev, resetIdleTimer, { passive: true });
   });
 
-  // Touch swipe from left edge to open sidebar on mobile (Galaxy Z Fold & smartphones)
+  // Save status badge tap/click feedback (especially useful for smartphone/mobile)
+  document.getElementById('save-indicator')?.addEventListener('click', () => {
+    showToast(currentSyncState.text || '저장됨', 2000);
+  });
   let edgeTouchStartX = 0;
   let edgeTouchStartY = 0;
   window.addEventListener('touchstart', (e) => {
