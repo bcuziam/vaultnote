@@ -6843,9 +6843,10 @@ function summarizeExtractedArticle(title = '', rawBlocks = [], sourceUrl = '') {
           .filter(Boolean);
 
         for (let s of parts) {
+          s = s.replace(/\s*\(\d{1,2}:\d{2}(:\d{2})?\)\s*/g, ' ').replace(/\s*\[\d{1,2}:\d{2}(:\d{2})?\]\s*/g, ' ').trim();
           if (s.length < minLen) continue;
           if (s.length > 240) s = `${s.slice(0, 220).trim()}...`;
-          if (/(무단\s*전재|재배포|금지|기자\s*=|특파원|copyright|ⓒ|제보|구독|좋아요|클릭|사진\s*=|출처\s*:)/i.test(s)) continue;
+          if (/(수고하십니다|감사합니다|안녕하세요|고객님\s*무엇을\s*도와드릴까요|무단\s*전재|재배포|금지|기자\s*=|특파원|copyright|ⓒ|제보|구독|좋아요|클릭|사진\s*=|출처\s*:)/i.test(s)) continue;
           if (seen.has(s)) continue;
           seen.add(s);
           list.push(s);
@@ -7109,29 +7110,33 @@ function detectDocumentProfile(title = '', text = '', sourceUrl = '', forcedMode
 
   // Manual Mode Override
   if (forcedMode === 'short') {
-    return { tier: 'short', genre: 'general', length: len };
+    return { tier: 'short', genre: 'general', length: len, isDialogue: false };
   }
   if (forcedMode === 'deep') {
-    return { tier: 'deep', genre: 'general', length: len };
+    return { tier: 'deep', genre: 'general', length: len, isDialogue: false };
   }
   if (forcedMode === 'academic') {
-    return { tier: 'deep', genre: 'academic', length: len };
+    return { tier: 'deep', genre: 'academic', length: len, isDialogue: false };
   }
   if (forcedMode === 'business') {
-    return { tier: 'deep', genre: 'business', length: len };
+    const isDiag = /(\(\d{1,2}:\d{2}(:\d{2})?\)|\[\d{1,2}:\d{2}(:\d{2})?\])/.test(clean.slice(0, 3000)) ||
+      /(화자\s*\d+|상담사|상담원|통화|상담|녹취|대화록|녹음|인터뷰|나\s*\(\d|고객님|문의\s*좀)/i.test(sample);
+    return { tier: 'deep', genre: 'business', length: len, isDialogue: Boolean(isDiag) };
   }
 
   // Auto Mode: Content & Structure takes first priority!
   const isAcademic = /(abstract|introduction|methodology|experiments?|benchmark|dataset|arxiv|doi:|et al\.|논문|연구|가설|실험|방법론|검증|아키텍처)/i.test(sample);
-  const isBusiness = /(회의록|안건|회의|참석자|아젠다|action items?|결정사항|추진계획|보고서|기획서)/i.test(sample);
+  const isDialogueOrCall = /(\(\d{1,2}:\d{2}(:\d{2})?\)|\[\d{1,2}:\d{2}(:\d{2})?\])/.test(clean.slice(0, 3000)) ||
+    /(화자\s*\d+|상담사|상담원|통화|상담|녹취|대화록|녹음|인터뷰|나\s*\(\d|고객님|문의\s*좀)/i.test(sample);
+  const isBusiness = isDialogueOrCall || /(회의록|안건|회의|참석자|아젠다|action items?|결정사항|추진계획|보고서|기획서)/i.test(sample);
   const isNews = /(기자|특파원|보도에 따르면|전언이다|뉴시스|연합뉴스|뉴스1|조선일보|중앙일보|동아일보|매일경제|한국경제|한겨레|경향신문|reuters|apnews|bloomberg|wsj|cnn|bbc)/i.test(sample) || /news|article|press/i.test(sourceUrl);
 
   if (isAcademic) {
-    return { tier: 'deep', genre: 'academic', length: len };
+    return { tier: 'deep', genre: 'academic', length: len, isDialogue: false };
   }
 
   if (isBusiness) {
-    return { tier: 'deep', genre: 'business', length: len };
+    return { tier: 'deep', genre: 'business', length: len, isDialogue: Boolean(isDialogueOrCall) };
   }
 
   // For news and general content, length determines tier:
@@ -7241,45 +7246,72 @@ async function summarizeWithGeminiAI(title = '', rawBlocks = [], sourceUrl = '',
     ].join('\n');
   } else {
     // Tier 3: Deep In-Depth Report (LiveWiki Style)
+    const isDialogue = Boolean(profile.isDialogue) || /(통화|상담|녹취|대화|인터뷰|화자|\(\d{1,2}:\d{2}\))/i.test(safeBody.slice(0, 3000));
     const reportTitleGuide = profile.genre === 'academic'
       ? '학술/기술 심층 분석 리포트'
-      : (profile.genre === 'business' ? '업무 기획/회의 요약 리포트' : '심층 요약 리포트');
+      : (profile.genre === 'business'
+          ? (isDialogue ? '통화·상담 및 회의 요약 리포트' : '업무 기획/회의 요약 리포트')
+          : '심층 요약 리포트');
+
+    const promptInstructions = isDialogue
+      ? [
+          '당신은 최고 수준의 전문 녹취 분석가이자 회의·상담록 에디터입니다. 아래 통화/상담 녹취록 또는 회의 대화를 정밀 분석하여, 대화의 핵심 목적과 결과, 상대방의 안내 내용 및 향후 조치사항을 100% 명확히 파악할 수 있는 고품질 요약 리포트를 작성해주세요.',
+          '[작성 지침]',
+          '1. 통화/회의의 핵심 목적(문의 사안, 안건)과 최종 결론을 명확히 요약하세요.',
+          '2. 상대방(상담원, 담당자 등)이 설명한 구체적인 안내 조건, 산정 기준, 수치, 핵심 절차를 누락 없이 충실히 정리하세요.',
+          '3. keyConclusions에는 핵심 안내/결정사항과 함께 향후 조치사항(Action Items: 신청 방법, 구비 서류, 일정 등)을 구체적으로 포함하세요.',
+          '4. sections에는 대화 흐름에 따라 3~5개의 구체적인 소제목(heading)과 상세 문단(paragraphs)들을 작성하세요.',
+          '5. 태그에는 대화에서 다룬 핵심 업무/제도/주제 키워드 3~5개를 넣으세요.'
+        ]
+      : [
+          '당신은 최고 수준의 테크니컬 라이터이자 위키 에디터입니다. 아래 긴 전문 문서를 정밀 분석하여, 원문을 다 읽지 않아도 문서의 전체 논리, 핵심 데이터, 세부 쟁점을 100% 파악할 수 있는 고품질 심층 리포트를 작성해주세요.',
+          '[작성 지침]',
+          '1. 문서 전체의 기승전결과 핵심 논리를 누락 없이 체계적으로 구성하세요.',
+          '2. sections에는 문서의 흐름에 따라 3~6개의 구체적인 문장형 소제목(heading)과 상세 문단(paragraphs)들을 작성하세요.',
+          '3. 구체적인 수치, 통계, 고유명사, 인용구, 주요 방법론을 충실하게 포함하세요.',
+          '4. 태그에는 요약, 기사, 문서 같은 일반적인 단어 대신 구체적인 주제 키워드 3~5개를 넣으세요.'
+        ];
 
     promptText = [
-      '당신은 최고 수준의 테크니컬 라이터이자 위키 에디터입니다. 아래 긴 전문 문서를 정밀 분석하여, 원문을 다 읽지 않아도 문서의 전체 논리, 핵심 데이터, 세부 쟁점을 100% 파악할 수 있는 고품질 심층 리포트를 작성해주세요.',
-      '[작성 지침]',
-      '1. 문서 전체의 기승전결과 핵심 논리를 누락 없이 체계적으로 구성하세요.',
-      '2. sections에는 문서의 흐름에 따라 3~6개의 구체적인 문장형 소제목(heading)과 상세 문단(paragraphs)들을 작성하세요.',
-      '3. 구체적인 수치, 통계, 고유명사, 인용구, 주요 방법론을 충실하게 포함하세요.',
-      '4. 태그에는 요약, 기사, 문서 같은 일반적인 단어 대신 구체적인 주제 키워드 3~5개를 넣으세요.',
+      ...promptInstructions,
       '반드시 아래 JSON 형식으로만 응답하세요:',
       JSON.stringify({
         isForeign: false,
         tier: 'deep',
         reportTitle: reportTitleGuide,
-        oneLine: '문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)',
-        takeaway: '이 문서가 시사하는 핵심 시사점 및 결론 (1~2문장)',
-        keyConclusions: [
-          '핵심 결론 및 발견 1 (구체적 사실 포함)',
-          '핵심 결론 및 발견 2 (구체적 사실 포함)',
-          '핵심 결론 및 발견 3 (구체적 사실 포함)'
-        ],
+        oneLine: isDialogue
+          ? '통화/상담의 핵심 문의 사안 및 최종 안내 결과 한 줄 요약 (40~90자)'
+          : '문서 전체를 관통하는 한 줄 핵심 결론 (40~90자)',
+        takeaway: isDialogue
+          ? '핵심 유의사항, 주요 혜택 또는 시사점 (1~2문장)'
+          : '이 문서가 시사하는 핵심 시사점 및 결론 (1~2문장)',
+        keyConclusions: isDialogue
+          ? [
+              '핵심 안내 및 결정사항 1 (구체적 조건/수치 포함)',
+              '핵심 안내 및 결정사항 2 (구체적 조건/수치 포함)',
+              '향후 조치사항(Action Item) 또는 신청 절차'
+            ]
+          : [
+              '핵심 결론 및 발견 1 (구체적 사실 포함)',
+              '핵심 결론 및 발견 2 (구체적 사실 포함)',
+              '핵심 결론 및 발견 3 (구체적 사실 포함)'
+            ],
         sections: [
           {
-            heading: '1. 첫 번째 핵심 주제 소제목',
+            heading: isDialogue ? '1. 문의 배경 및 핵심 질문' : '1. 첫 번째 핵심 주제 소제목',
             paragraphs: ['상세 사실과 데이터가 담긴 문단 1', '상세 문단 2']
           },
           {
-            heading: '2. 두 번째 핵심 주제 소제목',
+            heading: isDialogue ? '2. 안내 내용 및 세부 조건' : '2. 두 번째 핵심 주제 소제목',
             paragraphs: ['상세 사실과 데이터가 담긴 문단 1']
           },
           {
-            heading: '3. 세 번째 핵심 주제 소제목',
+            heading: isDialogue ? '3. 향후 절차 및 유의점' : '3. 세 번째 핵심 주제 소제목',
             paragraphs: ['상세 사실과 데이터가 담긴 문단 1']
           }
         ],
         glossary: [
-          { term: '핵심용어/약어', desc: '간결한 설명' }
+          { term: '핵심용어/제도/약어', desc: '간결한 설명' }
         ],
         tags: ['키워드1', '키워드2', '키워드3']
       }),
@@ -12347,7 +12379,7 @@ async function runAISummarizeOnActiveNote() {
     if (aiResult.profile?.genre === 'academic') {
       modeDesc = '학술/기술 심층 분석 리포트';
     } else if (aiResult.profile?.genre === 'business') {
-      modeDesc = '업무/회의록 요약 리포트';
+      modeDesc = aiResult.profile?.isDialogue ? '통화/상담 녹취 요약 리포트' : '업무/회의록 요약 리포트';
     } else if (aiResult.profile?.tier === 'short') {
       modeDesc = '3줄 퀵 팩트 요약';
     }
