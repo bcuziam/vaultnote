@@ -6337,11 +6337,22 @@ function findBestArticleContainer(doc) {
 function parseStructuredTextToBlocks(rawText, rawHtml = '') {
   let sourceText = rawText || '';
 
-  // HTML 클립보드에 볼드/기울임/코드 태그가 있다면 마크다운 기호로 보존
+  // HTML 클립보드에 볼드/기울임/코드 태그가 있다면 마크다운 기호로 보존 (MS Office 찌꺼기 선별 정제)
   if (rawHtml && typeof document !== 'undefined' && !sourceText.includes('**')) {
     try {
+      // 1. MS Office / Word / Excel 전용 찌꺼기 완벽 정제 (style, head, meta, link, xml 및 <!-- ... --> 주석 태그 제거)
+      const cleanHtml = String(rawHtml || '')
+        .replace(/<!--[\s\S]*?-->/g, '') // HTML 주석 완전 제거 (워드 CSS 주석 박멸)
+        .replace(/<style[\s\S]*?<\/style>/gi, '') // style 태그 및 CSS 내용 제거
+        .replace(/<xml[\s\S]*?<\/xml>/gi, '') // Word XML 메타데이터 제거
+        .replace(/<head[\s\S]*?<\/head>/gi, '') // head 태그 제거
+        .replace(/<meta[\s\S]*?>/gi, ''); // meta 태그 제거
+
       const temp = document.createElement('div');
-      temp.innerHTML = rawHtml;
+      temp.innerHTML = cleanHtml;
+      // 추가적인 DOM 클린업 (혹시 남아있을 수 있는 불필요한 메타/스타일 요소 제거)
+      temp.querySelectorAll('style, script, head, meta, link, xml').forEach((el) => el.remove());
+
       temp.querySelectorAll('strong, b').forEach((el) => {
         el.textContent = `**${el.textContent.trim()}**`;
       });
@@ -6352,7 +6363,7 @@ function parseStructuredTextToBlocks(rawText, rawHtml = '') {
         el.textContent = `\`${el.textContent.trim()}\``;
       });
       const extracted = temp.innerText || '';
-      if (extracted.includes('\n')) {
+      if (extracted.includes('\n') && extracted.trim().length > 0) {
         sourceText = extracted;
       }
     } catch (_) {}
