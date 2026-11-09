@@ -3321,7 +3321,7 @@ function renderBlocksList(note, blocks) {
         tbl.style.minWidth = '0';
       }
 
-      // 열 팝오버 메뉴 닫기 핸들러
+      // 열 & 행 팝오버 메뉴 닫기 핸들러
       let activeColMenu = null;
       const closeColMenu = () => {
         if (activeColMenu) {
@@ -3331,27 +3331,119 @@ function renderBlocksList(note, blocks) {
         }
       };
 
+      let activeRowMenu = null;
+      const closeRowMenu = () => {
+        if (activeRowMenu) {
+          activeRowMenu.remove();
+          activeRowMenu = null;
+          document.removeEventListener('click', closeRowMenu);
+        }
+      };
+
       block.rows.forEach((row, rIdx) => {
         const tr = document.createElement('tr');
 
-        // 행 삭제 컨트롤 셀 (행이 2개 이상일 때 삭제 버튼 노출)
+        // 행 컨트롤 셀 (행 옵션 메뉴 버튼)
         const rowCtrlTd = document.createElement('td');
         rowCtrlTd.className = 'table-row-ctrl-td';
-        if (block.rows.length > 1) {
-          const btnDelRow = document.createElement('button');
-          btnDelRow.type = 'button';
-          btnDelRow.className = 'table-btn-del-row';
-          btnDelRow.textContent = '✕';
-          btnDelRow.title = `${rIdx + 1}번째 행 삭제`;
-          btnDelRow.addEventListener('click', (e) => {
-            e.stopPropagation();
+
+        const btnRowMenu = document.createElement('button');
+        btnRowMenu.type = 'button';
+        btnRowMenu.className = 'table-row-menu-btn';
+        btnRowMenu.textContent = '⋮';
+        btnRowMenu.title = `${rIdx + 1}번째 행 옵션 (위/아래 행 추가, 복제, 삭제)`;
+
+        btnRowMenu.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeRowMenu) {
+            closeRowMenu();
+            return;
+          }
+          closeColMenu();
+
+          const menu = document.createElement('div');
+          menu.className = 'table-col-menu table-row-menu';
+          menu.innerHTML = `
+            <button type="button" class="table-col-menu-item btn-add-row-above">위에 행 추가</button>
+            <button type="button" class="table-col-menu-item btn-add-row-below">아래에 행 추가</button>
+            <button type="button" class="table-col-menu-item btn-duplicate-row">이 행 복제</button>
+            ${block.rows.length > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-row-this">이 행 삭제</button>' : ''}
+          `;
+
+          document.body.appendChild(menu);
+          activeRowMenu = menu;
+
+          const rect = btnRowMenu.getBoundingClientRect();
+          const menuW = 150;
+          const menuH = block.rows.length > 1 ? 145 : 115;
+          let top = rect.bottom + 4;
+          let left = Math.max(8, Math.min(window.innerWidth - menuW - 8, rect.left));
+          if (top + menuH > window.innerHeight && rect.top > menuH + 8) {
+            top = rect.top - menuH - 4;
+          }
+          menu.style.top = `${top}px`;
+          menu.style.left = `${left}px`;
+
+          menu.querySelector('.btn-add-row-above')?.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            closeRowMenu();
+            recordPreActionSnapshot();
+            block.rows.splice(rIdx, 0, new Array(maxCols).fill(''));
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            setTimeout(() => {
+              const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+              const newInp = rowContainer?.querySelector(`textarea[data-row="${rIdx}"][data-col="0"]`);
+              newInp?.focus();
+            }, 10);
+          });
+
+          menu.querySelector('.btn-add-row-below')?.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            closeRowMenu();
+            recordPreActionSnapshot();
+            block.rows.splice(rIdx + 1, 0, new Array(maxCols).fill(''));
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            setTimeout(() => {
+              const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+              const newInp = rowContainer?.querySelector(`textarea[data-row="${rIdx + 1}"][data-col="0"]`);
+              newInp?.focus();
+            }, 10);
+          });
+
+          menu.querySelector('.btn-duplicate-row')?.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            closeRowMenu();
+            recordPreActionSnapshot();
+            const copiedRow = [...block.rows[rIdx]];
+            block.rows.splice(rIdx + 1, 0, copiedRow);
+            touchNote(note, blocks);
+            renderActiveNoteEditor();
+            setTimeout(() => {
+              const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+              const newInp = rowContainer?.querySelector(`textarea[data-row="${rIdx + 1}"][data-col="0"]`);
+              newInp?.focus();
+            }, 10);
+          });
+
+          menu.querySelector('.btn-del-row-this')?.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            closeRowMenu();
             recordPreActionSnapshot();
             block.rows.splice(rIdx, 1);
             touchNote(note, blocks);
             renderActiveNoteEditor();
           });
-          rowCtrlTd.appendChild(btnDelRow);
-        }
+
+          setTimeout(() => {
+            document.addEventListener('click', closeRowMenu);
+            window.addEventListener('scroll', closeRowMenu, { capture: true, once: true });
+            window.addEventListener('resize', closeRowMenu, { once: true });
+          }, 10);
+        });
+
+        rowCtrlTd.appendChild(btnRowMenu);
         tr.appendChild(rowCtrlTd);
 
         row.forEach((cellVal, cIdx) => {
@@ -3389,9 +3481,22 @@ function renderBlocksList(note, blocks) {
           // 초기 로드 시 내용에 맞게 높이 맞춤
           setTimeout(adjustTaHeight, 0);
 
-          // 키보드 네비게이션: Tab, Shift+Tab, Enter (Shift+Enter는 셀 내 줄바꿈), ArrowUp, ArrowDown
+          // 키보드 네비게이션: Tab, Shift+Tab, Enter (Shift+Enter는 셀 내 줄바꿈), Ctrl+Enter (아래에 행 삽입), ArrowUp, ArrowDown
           ta.addEventListener('keydown', (e) => {
-            if (e.key === 'Tab') {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              recordPreActionSnapshot();
+              const nextR = rIdx + 1;
+              block.rows.splice(nextR, 0, new Array(maxCols).fill(''));
+              touchNote(note, blocks);
+              renderActiveNoteEditor();
+              setTimeout(() => {
+                const rowContainer = document.querySelector(`.block-row[data-block-id="${block.id}"]`);
+                const newInp = rowContainer?.querySelector(`textarea[data-row="${nextR}"][data-col="${cIdx}"]`);
+                newInp?.focus();
+              }, 10);
+              return;
+            } else if (e.key === 'Tab') {
               e.preventDefault();
               if (e.shiftKey) {
                 let prevR = rIdx;
@@ -3470,6 +3575,7 @@ function renderBlocksList(note, blocks) {
                 closeColMenu();
                 return;
               }
+              closeRowMenu();
 
               const menu = document.createElement('div');
               menu.className = 'table-col-menu';
@@ -3478,6 +3584,7 @@ function renderBlocksList(note, blocks) {
                 <button type="button" class="table-col-menu-item btn-equal-col">열 너비 균등 분할</button>
                 <button type="button" class="table-col-menu-item btn-add-col-left">왼쪽에 열 추가</button>
                 <button type="button" class="table-col-menu-item btn-add-col-right">오른쪽에 열 추가</button>
+                <button type="button" class="table-col-menu-item btn-duplicate-col">이 열 복제</button>
                 ${maxCols > 1 ? '<button type="button" class="table-col-menu-item text-danger btn-del-col-this">이 열 삭제</button>' : ''}
               `;
 
@@ -3487,7 +3594,7 @@ function renderBlocksList(note, blocks) {
 
               const rect = btnColMenu.getBoundingClientRect();
               const menuW = 160;
-              const menuH = maxCols > 1 ? 180 : 145;
+              const menuH = maxCols > 1 ? 215 : 180;
               let top = rect.bottom + 4;
               let left = Math.max(8, Math.min(window.innerWidth - menuW - 8, rect.right - menuW));
               if (top + menuH > window.innerHeight && rect.top > menuH + 8) {
@@ -3529,6 +3636,16 @@ function renderBlocksList(note, blocks) {
                 closeColMenu();
                 recordPreActionSnapshot();
                 block.rows.forEach((r) => r.splice(cIdx + 1, 0, ''));
+                delete block.colWidthsPct;
+                touchNote(note, blocks);
+                renderActiveNoteEditor();
+              });
+
+              menu.querySelector('.btn-duplicate-col')?.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeColMenu();
+                recordPreActionSnapshot();
+                block.rows.forEach((r) => r.splice(cIdx + 1, 0, r[cIdx] || ''));
                 delete block.colWidthsPct;
                 touchNote(note, blocks);
                 renderActiveNoteEditor();
