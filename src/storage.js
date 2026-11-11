@@ -353,22 +353,46 @@ export const VaultStorage = {
 
   async saveToBrowserDirectory(state) {
     await this.restoreBrowserDirectoryHandle();
-    if (!directoryHandle) throw new Error('연결된 폴더가 없습니다.');
-    const payload = { ...state, lastSavedAt: state.lastSavedAt || new Date().toISOString() };
-    const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(payload, null, 2));
-    await writable.close();
-    return { ok: true, folderName: directoryHandle.name, updatedAt: payload.lastSavedAt };
+    if (!directoryHandle) return null;
+    try {
+      const payload = { ...state, lastSavedAt: state.lastSavedAt || new Date().toISOString() };
+      const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(payload, null, 2));
+      await writable.close();
+      return { ok: true, folderName: directoryHandle.name, updatedAt: payload.lastSavedAt };
+    } catch (err) {
+      console.warn('[VaultStorage] saveToBrowserDirectory error:', err);
+      return null;
+    }
   },
 
   async loadFromBrowserDirectory() {
     await this.restoreBrowserDirectoryHandle();
-    if (!directoryHandle) throw new Error('연결된 폴더가 없습니다.');
-    const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: false });
-    const file = await fileHandle.getFile();
-    const text = await file.text();
-    return JSON.parse(text);
+    if (!directoryHandle) return null;
+    try {
+      const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: false });
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      return JSON.parse(text);
+    } catch (err) {
+      // 폴더가 비어있거나 파일이 아직 없는 경우 에러를 던지지 않고 안전하게 null 반환
+      return null;
+    }
+  },
+
+  async disconnectBrowserDirectory() {
+    directoryHandle = null;
+    try {
+      const db = await openDB();
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(DIR_HANDLE_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch {}
+    return true;
   },
 
   /**
