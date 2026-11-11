@@ -1502,6 +1502,9 @@ function selectCategoryNav(navKey) {
 let pendingEditorSearchHighlight = '';
 
 function clearSearchHighlights() {
+  if (!pendingEditorSearchHighlight && !document.querySelector('.search-match-block, mark.search-highlight')) {
+    return;
+  }
   pendingEditorSearchHighlight = '';
 
   // Title preview -> input
@@ -1520,7 +1523,7 @@ function clearSearchHighlights() {
     const preview = row.querySelector('.block-preview-overlay');
     const ta = row.querySelector('textarea.block-editable');
     if (preview && ta) {
-      const stillHasFormatting = /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[)/i.test(ta.value || '');
+      const stillHasFormatting = /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2}|`[^`\n]+`|\[[^\]\n]+\]\()/i.test(ta.value || '');
       if (stillHasFormatting) {
         preview.innerHTML = renderMarkdownInlineHtml(ta.value || '');
       } else if (document.activeElement !== ta) {
@@ -4178,7 +4181,7 @@ function renderBlocksList(note, blocks) {
       });
 
       const hasSearchMatch = Boolean(pendingEditorSearchHighlight && (block.text || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2})/i.test(block.text || '');
+      const hasFormatting = hasSearchMatch || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2}|`[^`\n]+`|\[[^\]\n]+\]\()/i.test(block.text || '');
       const previewDiv = document.createElement('div');
       previewDiv.className = `block-preview-overlay ${hasFormatting ? '' : 'hidden'}`;
       let renderedHtml = renderMarkdownInlineHtml(block.text || '');
@@ -4229,7 +4232,7 @@ function renderBlocksList(note, blocks) {
         setTimeout(() => {
           if (document.activeElement !== ta) {
             const hasQuery = Boolean(pendingEditorSearchHighlight && (ta.value || '').toLowerCase().includes(pendingEditorSearchHighlight.toLowerCase()));
-            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2})/i.test(ta.value || '');
+            const stillHasFormatting = hasQuery || /(\*\*|\*|~~|==|<u>|<span\s+style=|\[\[|\[\d{1,2}:\d{2}|`[^`\n]+`|\[[^\]\n]+\]\()/i.test(ta.value || '');
             if (stillHasFormatting) {
               let updatedHtml = renderMarkdownInlineHtml(ta.value || '');
               if (pendingEditorSearchHighlight) {
