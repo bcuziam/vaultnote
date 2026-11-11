@@ -756,9 +756,6 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   renderAll(true);
   updateSaveIndicator('cloud', label);
 
-  // 스마트폰 등 원격 변경사항이 병합된 즉시 로컬 백업 폴더 파일도 항상 최신 합본으로 자동 미러링
-  VaultStorage.saveToBrowserDirectory(state).catch(() => {});
-
   // 로컬에 클라우드보다 더 최신인 노트/변경분이 있거나 정리 대상이 있으면 최신 합본으로 안전 업로드(Push)
   if (needsRemotePush) {
     scheduleSave(true, true);
@@ -771,27 +768,6 @@ let hasPendingCloudSync = false;
 try {
   hasPendingCloudSync = localStorage.getItem('vaultnote_pending_cloud_sync') === '1';
 } catch (_) {}
-
-async function updateLocalFolderUI() {
-  const badge = document.getElementById('local-folder-status-badge');
-  const btnDisconnect = document.getElementById('btn-disconnect-local-folder');
-  const handle = await VaultStorage.restoreBrowserDirectoryHandle();
-  if (handle) {
-    if (badge) {
-      badge.textContent = `[연결됨] ${handle.name}`;
-      badge.style.background = '#e8f5e9';
-      badge.style.color = '#1b5e20';
-    }
-    if (btnDisconnect) btnDisconnect.classList.remove('hidden');
-  } else {
-    if (badge) {
-      badge.textContent = '연결 안 됨';
-      badge.style.background = '#f0f0ed';
-      badge.style.color = '#666';
-    }
-    if (btnDisconnect) btnDisconnect.classList.add('hidden');
-  }
-}
 
 async function flushPendingCloudSyncIfAny() {
   if (!hasPendingCloudSync) return false;
@@ -904,20 +880,6 @@ function scheduleSave(triggerCloud = true, immediate = false) {
 
     if (triggerCloud) {
       await pushLiveSyncState();
-
-      // Save to Browser-linked OneDrive folder if granted
-      VaultStorage.saveToBrowserDirectory(state).catch(() => {});
-
-      if (state.settings.autoPcSync && state.settings.pcVaultDir) {
-        try {
-          const res = await VaultStorage.syncWithPCFolder(state.settings.pcVaultDir, state, 'save');
-          if (res && res.ok) {
-            updateSaveIndicator('cloud', '동기화됨');
-            const badge = document.getElementById('sync-status-badge');
-            if (badge) badge.textContent = 'OneDrive 연동중';
-          }
-        } catch {}
-      }
 
       // If OneDrive or Google Drive API Token is saved, automatically upload on every edit
       const cloudPromises = [];
@@ -9034,10 +8996,6 @@ async function initApp() {
   renderAll(true);
   resetIdleTimer();
 
-  const chkAutoSync = document.getElementById('chk-auto-pc-sync');
-  if (chkAutoSync) chkAutoSync.checked = Boolean(state.settings.autoPcSync);
-  await updateLocalFolderUI();
-
   // Display LAN URL for Smartphone Web App access & initialize Zero-Click Live Sync
   fetch('/api/cloud-folders')
     .then((r) => r.json())
@@ -11409,16 +11367,10 @@ function triggerPrintActiveNote() {
     if (!badge) return;
     const hasGdrive = Boolean((state.settings.gdriveToken || '').trim());
     const hasToken = Boolean((state.settings.onedriveToken || '').trim());
-    const hasDirHandle = await VaultStorage.restoreBrowserDirectoryHandle();
-    const hasPcDir = Boolean((state.settings.pcVaultDir || '').trim());
-    if (hasGdrive || hasToken || hasDirHandle || hasPcDir) {
+    if (hasGdrive || hasToken) {
       const modeLabel = hasGdrive
         ? '자동 동기화 켜짐 (Google Drive 영구 연결)'
-        : hasToken && (hasDirHandle || hasPcDir)
-        ? '자동 동기화 켜짐 (PC 폴더 + 스마트폰 API)'
-        : hasToken
-        ? '자동 동기화 켜짐 (OneDrive API)'
-        : '자동 동기화 켜짐 (원드라이브 폴더)';
+        : '자동 동기화 켜짐 (OneDrive API)';
       badge.textContent = modeLabel;
       badge.style.background = '#e8f5e9';
       badge.style.color = '#1b5e20';
@@ -11434,7 +11386,6 @@ function triggerPrintActiveNote() {
     if (odEl) odEl.value = state.settings.onedriveToken || '';
     const gdEl = document.getElementById('gdrive-token-input');
     if (gdEl) gdEl.value = state.settings.gdriveToken || '';
-    updateLocalFolderUI();
     refreshOneDriveSyncBadge();
     document.getElementById('cloud-sync-modal').classList.remove('hidden');
   });
@@ -11451,39 +11402,6 @@ function triggerPrintActiveNote() {
   document.getElementById('gdrive-token-input')?.addEventListener('change', (e) => {
     state.settings.gdriveToken = e.target.value.trim();
     scheduleSave(false);
-  });
-
-  document.getElementById('chk-auto-pc-sync')?.addEventListener('change', (e) => {
-    state.settings.autoPcSync = e.target.checked;
-    scheduleSave(false);
-  });
-
-  document.getElementById('btn-pick-custom-folder')?.addEventListener('click', async () => {
-    try {
-      const folderName = await VaultStorage.pickBrowserDirectory();
-      const existing = await VaultStorage.loadFromBrowserDirectory();
-      if (existing && Array.isArray(existing.notes) && existing.notes.length > 0 && (existing.lastSavedAt || 0) > (state.lastSavedAt || 0)) {
-        await applyRemoteSyncedState(existing, '동기화됨');
-        showToast(`'${folderName}' 폴더의 최신 데이터를 불러오고 자동 동기화를 연결했습니다.`);
-      } else {
-        state.lastSavedAt = new Date().toISOString();
-        await VaultStorage.saveToBrowserDirectory(state);
-        showToast(`'${folderName}' 폴더와 자동 동기화가 성공적으로 연결되었습니다.`);
-      }
-      await updateLocalFolderUI();
-      refreshOneDriveSyncBadge();
-      updateSaveIndicator('cloud', '동기화됨');
-    } catch (err) {
-      if (err.name === 'AbortError') return; // 사용자가 창을 닫은 경우 조용히 무시
-      showToast(err.message || '폴더 연결 실패');
-    }
-  });
-
-  document.getElementById('btn-disconnect-local-folder')?.addEventListener('click', async () => {
-    await VaultStorage.disconnectBrowserDirectory();
-    await updateLocalFolderUI();
-    refreshOneDriveSyncBadge();
-    showToast('로컬 폴더 연결이 해제되었습니다.');
   });
 
   // Helper to determine if the local device has user-created notes or only empty default welcome notes

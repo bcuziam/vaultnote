@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v162" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v163" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v162" />
+  <link rel="stylesheet" href="./src/styles.css?v=v163" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v162</span>
+        <span class="app-version-badge" id="app-version-display">v163</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -656,22 +656,8 @@
         </div>
 
         <div class="sync-box">
-          <h4>1. 로컬 백업 폴더 (PC 전용 · 브라우저 초기화 대비)</h4>
-          <p class="text-muted"><strong>(PC 전용)</strong> 컴퓨터의 원하는 폴더를 한 번만 지정해 두면, 글을 쓸 때는 물론 스마트폰에서 작성한 글이 동기화될 때도 <strong>항상 가장 최신의 완전한 암호화 볼트 파일(<code>vaultnote-sync.vnvault.json</code>)이 자동으로 실물 백업</strong>됩니다. 브라우저 기록이나 캐시를 완전히 삭제하더라도 이 백업 파일만 있으면 언제든 지우기 직전 상태로 1초 만에 완벽 복구할 수 있습니다. <span style="font-size:11.5px;color:var(--text-muted);">(※ 모바일/스마트폰 OS는 보안 정책상 로컬 폴더 직접 접근을 미지원하므로 2번 구글 드라이브 동기화를 이용해 주세요.)</span></p>
-          <div class="sync-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button type="button" id="btn-pick-custom-folder" class="btn btn-primary btn-sm">폴더 선택</button>
-            <span id="local-folder-status-badge" class="note-folder-badge" style="font-weight:600;padding:5px 10px;border-radius:4px;font-size:12px;background:#f0f0ed;color:#666;">연결 안 됨</span>
-            <button type="button" id="btn-disconnect-local-folder" class="btn btn-secondary btn-sm hidden" style="font-size:11px;padding:3px 8px;">연결 해제</button>
-          </div>
-          <label class="checkbox-label mt-8" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="chk-auto-pc-sync" checked style="width:auto;" />
-            <span>노트 수정 시 지정된 폴더에 자동 동기화</span>
-          </label>
-        </div>
-
-        <div class="sync-box">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <h4 style="margin-bottom:0;">2. OneDrive / Google Drive 클라우드 자동 동기화 (웹앱 · 스마트폰 · 외부 PC)</h4>
+            <h4 style="margin-bottom:0;">1. OneDrive / Google Drive 클라우드 자동 동기화 (웹앱 · 스마트폰 · 외부 PC)</h4>
             <span id="onedrive-sync-status-badge" class="note-folder-badge" style="font-weight:600;">미연동</span>
           </div>
           <p class="text-muted mb-8">
@@ -711,7 +697,7 @@
         </div>
 
         <div class="sync-box">
-          <h4>3. 데이터 파일 백업 / 복원</h4>
+          <h4>2. 데이터 파일 백업 / 복원</h4>
           <div class="btn-group">
             <button type="button" id="btn-export-vault-file" class="btn btn-secondary btn-sm">데이터 파일 내보내기 (.json)</button>
             <label class="btn btn-secondary btn-sm">
@@ -1024,6 +1010,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v162"></script>
+  <script type="module" src="./src/app.js?v=v163"></script>
 </body>
 </html>

@@ -12,7 +12,6 @@ const DB_VERSION = 2; // Incremented for separate image store (image_store)
 const STORE_NAME = 'app_state';
 const IMAGE_STORE = 'image_store';
 const STATE_KEY = 'vaultnote_root_state';
-const DIR_HANDLE_KEY = 'vaultnote_onedrive_dir_handle';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -30,8 +29,6 @@ function openDB() {
     req.onerror = () => reject(req.error);
   });
 }
-
-let directoryHandle = null; // Browser File System Access API handle
 
 export const VaultStorage = {
   // --- Dedicated Image Storage (IMAGE_STORE) ---
@@ -311,101 +308,7 @@ export const VaultStorage = {
   },
 
   /**
-   * 2. Browser File System Access API (Direct OneDrive Folder Picker for Chrome/Edge on PC, works on GitHub Pages too!)
-   */
-  async pickBrowserDirectory() {
-    if (!('showDirectoryPicker' in window)) {
-      throw new Error('이 브라우저는 폴더 직접 연결 API를 지원하지 않습니다. PC 환경의 Chrome/Edge 브라우저를 이용하거나 구글 드라이브 자동 동기화를 이용해주세요.');
-    }
-    directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-    
-    // W3C 웹 표준 공식 규격: PWA 웹앱 독립 창에서도 확실하게 쓰기 권한 팝업을 띄우도록 명시적 호출
-    if (directoryHandle && typeof directoryHandle.requestPermission === 'function') {
-      const perm = await directoryHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') {
-        throw new Error('폴더 접근 권한이 허용되지 않았습니다.');
-      }
-    }
-
-    try {
-      const db = await openDB();
-      await new Promise((resolve) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(directoryHandle, DIR_HANDLE_KEY);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      });
-    } catch {}
-    return directoryHandle.name;
-  },
-
-  async restoreBrowserDirectoryHandle() {
-    if (directoryHandle) return directoryHandle;
-    try {
-      const db = await openDB();
-      const handle = await new Promise((resolve) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).get(DIR_HANDLE_KEY);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      });
-      if (handle) {
-        const perm = await handle.queryPermission?.({ mode: 'readwrite' });
-        if (perm === 'granted') {
-          directoryHandle = handle;
-          return directoryHandle;
-        }
-      }
-    } catch {}
-    return null;
-  },
-
-  async saveToBrowserDirectory(state) {
-    await this.restoreBrowserDirectoryHandle();
-    if (!directoryHandle) return null;
-    try {
-      const payload = { ...state, lastSavedAt: state.lastSavedAt || new Date().toISOString() };
-      const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(JSON.stringify(payload, null, 2));
-      await writable.close();
-      return { ok: true, folderName: directoryHandle.name, updatedAt: payload.lastSavedAt };
-    } catch (err) {
-      console.warn('[VaultStorage] saveToBrowserDirectory error:', err);
-      return null;
-    }
-  },
-
-  async loadFromBrowserDirectory() {
-    await this.restoreBrowserDirectoryHandle();
-    if (!directoryHandle) return null;
-    try {
-      const fileHandle = await directoryHandle.getFileHandle('vaultnote-sync.vnvault.json', { create: false });
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-      return JSON.parse(text);
-    } catch (err) {
-      // 폴더가 비어있거나 파일이 아직 없는 경우 에러를 던지지 않고 안전하게 null 반환
-      return null;
-    }
-  },
-
-  async disconnectBrowserDirectory() {
-    directoryHandle = null;
-    try {
-      const db = await openDB();
-      await new Promise((resolve) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(DIR_HANDLE_KEY);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      });
-    } catch {}
-    return true;
-  },
-
-  /**
-   * 3. Microsoft OneDrive Graph API Direct Sync (Works on GitHub Pages, Smartphone Web App, and PC)
+   * 2. Microsoft OneDrive Graph API Direct Sync (Works on GitHub Pages, Smartphone Web App, and PC)
    */
   async syncOneDriveAPI(accessToken, state, action = 'save') {
     const cleanToken = String(accessToken || '').replace(/^Bearer\s+/i, '').trim();
