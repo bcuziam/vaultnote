@@ -315,9 +315,18 @@ export const VaultStorage = {
    */
   async pickBrowserDirectory() {
     if (!('showDirectoryPicker' in window)) {
-      throw new Error('이 브라우저는 폴더 직접 연결 API를 지원하지 않습니다. OneDrive 자동 동기화 토큰 또는 파일 불러오기를 이용해주세요.');
+      throw new Error('이 브라우저는 폴더 직접 연결 API를 지원하지 않습니다. PC 환경의 Chrome/Edge 브라우저를 이용하거나 구글 드라이브 자동 동기화를 이용해주세요.');
     }
     directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    
+    // W3C 웹 표준 공식 규격: PWA 웹앱 독립 창에서도 확실하게 쓰기 권한 팝업을 띄우도록 명시적 호출
+    if (directoryHandle && typeof directoryHandle.requestPermission === 'function') {
+      const perm = await directoryHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') {
+        throw new Error('폴더 접근 권한이 허용되지 않았습니다.');
+      }
+    }
+
     try {
       const db = await openDB();
       await new Promise((resolve) => {
