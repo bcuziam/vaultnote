@@ -15,11 +15,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VaultNote</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=v160" />
+  <link rel="manifest" href="./manifest.webmanifest?v=v161" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="stylesheet" href="./src/styles.css?v=v160" />
+  <link rel="stylesheet" href="./src/styles.css?v=v161" />
 </head>
 <body>
   <!-- 1단계 보안: 앱 진입 잠금 오버레이 -->
@@ -118,7 +118,7 @@
         <button type="button" id="btn-security-modal" class="footer-link">보안 설정</button>
         <span class="sep">·</span>
         <button type="button" id="btn-lock-now" class="footer-link" title="즉시 잠금 (Alt+L)">잠금</button>
-        <span class="app-version-badge" id="app-version-display">v160</span>
+        <span class="app-version-badge" id="app-version-display">v161</span>
       </div>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
@@ -656,8 +656,8 @@
         </div>
 
         <div class="sync-box">
-          <h4>1. 내 PC 동기화 폴더 연결</h4>
-          <p class="text-muted">내 컴퓨터의 원하는 폴더(원드라이브, 구글 드라이브, 문서 폴더 등)를 지정하면, 글을 쓸 때마다 암호화 볼트 파일(<code>vaultnote-sync.vnvault.json</code>)이 해당 폴더에 실시간으로 안전하게 자동 저장됩니다.</p>
+          <h4>1. 로컬 백업 폴더 (브라우저 초기화 대비)</h4>
+          <p class="text-muted">컴퓨터의 원하는 폴더를 한 번만 지정해 두면, 글을 쓸 때는 물론 스마트폰에서 작성한 글이 동기화될 때도 <strong>항상 가장 최신의 완전한 암호화 볼트 파일(<code>vaultnote-sync.vnvault.json</code>)이 자동으로 실물 백업</strong>됩니다. 브라우저 기록이나 캐시를 완전히 삭제하더라도 이 백업 파일만 있으면 언제든 지우기 직전 상태로 1초 만에 완벽 복구할 수 있습니다.</p>
           <div class="sync-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button type="button" id="btn-pick-custom-folder" class="btn btn-primary btn-sm">폴더 선택</button>
             <span id="local-folder-status-badge" class="note-folder-badge" style="font-weight:600;padding:5px 10px;border-radius:4px;font-size:12px;background:#f0f0ed;color:#666;">연결 안 됨</span>
@@ -703,6 +703,9 @@
                 <button type="button" id="btn-gdrive-pull" class="btn btn-secondary btn-sm">클라우드에서 불러오기 (새 기기)</button>
                 <button type="button" id="btn-gdrive-push" class="btn btn-secondary btn-sm">클라우드로 내보내기</button>
               </div>
+              <p class="text-muted mt-6" style="font-size:11.5px;line-height:1.45;">
+                ※ 안내 (스마트 병합): 기기에 있는 최신 글을 보존하기 위해 각 노트별 수정 시간을 비교하여 더 최신인 내용만 안전하게 합치는 '스마트 병합'으로 불러옵니다. Gemini AI 키, 구글 드라이브 연동 주소, 잠금 비밀번호가 함께 복원됩니다. (기기별 고유 환경인 화면 테마, 사이드바 상태는 현재 기기 설정 유지)
+              </p>
             </div>
           </div>
         </div>
@@ -716,6 +719,9 @@
               <input type="file" id="import-vault-file-input" accept=".json,.vnvault" class="hidden" />
             </label>
           </div>
+          <p class="text-muted mt-6" style="font-size:11.5px;line-height:1.45;">
+            ※ 주의 (강제 복원): 수정 시간을 따지지 않고 선택한 백업 파일의 모든 노트와 폴더로 100% 통째로 교체 복원합니다. 백업 파일에 담긴 Gemini AI 키, 구글 드라이브 연동 주소, 잠금 비밀번호가 함께 복원됩니다. (기기별 고유 환경인 화면 테마, 사이드바 상태는 현재 기기 설정 유지)
+          </p>
         </div>
       </div>
     </div>
@@ -1018,6 +1024,6 @@
   <div id="toast-container" class="toast-container"></div>
   <div id="print-container" class="print-only"></div>
 
-  <script type="module" src="./src/app.js?v=v160"></script>
+  <script type="module" src="./src/app.js?v=v161"></script>
 </body>
 </html>

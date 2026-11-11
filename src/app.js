@@ -756,6 +756,9 @@ async function applyRemoteSyncedState(remoteState, label = '실시간 동기화�
   renderAll(true);
   updateSaveIndicator('cloud', label);
 
+  // 스마트폰 등 원격 변경사항이 병합된 즉시 로컬 백업 폴더 파일도 항상 최신 합본으로 자동 미러링
+  VaultStorage.saveToBrowserDirectory(state).catch(() => {});
+
   // 로컬에 클라우드보다 더 최신인 노트/변경분이 있거나 정리 대상이 있으면 최신 합본으로 안전 업로드(Push)
   if (needsRemotePush) {
     scheduleSave(true, true);
@@ -826,7 +829,7 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
           const hasUpdates = hasNewerRemoteNotes(remoteGD.notes, state.notes, remoteGD.orderUpdatedAt, state.orderUpdatedAt, remoteGD.deletedNoteIds);
           const hasVaultUpdates = hasVaultItemChanges(remoteGD.vaultItems, state.vaultItems, remoteGD.deletedVaultItemIds, state.deletedVaultItemIds);
           if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
-            await applyRemoteSyncedState(remoteGD, 'Google Drive 자동 동기화됨');
+            await applyRemoteSyncedState(remoteGD, '동기화됨');
             return true;
           }
         }
@@ -847,32 +850,14 @@ async function pullLiveSyncStateIfNewer(isInitial = false) {
           const hasUpdates = hasNewerRemoteNotes(remoteOD.notes, state.notes, remoteOD.orderUpdatedAt, state.orderUpdatedAt, remoteOD.deletedNoteIds);
           const hasVaultUpdates = hasVaultItemChanges(remoteOD.vaultItems, state.vaultItems, remoteOD.deletedVaultItemIds, state.deletedVaultItemIds);
           if (isInitial || remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates) {
-            await applyRemoteSyncedState(remoteOD, 'OneDrive 자동 동기화됨');
+            await applyRemoteSyncedState(remoteOD, '동기화됨');
             return true;
           }
         }
       } catch {}
     }
 
-    // 2. Browser Direct OneDrive Folder Handle Auto-Pull (works on Chrome/Edge PC even on GitHub Pages)
-    try {
-      const folderState = await VaultStorage.loadFromBrowserDirectory();
-      if (folderState && Array.isArray(folderState.notes)) {
-        const remoteTime = new Date(folderState.lastSavedAt || 0).getTime();
-        const localTime = new Date(state.lastSavedAt || 0).getTime();
-        const rOrderTime = new Date(folderState.orderUpdatedAt || 0).getTime();
-        const lOrderTime = new Date(state.orderUpdatedAt || 0).getTime();
-        const hasUpdates = hasNewerRemoteNotes(folderState.notes, state.notes, folderState.orderUpdatedAt, state.orderUpdatedAt, folderState.deletedNoteIds);
-        const hasVaultUpdates = hasVaultItemChanges(folderState.vaultItems, state.vaultItems, folderState.deletedVaultItemIds, state.deletedVaultItemIds);
-        const hasFldUpdates = hasFolderChanges(folderState.folders, state.folders, folderState.deletedFolderIds, state.deletedFolderIds);
-        if (remoteTime > localTime + 300 || rOrderTime > lOrderTime + 300 || hasUpdates || hasVaultUpdates || hasFldUpdates) {
-          await applyRemoteSyncedState(folderState, 'OneDrive 폴더 동기화됨');
-          return true;
-        }
-      }
-    } catch {}
-
-    // 3. Local PC Bridge Auto-Pull (when running via local server.js)
+    // 2. Local PC Bridge Auto-Pull (when running via local server.js)
     const dirParam = encodeURIComponent(state.settings.pcVaultDir || '');
     const metaRes = await fetch(`/api/live-sync?meta=1&dir=${dirParam}`).catch(() => null);
     if (!metaRes || !metaRes.ok) return false;
